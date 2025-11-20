@@ -236,13 +236,12 @@ class BacktestEngine:
         # Apply slippage
         entry_price = price * (1 + self.slippage_rate) if side == PositionSide.LONG else price * (1 - self.slippage_rate)
 
-        # Calculate position size - USE FIXED % OF INITIAL CAPITAL, NOT CASH
-        # This prevents explosive compounding and matches real trading
-        position_value = self.initial_capital * 0.95  # 95% of initial capital per trade
+        # Calculate position size - Use fixed percentage of initial capital
+        position_value = self.initial_capital * 0.10  # 10% of capital per trade (realistic)
         quantity = position_value / entry_price
 
-        # Calculate fees
-        fees = quantity * entry_price * self.commission_rate
+        # Calculate entry fees
+        entry_fees = quantity * entry_price * self.commission_rate
 
         self.position = Position(
             side=side,
@@ -253,12 +252,12 @@ class BacktestEngine:
             take_profit=take_profit,
         )
 
-        # Deduct fees from cash (but don't reduce cash for position itself since we track equity)
-        self.cash -= fees
+        # Deduct position value from cash (fees will be deducted on close from P&L)
+        self.cash -= position_value
 
         logger.debug(
             f"Opened {side.value} position: qty={quantity:.4f}, "
-            f"price=${entry_price:.2f}, fees=${fees:.2f}"
+            f"price=${entry_price:.2f}, value=${position_value:.2f}"
         )
 
     def _close_position(
@@ -274,20 +273,26 @@ class BacktestEngine:
         # Apply slippage
         exit_price = price * (1 - self.slippage_rate) if self.position.side == PositionSide.LONG else price * (1 + self.slippage_rate)
 
-        # Calculate P&L
+        # Calculate raw P&L (before fees)
         if self.position.side == PositionSide.LONG:
-            pnl = (exit_price - self.position.entry_price) * self.position.quantity
+            raw_pnl = (exit_price - self.position.entry_price) * self.position.quantity
         else:  # SHORT
-            pnl = (self.position.entry_price - exit_price) * self.position.quantity
+            raw_pnl = (self.position.entry_price - exit_price) * self.position.quantity
 
-        # Calculate fees
-        fees = self.position.quantity * exit_price * self.commission_rate
+        # Calculate total fees (entry + exit)
+        entry_fees = self.position.quantity * self.position.entry_price * self.commission_rate
+        exit_fees = self.position.quantity * exit_price * self.commission_rate
+        total_fees = entry_fees + exit_fees
 
-        # Update cash
-        self.cash += (self.position.quantity * exit_price) - fees
+        # Net P&L after fees
+        net_pnl = raw_pnl - total_fees
+
+        # Return to cash: original position value + net P&L
+        position_initial_value = self.position.entry_price * self.position.quantity
+        self.cash += position_initial_value + net_pnl
 
         # Calculate P&L percentage
-        pnl_percent = (pnl / (self.position.entry_price * self.position.quantity)) * 100
+        pnl_percent = (raw_pnl / position_initial_value) * 100
 
         # Record trade
         trade = Trade(
@@ -297,9 +302,9 @@ class BacktestEngine:
             quantity=self.position.quantity,
             entry_time=self.position.entry_time,
             exit_time=timestamp,
-            pnl=pnl - fees,
+            pnl=net_pnl,  # Net P&L after all fees
             pnl_percent=pnl_percent,
-            fees=fees,
+            fees=total_fees,
             stop_loss=self.position.stop_loss,
             take_profit=self.position.take_profit,
             exit_reason=reason,
@@ -309,7 +314,7 @@ class BacktestEngine:
         self.position = None
 
         logger.debug(
-            f"Closed position: pnl=${pnl-fees:.2f} ({pnl_percent:.2f}%), "
+            f"Closed position: pnl=${net_pnl:.2f} ({pnl_percent:.2f}%), "
             f"reason={reason}"
         )
 
