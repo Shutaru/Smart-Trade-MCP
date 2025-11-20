@@ -59,6 +59,23 @@ class MultiOscillatorConfluence(BaseStrategy):
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.9, sl, tp, 
                                         {"rsi": rsi, "cci": cci, "stoch_k": stoch_k}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit when oscillators reach opposite extreme
+            elif pos == "LONG":
+                # Exit LONG when at least 2 oscillators overbought
+                overbought_count = sum([rsi > 70, cci > 100, stoch_k > 80])
+                if overbought_count >= 2:
+                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], r["close"], 
+                                        metadata={"reason": "Oscillators overbought"}))
+                    pos = None
+            
+            elif pos == "SHORT":
+                # Exit SHORT when at least 2 oscillators oversold  
+                oversold_count = sum([rsi < 30, cci < -100, stoch_k < 20])
+                if oversold_count >= 2:
+                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], r["close"], 
+                                        metadata={"reason": "Oscillators oversold"}))
+                    pos = None
         logger.info(f"MultiOscillatorConfluence: {len(signals)} signals")
         return signals
 

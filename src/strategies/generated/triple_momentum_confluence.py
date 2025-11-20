@@ -60,6 +60,21 @@ class TripleMomentumConfluence(BaseStrategy):
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.85, sl, tp, 
                                         {"rsi": rsi, "mfi": mfi, "macd_hist": macd_hist}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit when momentum reverses
+            elif pos == "LONG":
+                bearish_count = sum([rsi < 45, mfi < 45, macd_hist < 0])
+                if bearish_count >= 2:  # Momentum reversed
+                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                        metadata={"reason": "Momentum reversed"}))
+                    pos = None
+            
+            elif pos == "SHORT":
+                bullish_count = sum([rsi > 55, mfi > 55, macd_hist > 0])
+                if bullish_count >= 2:  # Momentum reversed
+                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                        metadata={"reason": "Momentum reversed"}))
+                    pos = None
         logger.info(f"TripleMomentumConfluence: {len(signals)} signals")
         return signals
 
