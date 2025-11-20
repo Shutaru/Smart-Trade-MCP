@@ -25,21 +25,25 @@ Smart Trade MCP is a **production-ready autonomous trading system** that leverag
 
 ## ? Features
 
-### Implemented (Phase 2 Complete)
+### Implemented (Phase 2 Complete + PHASE 1 VALIDATION ?)
 ? **Database Manager** - SQLite with async support (90% test coverage)  
 ? **Data Manager** - CCXT integration for exchange data  
-? **7 Technical Indicators** - EMA, RSI, MACD, Bollinger Bands, ATR, ADX  
-? **Strategy System** - Base class + RSI and MACD strategies  
+? **15+ Technical Indicators** - EMA, RSI, MACD, Bollinger, ATR, ADX, CCI, MFI, OBV, SuperTrend, VWAP, Keltner, Donchian  
+? **38 Trading Strategies** - 21 complete, 2 partial, 15 pending  
 ? **Backtest Engine** - Full position tracking, SL/TP, metrics (87% coverage)  
+? **Walk-Forward Analysis** ? **NEW!** - Rolling window out-of-sample validation (parallel execution)  
 ? **45 Tests** - Comprehensive test suite with 65% coverage  
+? **MCP Server** - Full protocol implementation with tools and resources  
 ? **Zero Deprecated Code** - Clean, production-ready architecture  
 
 ### Coming Soon (Phase 3-5)
-?? Genetic Algorithm Optimization  
-?? Meta-Learning for parameter prediction  
-?? Walk-Forward Validation  
-?? Live Trading Mode  
-?? Web Dashboard  
+?? **K-Fold Cross-Validation** - Complementary validation method  
+?? **Monte Carlo Simulation** - Risk analysis and confidence intervals  
+?? **Genetic Algorithm Optimization** - GPU-accelerated parameter tuning  
+?? **Meta-Learning** - Auto parameter selection  
+?? **Bot Management** - Create, start, stop, monitor trading bots  
+?? **Live Trading Mode** - Real exchange execution (Binance)  
+?? **Web Dashboard** - Real-time monitoring UI  
 
 ---
 
@@ -190,6 +194,64 @@ class MyStrategy(BaseStrategy):
         
         return signals
 ```
+
+### Example 5: Walk-Forward Analysis (Validate Strategy) ? **NEW!**
+
+```python
+from src.core.backtest_engine import BacktestEngine
+from src.core.data_manager import DataManager
+from src.core.indicators import calculate_all_indicators
+from src.strategies import registry
+
+async def validate_strategy():
+    # Get strategy
+    strategy = registry.get("cci_extreme_snapback")
+    
+    # Fetch 1 year of data
+    dm = DataManager()
+    df = await dm.fetch_ohlcv(
+        symbol="BTC/USDT",
+        timeframe="1h",
+        limit=365 * 24,
+    )
+    await dm.close()
+    
+    # Calculate indicators
+    df = calculate_all_indicators(df, strategy.get_required_indicators())
+    
+    # Run Walk-Forward Analysis
+    engine = BacktestEngine()
+    results = engine.walk_forward_analysis(
+        strategy=strategy,
+        df=df,
+        train_days=180,    # 6 months training
+        test_days=60,      # 2 months testing
+        step_days=30,      # 1 month rolling step
+        parallel=True,     # Use all CPU cores
+    )
+    
+    # Check if strategy is validated
+    print(f"Stability Ratio: {results['stability_ratio']:.2f}")
+    print(f"Consistency: {results['consistency']:.1f}%")
+    print(f"Recommendation: {results['recommendation']}")
+    
+    if results['recommendation'].startswith("PASS"):
+        print("? Strategy validated! Ready for optimization.")
+    else:
+        print("? Strategy failed validation. Do not use in production.")
+
+# Run
+import asyncio
+asyncio.run(validate_strategy())
+```
+
+**Why Walk-Forward Analysis is Critical:**
+- ? Detects overfitting (curve-fitting to historical data)
+- ? Validates out-of-sample performance (how it performs on unseen data)
+- ? **REQUIRED before deploying ANY strategy to production**
+- ? Parallel execution for fast validation of multiple strategies
+
+See `examples/walk_forward_example.py` for full demonstration.
 
 ---
 

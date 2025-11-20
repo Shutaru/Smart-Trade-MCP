@@ -121,6 +121,196 @@ class SmartTradeMCPServer:
                     },
                 ),
                 Tool(
+                    name="run_walk_forward_analysis",
+                    description="Validate strategy with Walk-Forward Analysis (WFA) - Critical for detecting overfitting. Divides data into train/test windows and validates out-of-sample performance.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to validate",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair (e.g., BTC/USDT)",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe (1h, 4h, 1d)",
+                                "default": "1h",
+                            },
+                            "train_days": {
+                                "type": "integer",
+                                "description": "Training window size in days",
+                                "default": 180,
+                            },
+                            "test_days": {
+                                "type": "integer",
+                                "description": "Testing window size in days",
+                                "default": 60,
+                            },
+                            "step_days": {
+                                "type": "integer",
+                                "description": "Step size for rolling window",
+                                "default": 30,
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                            "parallel": {
+                                "type": "boolean",
+                                "description": "Execute windows in parallel (faster)",
+                                "default": True,
+                            },
+                            "n_jobs": {
+                                "type": "integer",
+                                "description": "Number of CPU cores (-1 = all)",
+                                "default": -1,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="run_k_fold_validation",
+                    description="Run K-Fold Cross-Validation - Divides data into K folds and tests robustness across different periods. Complementary to Walk-Forward Analysis.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to validate",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "k": {
+                                "type": "integer",
+                                "description": "Number of folds (typically 5 or 10)",
+                                "default": 5,
+                            },
+                            "shuffle": {
+                                "type": "boolean",
+                                "description": "Shuffle data before splitting (not recommended for time series)",
+                                "default": False,
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                            "parallel": {
+                                "type": "boolean",
+                                "description": "Execute folds in parallel",
+                                "default": True,
+                            },
+                            "n_jobs": {
+                                "type": "integer",
+                                "description": "Number of CPU cores (-1 = all)",
+                                "default": -1,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="run_monte_carlo_simulation",
+                    description="Run Monte Carlo Simulation - Randomly resamples trades to generate thousands of equity curves. Helps understand risk and confidence intervals.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to analyze",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "n_simulations": {
+                                "type": "integer",
+                                "description": "Number of simulations (1000-10000)",
+                                "default": 1000,
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                            "parallel": {
+                                "type": "boolean",
+                                "description": "Execute simulations in parallel",
+                                "default": True,
+                            },
+                            "n_jobs": {
+                                "type": "integer",
+                                "description": "Number of CPU cores (-1 = all)",
+                                "default": -1,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="diagnose_strategy_failure",
+                    description="Diagnose why a strategy failed validation - Analyzes strategy behavior and suggests specific fixes. Critical for strategy improvement.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to diagnose",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of candles to analyze",
+                                "default": 1000,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="suggest_parameter_fixes",
+                    description="Get specific parameter value suggestions to fix strategy issues - Provides concrete code changes.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to fix",
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
                     name="get_portfolio_status",
                     description="Get current portfolio holdings and performance",
                     inputSchema={
@@ -153,6 +343,15 @@ class SmartTradeMCPServer:
             from .tools.backtest import backtest_strategy
             from .tools.portfolio import get_portfolio_status
             from .tools.strategies import list_strategies
+            from .tools.validation import (
+                run_walk_forward_analysis,
+                run_k_fold_validation,
+                run_monte_carlo_simulation,
+            )
+            from .tools.strategy_diagnostics import (
+                diagnose_strategy_failure,
+                suggest_parameter_fixes,
+            )
 
             try:
                 if name == "get_market_data":
@@ -161,6 +360,16 @@ class SmartTradeMCPServer:
                     result = await calculate_indicators(**arguments)
                 elif name == "backtest_strategy":
                     result = await backtest_strategy(**arguments)
+                elif name == "run_walk_forward_analysis":
+                    result = await run_walk_forward_analysis(**arguments)
+                elif name == "run_k_fold_validation":
+                    result = await run_k_fold_validation(**arguments)
+                elif name == "run_monte_carlo_simulation":
+                    result = await run_monte_carlo_simulation(**arguments)
+                elif name == "diagnose_strategy_failure":
+                    result = await diagnose_strategy_failure(**arguments)
+                elif name == "suggest_parameter_fixes":
+                    result = await suggest_parameter_fixes(**arguments)
                 elif name == "get_portfolio_status":
                     result = await get_portfolio_status()
                 elif name == "list_strategies":

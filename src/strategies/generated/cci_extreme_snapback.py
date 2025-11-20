@@ -30,9 +30,10 @@ class CciExtremeSnapback(BaseStrategy):
             atr = r.get("atr", close*0.02)
             
             if pos is None:
-                # LONG: CCI crosses back above -100 from extreme + touched EMA
-                cci_extreme = cci_prev < -100
-                cci_cross_back = cci >= -100
+                # LONG: CCI crosses back above -150 from extreme + touched EMA
+                # FIX: Changed from -100 to -150 for more extreme reversions
+                cci_extreme = cci_prev < -150  # More extreme threshold
+                cci_cross_back = cci >= -150
                 touched_ema = low <= ema_12 or low <= ema_26
                 
                 if cci_extreme and cci_cross_back and touched_ema:
@@ -41,9 +42,10 @@ class CciExtremeSnapback(BaseStrategy):
                                         {"cci": cci, "cci_prev": cci_prev, "reason": "CCI extreme snapback"}))
                     pos = "LONG"
                 
-                # SHORT: CCI crosses back below +100 from extreme
-                cci_extreme_high = cci_prev > 100
-                cci_cross_down = cci <= 100
+                # SHORT: CCI crosses back below +150 from extreme
+                # FIX: Changed from +100 to +150 for more extreme reversions
+                cci_extreme_high = cci_prev > 150  # More extreme threshold
+                cci_cross_down = cci <= 150
                 touched_ema_high = high >= ema_12 or high >= ema_26
                 
                 if cci_extreme_high and cci_cross_down and touched_ema_high:

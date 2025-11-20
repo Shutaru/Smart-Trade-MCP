@@ -33,10 +33,10 @@ class BollingerMeanReversion(BaseStrategy):
             
             if pos is None:
                 # LONG: Price TOUCHES/BREAKS BB lower + RSI oversold + sufficient volatility
-                # FIX: Much more restrictive conditions
+                # FIX: Relaxed BB width filter (was 2.0%, now 1.5%)
                 touches_bb_lower = low <= bb_l  # Must actually touch/break
-                rsi_oversold = rsi < 35  # Truly oversold (was 20-60!)
-                has_volatility = bb_width > 2.0  # BB must be expanded (not flat)
+                rsi_oversold = rsi < 35  # Truly oversold
+                has_volatility = bb_width > 1.5  # FIX: Reduced from 2.0% to 1.5%
                 
                 if touches_bb_lower and rsi_oversold and has_volatility:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
@@ -47,9 +47,9 @@ class BollingerMeanReversion(BaseStrategy):
                     pos = "LONG"
                 
                 # SHORT: Price TOUCHES/BREAKS BB upper + RSI overbought + sufficient volatility
-                # FIX: Much more restrictive
+                # FIX: Relaxed BB width filter (was 2.0%, now 1.5%)
                 touches_bb_upper = high >= bb_u  # Must actually touch/break
-                rsi_overbought = rsi > 65  # Truly overbought (was 40-80!)
+                rsi_overbought = rsi > 65  # Truly overbought
                 
                 if touches_bb_upper and rsi_overbought and has_volatility:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
