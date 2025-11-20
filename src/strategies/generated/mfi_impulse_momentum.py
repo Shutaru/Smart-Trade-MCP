@@ -62,6 +62,21 @@ class MfiImpulseMomentum(BaseStrategy):
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, 
                                         {"mfi": mfi, "mfi_surge": mfi_surge}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit when MFI surge reverses
+            elif pos == "LONG":
+                current_surge = mfi - df.iloc[i-5].get("mfi", 50)
+                if current_surge < -5:  # MFI dropped significantly
+                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                        metadata={"reason": "MFI momentum reversed"}))
+                    pos = None
+            
+            elif pos == "SHORT":
+                current_surge = mfi - df.iloc[i-5].get("mfi", 50)
+                if current_surge > 5:  # MFI rose significantly
+                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                        metadata={"reason": "MFI momentum reversed"}))
+                    pos = None
         logger.info(f"MfiImpulseMomentum: {len(signals)} signals")
         return signals
 

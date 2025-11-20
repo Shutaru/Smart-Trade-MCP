@@ -60,6 +60,23 @@ class LondonBreakoutAtr(BaseStrategy):
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, 
                                         {"atr_pct": atr/close}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit on opposite breakout
+            elif pos == "LONG":
+                curr_low = df.iloc[i]["low"]
+                prev_low = df.iloc[i-1]["low"]
+                if curr_low < prev_low:
+                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                        metadata={"reason": "Opposite breakout"}))
+                    pos = None
+            
+            elif pos == "SHORT":
+                curr_high = df.iloc[i]["high"]
+                prev_high = df.iloc[i-1]["high"]
+                if curr_high > prev_high:
+                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                        metadata={"reason": "Opposite breakout"}))
+                    pos = None
         logger.info(f"LondonBreakoutAtr: {len(signals)} signals")
         return signals
 
