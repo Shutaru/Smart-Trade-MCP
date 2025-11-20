@@ -1,6 +1,0 @@
-{
-  "analysis_date": "2025-11-20T18:11:55.675005",
-  "total_candles": 8760,
-  "results": {
-    "donchian_continuation": {
-      "close > ema_200": 
