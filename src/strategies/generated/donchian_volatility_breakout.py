@@ -60,7 +60,18 @@ class DonchianVolatilityBreakout(BaseStrategy):
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {"adx": adx}))
                     pos = "SHORT"
-                    
+            
+            # FIX: ADD EXIT LOGIC - exit on opposite breakout (trend reversal)
+            elif pos == "LONG" and low < prev_don_l:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, 
+                                    metadata={"reason": "Donchian lower breakout (trend reversed)"}))
+                pos = None
+            
+            elif pos == "SHORT" and high > prev_don_u:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "Donchian upper breakout (trend reversed)"}))
+                pos = None
+                
         logger.info(f"DonchianVolatilityBreakout: {len(signals)} signals")
         return signals
 

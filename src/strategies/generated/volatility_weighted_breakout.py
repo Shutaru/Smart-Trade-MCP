@@ -59,6 +59,17 @@ class VolatilityWeightedBreakout(BaseStrategy):
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, min(1.0, adx/40), sl, tp, 
                                         {"adx": adx}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - opposite breakout
+            elif pos == "LONG" and low < bb_l:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "Opposite breakout"}))
+                pos = None
+            
+            elif pos == "SHORT" and high > bb_u:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "Opposite breakout"}))
+                pos = None
         logger.info(f"VolatilityWeightedBreakout: {len(signals)} signals")
         return signals
 

@@ -58,6 +58,17 @@ class AtrExpansionBreakout(BaseStrategy):
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {"atr_ratio": atr/atr_avg}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit on SuperTrend reversal
+            elif pos == "LONG" and st_trend < 0:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "SuperTrend reversed"}))
+                pos = None
+            
+            elif pos == "SHORT" and st_trend > 0:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "SuperTrend reversed"}))
+                pos = None
         logger.info(f"AtrExpansionBreakout: {len(signals)} signals")
         return signals
 

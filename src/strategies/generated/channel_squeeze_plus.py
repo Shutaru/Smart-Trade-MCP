@@ -61,6 +61,19 @@ class ChannelSqueezePlus(BaseStrategy):
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.85, sl, tp, 
                                         {"bb_width": bb_width, "kc_width": kc_width}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit when returns to BB middle
+            bb_m = (bb_u + bb_l) / 2
+            
+            elif pos == "LONG" and close <= bb_m:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "Returned to BB middle"}))
+                pos = None
+            
+            elif pos == "SHORT" and close >= bb_m:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "Returned to BB middle"}))
+                pos = None
         logger.info(f"ChannelSqueezePlus: {len(signals)} signals")
         return signals
 
