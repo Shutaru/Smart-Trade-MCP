@@ -36,34 +36,6 @@
       "sharpe": 0.0459091587276886
     },
     {
-      "strategy": "donchian_continuation",
-      "return": 0.0,
-      "trades": 0,
-      "win_rate": 0.0,
-      "sharpe": 0.0
-    },
-    {
-      "strategy": "donchian_volatility_breakout",
-      "return": 0.0,
-      "trades": 0,
-      "win_rate": 0.0,
-      "sharpe": 0.0
-    },
-    {
-      "strategy": "vwap_mean_reversion",
-      "return": 0,
-      "trades": 0,
-      "win_rate": 0,
-      "sharpe": 0
-    },
-    {
-      "strategy": "pure_price_action_donchian",
-      "return": 0.0,
-      "trades": 0,
-      "win_rate": 0.0,
-      "sharpe": 0.0
-    },
-    {
       "strategy": "trend_volume_combo",
       "return": -0.029985007496247107,
       "trades": 1,
@@ -86,6 +58,13 @@
     },
     {
       "strategy": "order_flow_momentum_vwap",
+      "return": -0.029985007496247107,
+      "trades": 1,
+      "win_rate": 0.0,
+      "sharpe": 0.014750903570443391
+    },
+    {
+      "strategy": "pure_price_action_donchian",
       "return": -0.029985007496247107,
       "trades": 1,
       "win_rate": 0.0,
@@ -141,6 +120,13 @@
       "sharpe": 0.012661029290857264
     },
     {
+      "strategy": "donchian_volatility_breakout",
+      "return": -0.19094100534244873,
+      "trades": 1,
+      "win_rate": 0.0,
+      "sharpe": 0.012504067468428026
+    },
+    {
       "strategy": "double_donchian_pullback",
       "return": -0.19532818817877828,
       "trades": 1,
@@ -190,6 +176,13 @@
       "sharpe": 0.009593269191050203
     },
     {
+      "strategy": "vwap_mean_reversion",
+      "return": -0.48689099579971584,
+      "trades": 36,
+      "win_rate": 50.0,
+      "sharpe": 0.08971371899571054
+    },
+    {
       "strategy": "macd_zero_trend",
       "return": -0.7434936056062047,
       "trades": 22,
@@ -209,6 +202,13 @@
       "trades": 28,
       "win_rate": 35.714285714285715,
       "sharpe": 0.07693310357725518
+    },
+    {
+      "strategy": "donchian_continuation",
+      "return": -1.7782497873416792,
+      "trades": 23,
+      "win_rate": 30.434782608695656,
+      "sharpe": 0.0686876535766361
     },
     {
       "strategy": "adx_trend_filter_plus",
@@ -261,10 +261,10 @@
     },
     {
       "strategy": "bollinger_mean_reversion",
-      "return": -132.32535036876757,
+      "return": -132.32693919062956,
       "trades": 3861,
       "win_rate": 12.224812224812224,
-      "sharpe": 0.20146755240868172
+      "sharpe": 0.20146755503682084
     }
   ],
   "stats": {

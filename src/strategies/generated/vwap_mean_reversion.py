@@ -41,8 +41,8 @@ class VwapMeanReversion(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, vwap = r["close"], r.get("vwap", close)
-            rsi, atr = r.get("rsi", 50), r.get("atr", close*0.02)
+            close = r["close"]
+            vwap, rsi, atr = r.get("vwap", close), r.get("rsi", 50), r.get("atr", close*0.02)
             dist = abs(close - vwap) / vwap if vwap > 0 else 0
             if pos is None and dist > 0.015:
                 if close < vwap and rsi < 40:

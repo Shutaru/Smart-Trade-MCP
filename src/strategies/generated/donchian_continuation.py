@@ -58,7 +58,9 @@ class DonchianContinuation(BaseStrategy):
             if position is None:
                 long_filters = close > ema_200 and supertrend_trend > 0 and adx >= 18
                 
-                if long_filters and close > donchian_upper and adx > adx_5ago:
+                # FIX: Use previous donchian_upper for breakout detection
+                prev_don_upper = df.iloc[i-1].get("donchian_upper", close) if i > 0 else donchian_upper
+                if long_filters and row["high"] > prev_don_upper and adx > adx_5ago:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(
                         type=SignalType.LONG,
@@ -74,7 +76,9 @@ class DonchianContinuation(BaseStrategy):
                 # SHORT entry
                 short_filters = close < ema_200 and supertrend_trend < 0 and adx >= 18
                 
-                if short_filters and close < donchian_lower and adx > adx_5ago:
+                # FIX: Use previous donchian_lower for breakdown detection
+                prev_don_lower = df.iloc[i-1].get("donchian_lower", close) if i > 0 else donchian_lower
+                if short_filters and row["low"] < prev_don_lower and adx > adx_5ago:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(
                         type=SignalType.SHORT,

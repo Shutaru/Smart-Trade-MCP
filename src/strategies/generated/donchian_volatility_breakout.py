@@ -40,17 +40,23 @@ class DonchianVolatilityBreakout(BaseStrategy):
         signals, pos = [], None
         for i in range(5, len(df)):
             r = df.iloc[i]
-            close = r["close"]
+            close, high, low = r["close"], r["high"], r["low"]
             don_u, don_l = r.get("donchian_upper", close), r.get("donchian_lower", close)
             adx, atr = r.get("adx", 0), r.get("atr", close*0.02)
             adx_5ago = df.iloc[i-5].get("adx", 0)
             
+            # FIX: Use previous donchian values for breakout detection
+            prev_don_u = df.iloc[i-1].get("donchian_upper", close)
+            prev_don_l = df.iloc[i-1].get("donchian_lower", close)
+            
             if pos is None:
-                if close > don_u and (adx > adx_5ago or adx >= 20):
+                # FIX: Compare with previous donchian
+                if high > prev_don_u and (adx > adx_5ago or adx >= 20):
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, {"adx": adx}))
                     pos = "LONG"
-                elif close < don_l and (adx > adx_5ago or adx >= 20):
+                # FIX: Compare with previous donchian
+                elif low < prev_don_l and (adx > adx_5ago or adx >= 20):
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {"adx": adx}))
                     pos = "SHORT"
