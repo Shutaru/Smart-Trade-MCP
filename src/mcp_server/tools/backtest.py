@@ -1,0 +1,97 @@
+"""Backtesting tools for strategy validation."""
+
+from datetime import datetime
+from typing import Dict, Any, Optional
+
+from ...core.logger import logger
+from ...core.backtest_engine import BacktestEngine
+from ...core.data_manager import DataManager
+from ...core.indicators import calculate_all_indicators
+from ...strategies import registry
+
+
+async def backtest_strategy(
+    strategy_name: str,
+    symbol: str,
+    timeframe: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    initial_capital: float = 10000.0,
+) -> Dict[str, Any]:
+    """
+    Run backtest for a trading strategy.
+
+    Args:
+        strategy_name: Name of strategy to test
+        symbol: Trading pair
+        timeframe: Timeframe to use
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
+        initial_capital: Starting capital
+
+    Returns:
+        Dictionary with backtest results
+    """
+    logger.info(f"Running backtest: {strategy_name} on {symbol} {timeframe}")
+
+    try:
+        # Get strategy from registry
+        strategy = registry.get(strategy_name)
+
+        # Fetch market data
+        dm = DataManager()
+
+        since_dt = datetime.fromisoformat(start_date) if start_date else None
+        end_dt = datetime.fromisoformat(end_date) if end_date else None
+
+        if since_dt and end_dt:
+            df = await dm.fetch_historical(
+                symbol=symbol,
+                timeframe=timeframe,
+                start_date=since_dt,
+                end_date=end_dt,
+            )
+        else:
+            df = await dm.fetch_ohlcv(
+                symbol=symbol,
+                timeframe=timeframe,
+                since=since_dt,
+                limit=1000,
+            )
+
+        await dm.close()
+
+        if df.empty:
+            return {
+                "error": "No market data available",
+                "strategy": strategy_name,
+                "symbol": symbol,
+            }
+
+        # Calculate required indicators
+        required_indicators = strategy.get_required_indicators()
+        df = calculate_all_indicators(df, required_indicators)
+
+        # Run backtest
+        engine = BacktestEngine(initial_capital=initial_capital)
+        results = engine.run(strategy, df)
+
+        logger.info(
+            f"Backtest complete: {results['total_trades']} trades, "
+            f"Return: {results['total_return']:.2f}%"
+        )
+
+        return results
+
+    except KeyError as e:
+        logger.error(f"Strategy not found: {e}")
+        return {
+            "error": f"Strategy not found: {strategy_name}",
+            "available_strategies": [s.name for s in registry.list_strategies()],
+        }
+    except Exception as e:
+        logger.error(f"Error running backtest: {e}", exc_info=True)
+        raise
+
+
+__all__ = ["backtest_strategy"]
