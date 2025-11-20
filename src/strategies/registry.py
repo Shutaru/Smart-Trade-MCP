@@ -64,6 +64,24 @@ class StrategyRegistry:
                 "histogram_threshold": 0.0,
             },
         )
+        
+        # TrendFlow SuperTrend (from generated)
+        try:
+            from .generated.trendflow_supertrend import TrendflowSupertrend
+            
+            self.register(
+                name="trendflow_supertrend",
+                strategy_class=TrendflowSupertrend,
+                category="trend_following",
+                description="SuperTrend + ADX momentum with pullback entries",
+                default_params={
+                    "adx_threshold": 22,
+                    "rsi_pullback_min": 40,
+                    "rsi_pullback_max": 55,
+                },
+            )
+        except ImportError:
+            logger.warning("TrendflowSupertrend not available (implementation pending)")
 
         logger.info(f"Registered {len(self._strategies)} built-in strategies")
 

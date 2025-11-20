@@ -1,0 +1,43 @@
+{
+  "test_date": "2025-11-20T16:43:29.333123",
+  "market_data": {
+    "symbol": "BTC/USDT",
+    "timeframe": "1h",
+    "candles": 500,
+    "start_date": "2025-10-30 21:00:00",
+    "end_date": "2025-11-20 16:00:00",
+    "price_start": 107847.7,
+    "price_end": 88270.1,
+    "price_change_pct": -18.153006508251913
+  },
+  "strategies_tested": 3,
+  "results": [
+    {
+      "strategy": "macd",
+      "description": "MACD Trend Following",
+      "return": 1894.0514763918227,
+      "win_rate": 30.0,
+      "sharpe": 2.4479701102278524,
+      "trades": 20,
+      "profit_factor": 1.0181211810342514
+    },
+    {
+      "strategy": "trendflow_supertrend",
+      "description": "TrendFlow SuperTrend",
+      "return": 1328.8185022511857,
+      "win_rate": 21.428571428571427,
+      "sharpe": 2.256960529313675,
+      "trades": 14,
+      "profit_factor": 0.27665683687362497
+    },
+    {
+      "strategy": "rsi",
+      "description": "RSI Mean Reversion",
+      "return": 953.1818749649707,
+      "win_rate": 54.54545454545454,
+      "sharpe": 2.0515987339102444,
+      "trades": 11,
+      "profit_factor": 1.356980238592107
+    }
+  ]
+}

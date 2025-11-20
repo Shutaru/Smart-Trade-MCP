@@ -49,10 +49,13 @@ class DataManager:
                 },
             }
 
-            # Add API keys if available
-            if exchange_name == "binance" and settings.binance_api_key:
+            # Add API keys only if they are valid (not placeholders)
+            if exchange_name == "binance" and settings.is_valid_api_key():
                 config["apiKey"] = settings.binance_api_key
                 config["secret"] = settings.binance_secret_key
+                logger.info("Using authenticated Binance API")
+            else:
+                logger.info("Using public Binance API (no authentication)")
 
             exchange = exchange_class(config)
             await exchange.load_markets()

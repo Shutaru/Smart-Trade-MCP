@@ -236,8 +236,10 @@ class BacktestEngine:
         # Apply slippage
         entry_price = price * (1 + self.slippage_rate) if side == PositionSide.LONG else price * (1 - self.slippage_rate)
 
-        # Calculate position size (use 95% of capital to leave room for fees)
-        quantity = (self.cash * 0.95) / entry_price
+        # Calculate position size - USE FIXED % OF INITIAL CAPITAL, NOT CASH
+        # This prevents explosive compounding and matches real trading
+        position_value = self.initial_capital * 0.95  # 95% of initial capital per trade
+        quantity = position_value / entry_price
 
         # Calculate fees
         fees = quantity * entry_price * self.commission_rate
@@ -251,6 +253,7 @@ class BacktestEngine:
             take_profit=take_profit,
         )
 
+        # Deduct fees from cash (but don't reduce cash for position itself since we track equity)
         self.cash -= fees
 
         logger.debug(

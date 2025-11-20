@@ -71,6 +71,21 @@ class Settings(BaseSettings):
         """Get list of GPU device IDs."""
         return [int(x.strip()) for x in self.gpu_device_ids.split(",")]
 
+    def is_valid_api_key(self) -> bool:
+        """Check if API keys are valid (not placeholder values)."""
+        if not self.binance_api_key or not self.binance_secret_key:
+            return False
+
+        # Check for placeholder values
+        placeholder_values = ["your_api_key_here", "your_secret_key_here", ""]
+
+        if self.binance_api_key in placeholder_values:
+            return False
+        if self.binance_secret_key in placeholder_values:
+            return False
+
+        return True
+
 
 # Singleton instance
 settings = Settings()
