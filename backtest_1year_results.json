@@ -261,10 +261,10 @@
     },
     {
       "strategy": "bollinger_mean_reversion",
-      "return": -132.32693919062956,
+      "return": -132.32511741136113,
       "trades": 3861,
       "win_rate": 12.224812224812224,
-      "sharpe": 0.20146755503682084
+      "sharpe": 0.20146755202333677
     }
   ],
   "stats": {
