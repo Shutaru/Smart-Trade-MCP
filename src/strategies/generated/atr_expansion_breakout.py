@@ -42,21 +42,21 @@ class AtrExpansionBreakout(BaseStrategy):
             r = df.iloc[i]
             close = r["close"]
             atr = r.get("atr", close*0.02)
-            # ATR expansion: compare to 20-bar average
+            # FIX: ATR expansion threshold relaxed from 1.5x to 1.25x
             atr_avg = df["atr"].iloc[i-20:i].mean() if "atr" in df.columns else atr
-            atr_expanding = atr > atr_avg * 1.5
-            ema_200 = r.get("ema_200", close)
+            atr_expanding = atr > atr_avg * 1.25  # Relaxed from 1.5
             st_trend = r.get("supertrend_trend", 0)
             prev_high, prev_low = df.iloc[i-1]["high"], df.iloc[i-1]["low"]
             
             if pos is None and atr_expanding:
-                if close > ema_200 and st_trend > 0 and close > prev_high:
+                # FIX: Removed EMA filter - just need SuperTrend + breakout
+                if st_trend > 0 and close > prev_high:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {"reason": "ATR expansion"}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {"atr_ratio": atr/atr_avg}))
                     pos = "LONG"
-                elif close < ema_200 and st_trend < 0 and close < prev_low:
+                elif st_trend < 0 and close < prev_low:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {"reason": "ATR expansion"}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {"atr_ratio": atr/atr_avg}))
                     pos = "SHORT"
         logger.info(f"AtrExpansionBreakout: {len(signals)} signals")
         return signals

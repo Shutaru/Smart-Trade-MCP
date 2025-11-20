@@ -39,23 +39,27 @@ class ChannelSqueezePlus(BaseStrategy):
         signals, pos = [], None
         for i in range(10, len(df)):
             r = df.iloc[i]
-            close = r["close"]
+            close, high, low = r["close"], r["high"], r["low"]
             atr = r.get("atr", close*0.02)
             bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
             kc_u, kc_l = r.get("keltner_upper", close), r.get("keltner_lower", close)
-            # Squeeze: BB inside Keltner
-            squeeze = bb_u < kc_u and bb_l > kc_l
-            squeeze_prev = df.iloc[i-1].get("bb_upper", close) < df.iloc[i-1].get("keltner_upper", close)
-            just_released = squeeze_prev and not squeeze
             
-            if pos is None and just_released:
-                if close > bb_u:
+            # FIX: Relaxed squeeze detection - allow partial squeeze
+            bb_width = (bb_u - bb_l) / close if close > 0 else 0
+            kc_width = (kc_u - kc_l) / close if close > 0 else 0
+            is_squeezed = bb_width < kc_width * 0.85  # Relaxed from exact inside check
+            
+            if pos is None and is_squeezed:
+                # FIX: Don't wait for release, enter during squeeze if breakout
+                if high > bb_u:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.85, sl, tp, {}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.85, sl, tp, 
+                                        {"bb_width": bb_width, "kc_width": kc_width}))
                     pos = "LONG"
-                elif close < bb_l:
+                elif low < bb_l:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.85, sl, tp, {}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.85, sl, tp, 
+                                        {"bb_width": bb_width, "kc_width": kc_width}))
                     pos = "SHORT"
         logger.info(f"ChannelSqueezePlus: {len(signals)} signals")
         return signals

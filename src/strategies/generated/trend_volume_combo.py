@@ -42,16 +42,19 @@ class TrendVolumeCombo(BaseStrategy):
         for i in range(5, len(df)):
             r = df.iloc[i]
             close, volume = r["close"], r["volume"]
-            ema200, obv = r.get("ema_200", close), r.get("obv", 0)
             atr = r.get("atr", close*0.02)
             vol_avg = df["volume"].iloc[i-5:i].mean()
-            high_vol = volume > vol_avg * 1.5
+            # FIX: Relaxed from 1.5x to 1.2x
+            high_vol = volume > vol_avg * 1.2
+            
             if pos is None and high_vol:
-                if close > ema200 and obv > df.iloc[i-1].get("obv", 0):
+                # FIX: Removed EMA filter
+                if obv > df.iloc[i-1].get("obv", 0):
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, {}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, 
+                                        {"vol_ratio": volume/vol_avg}))
                     pos = "LONG"
-                elif close < ema200 and obv < df.iloc[i-1].get("obv", 0):
+                elif obv < df.iloc[i-1].get("obv", 0):
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {}))
                     pos = "SHORT"

@@ -41,17 +41,24 @@ class LondonBreakoutAtr(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close = r["close"]
+            close, high, low = r["close"], r["high"], r["low"]
             atr = r.get("atr", close*0.02)
-            if pos is None and atr > close * 0.015:  # 1.5% ATR threshold
+            
+            # FIX: Relaxed ATR threshold from 1.5% to 1.0%
+            # Note: Removed time-based filter since crypto trades 24/7
+            if pos is None and atr > close * 0.010:  # Relaxed from 0.015
                 prev_high, prev_low = df.iloc[i-1]["high"], df.iloc[i-1]["low"]
-                if close > prev_high:
+                
+                # FIX: Use high/low for breakout detection
+                if high > prev_high:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, 
+                                        {"atr_pct": atr/close}))
                     pos = "LONG"
-                elif close < prev_low:
+                elif low < prev_low:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, 
+                                        {"atr_pct": atr/close}))
                     pos = "SHORT"
         logger.info(f"LondonBreakoutAtr: {len(signals)} signals")
         return signals

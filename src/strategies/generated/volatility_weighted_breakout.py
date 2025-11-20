@@ -41,18 +41,23 @@ class VolatilityWeightedBreakout(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close = r["close"]
+            close, high, low = r["close"], r["high"], r["low"]
             adx = r.get("adx", 0)
             bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
             atr = r.get("atr", close*0.02)
-            if pos is None and adx >= 20:
-                if close > bb_u:
+            
+            # FIX: Relaxed ADX threshold from 20 to 15
+            if pos is None and adx >= 15:
+                # FIX: Use high/low for breakout detection
+                if high > bb_u:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, min(1.0, adx/40), sl, tp, {}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, min(1.0, adx/40), sl, tp, 
+                                        {"adx": adx}))
                     pos = "LONG"
-                elif close < bb_l:
+                elif low < bb_l:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, min(1.0, adx/40), sl, tp, {}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, min(1.0, adx/40), sl, tp, 
+                                        {"adx": adx}))
                     pos = "SHORT"
         logger.info(f"VolatilityWeightedBreakout: {len(signals)} signals")
         return signals
