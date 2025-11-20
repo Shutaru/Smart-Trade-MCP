@@ -46,10 +46,28 @@ class EmaStackRegimeFlip(BaseStrategy):
             e12p, e26p = p.get("ema_12", close), p.get("ema_26", close)
             atr = r.get("atr", close*0.02)
             flip_bull = e12p <= e26p and ema12 > ema26 and close > ema200
-            if pos is None and flip_bull:
-                sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
-                pos = "LONG"
+            flip_bear = e12p >= e26p and ema12 < ema26 and close < ema200
+            
+            if pos is None:
+                if flip_bull:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "LONG"
+                elif flip_bear:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit when EMA stack reverses
+            elif pos == "LONG" and ema12 < ema26:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "EMA stack reversed"}))
+                pos = None
+            
+            elif pos == "SHORT" and ema12 > ema26:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "EMA stack reversed"}))
+                pos = None
         logger.info(f"EmaStackRegimeFlip: {len(signals)} signals")
         return signals
 

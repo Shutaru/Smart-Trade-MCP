@@ -60,6 +60,17 @@ class TrendVolumeCombo(BaseStrategy):
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, 
                                         {"vol_ratio": volume/vol_avg}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit when OBV reverses
+            elif pos == "LONG" and obv < df.iloc[i-1].get("obv", 0):
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "OBV reversed"}))
+                pos = None
+            
+            elif pos == "SHORT" and obv > df.iloc[i-1].get("obv", 0):
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "OBV reversed"}))
+                pos = None
         logger.info(f"TrendVolumeCombo: {len(signals)} signals")
         return signals
 

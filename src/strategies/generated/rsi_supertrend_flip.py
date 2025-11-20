@@ -20,6 +20,7 @@ class RsiSupertrendFlip(BaseStrategy):
             r, p = df.iloc[i], df.iloc[i - 1]
             st_trend, st_prev = r.get("supertrend_trend", 0), p.get("supertrend_trend", 0)
             rsi, atr = r.get("rsi", 50), r.get("atr", r["close"] * 0.02)
+            
             if pos is None and st_trend != st_prev:
                 if st_trend > 0 and 40 < rsi < 60:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, r["close"], atr)
@@ -29,6 +30,17 @@ class RsiSupertrendFlip(BaseStrategy):
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, r["close"], atr)
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.8, sl, tp, {}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit when SuperTrend reverses
+            elif pos == "LONG" and st_trend < 0:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], r["close"],
+                                    metadata={"reason": "SuperTrend reversed"}))
+                pos = None
+            
+            elif pos == "SHORT" and st_trend > 0:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], r["close"],
+                                    metadata={"reason": "SuperTrend reversed"}))
+                pos = None
         logger.info(f"RsiSupertrendFlip: {len(signals)} signals")
         return signals
 

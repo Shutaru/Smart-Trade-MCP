@@ -50,6 +50,23 @@ class ObvTrendConfirmation(BaseStrategy):
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, r["close"], atr)
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.7, sl, tp, {}))
                     pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit when OBV stops rising OR price crosses EMA200
+            elif pos == "LONG":
+                obv_falling = obv < obv_prev
+                price_below_ema = r["close"] < ema200
+                if obv_falling or price_below_ema:
+                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], r["close"],
+                                        metadata={"reason": "OBV stopped rising or trend reversed"}))
+                    pos = None
+            
+            elif pos == "SHORT":
+                obv_rising_now = obv > obv_prev and obv > df.iloc[i-5].get("obv", 0)
+                price_above_ema = r["close"] > ema200
+                if obv_rising_now or price_above_ema:
+                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], r["close"],
+                                        metadata={"reason": "OBV started rising or trend reversed"}))
+                    pos = None
         logger.info(f"ObvTrendConfirmation: {len(signals)} signals")
         return signals
 
