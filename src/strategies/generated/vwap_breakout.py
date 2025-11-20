@@ -45,15 +45,16 @@ class VwapBreakout(BaseStrategy):
             vwap = r.get("vwap", close)
             rsi, atr = r.get("rsi", 50), r.get("atr", close*0.02)
             if pos is None:
-                # LONG: break above VWAP with momentum
-                if close > vwap * 1.002 and rsi > 50 and rsi < 70:
+                # FIX: Relaxed VWAP breakout threshold from 1.002 to 1.001 (0.2% to 0.1%)
+                # Use high for breakout detection
+                if r["high"] > vwap * 1.001 and 45 < rsi < 75:  # Wider RSI range
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {"vwap_dist": (close-vwap)/vwap}))
                     pos = "LONG"
-                # SHORT: break below VWAP
-                elif close < vwap * 0.998 and rsi < 50 and rsi > 30:
+                # Use low for breakdown
+                elif r["low"] < vwap * 0.999 and 25 < rsi < 55:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {"vwap_dist": (close-vwap)/vwap}))
                     pos = "SHORT"
             elif pos == "LONG" and close < vwap:
                 signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={}))

@@ -56,11 +56,11 @@ class DonchianContinuation(BaseStrategy):
             
             # LONG entry
             if position is None:
-                long_filters = close > ema_200 and supertrend_trend > 0 and adx >= 18
+                # Removed EMA filter, relaxed ADX
+                long_filters = supertrend_trend > 0 and adx >= 15  # Relaxed from 18
                 
-                # FIX: Use previous donchian_upper for breakout detection
                 prev_don_upper = df.iloc[i-1].get("donchian_upper", close) if i > 0 else donchian_upper
-                if long_filters and row["high"] > prev_don_upper and adx > adx_5ago:
+                if long_filters and row["high"] > prev_don_upper:  # Removed ADX rising requirement
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(
                         type=SignalType.LONG,
@@ -69,16 +69,15 @@ class DonchianContinuation(BaseStrategy):
                         confidence=min(1.0, adx / 40),
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={"adx": adx, "reason": "Donchian breakout + ADX rising"},
+                        metadata={"adx": adx, "reason": "Donchian breakout"},
                     ))
                     position = "LONG"
             
                 # SHORT entry
-                short_filters = close < ema_200 and supertrend_trend < 0 and adx >= 18
+                short_filters = supertrend_trend < 0 and adx >= 15
                 
-                # FIX: Use previous donchian_lower for breakdown detection
                 prev_don_lower = df.iloc[i-1].get("donchian_lower", close) if i > 0 else donchian_lower
-                if short_filters and row["low"] < prev_don_lower and adx > adx_5ago:
+                if short_filters and row["low"] < prev_don_lower:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(
                         type=SignalType.SHORT,
@@ -87,7 +86,7 @@ class DonchianContinuation(BaseStrategy):
                         confidence=min(1.0, adx / 40),
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={"adx": adx, "reason": "Donchian breakdown + ADX rising"},
+                        metadata={"adx": adx, "reason": "Donchian breakdown"},
                     ))
                     position = "SHORT"
             

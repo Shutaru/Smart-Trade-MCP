@@ -44,24 +44,23 @@ class MacdZeroTrend(BaseStrategy):
             
             # LONG
             if position is None:
-                long_ok = close > ema_200 and supertrend_trend > 0 and adx >= 18
-                if long_ok and macd_hist > 0 and rsi <= 70 and close > prev_high:
+                # Just MACD > 0, SuperTrend bullish, ADX > 15
+                if macd_hist > 0 and supertrend_trend > 0 and adx >= 15 and 30 < rsi < 75:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(
                         type=SignalType.LONG, timestamp=timestamp, price=close,
                         confidence=min(1.0, adx / 40), stop_loss=sl, take_profit=tp,
-                        metadata={"macd_hist": macd_hist, "reason": "MACD above zero + breakout"}
+                        metadata={"macd_hist": macd_hist, "adx": adx}
                     ))
                     position = "LONG"
             
                 # SHORT
-                short_ok = close < ema_200 and supertrend_trend < 0 and adx >= 18
-                if short_ok and macd_hist < 0 and rsi >= 30 and close < prev_low:
+                elif macd_hist < 0 and supertrend_trend < 0 and adx >= 15 and 25 < rsi < 70:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(
                         type=SignalType.SHORT, timestamp=timestamp, price=close,
                         confidence=min(1.0, adx / 40), stop_loss=sl, take_profit=tp,
-                        metadata={"macd_hist": macd_hist, "reason": "MACD below zero + breakdown"}
+                        metadata={"macd_hist": macd_hist, "adx": adx}
                     ))
                     position = "SHORT"
             

@@ -73,22 +73,20 @@ class TrendflowSupertrend(BaseStrategy):
             supertrend_bull = ema20 > ema200
             supertrend_bear = ema20 < ema200
             
-            prev_high = prev_row["high"]
-            prev_low = prev_row["low"]
+            # Get actual SuperTrend indicator
+            st_trend = row.get("supertrend_trend", 0)
+            st_trend_prev = prev_row.get("supertrend_trend", 0)
+            
+            # FIX: Simplified - just need SuperTrend flip + basic filters
+            supertrend_flip_bull = st_trend > 0 and st_trend_prev <= 0
+            supertrend_flip_bear = st_trend < 0 and st_trend_prev >= 0
             
             timestamp = row["timestamp"]
             
-            # LONG signals
-            if position is None and adx >= self.adx_threshold and close > ema200:
-                breakout = close > prev_high
-                pullback = (
-                    self.rsi_pullback_min <= rsi <= self.rsi_pullback_max
-                    and close > ema20
-                )
-                
-                if supertrend_bull and (breakout or pullback):
+            # FIX: LONG - just SuperTrend flip + ADX > 15 (relaxed from 18)
+            if position is None and adx >= 15:
+                if supertrend_flip_bull and 30 < rsi < 70:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    
                     signals.append(Signal(
                         type=SignalType.LONG,
                         timestamp=timestamp,
@@ -96,25 +94,14 @@ class TrendflowSupertrend(BaseStrategy):
                         confidence=min(1.0, adx / 40),
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={
-                            "adx": adx,
-                            "rsi": rsi,
-                            "reason": "breakout" if breakout else "pullback",
-                        },
+                        metadata={"adx": adx, "rsi": rsi, "reason": "SuperTrend flip bull"},
                     ))
                     position = "LONG"
             
-            # SHORT signals
-            elif position is None and adx >= self.adx_threshold and close < ema200:
-                breakdown = close < prev_low
-                pullback = (
-                    45 <= rsi <= 60  # Slightly different for SHORT
-                    and close < ema20
-                )
-                
-                if supertrend_bear and (breakdown or pullback):
+            # FIX: SHORT - just SuperTrend flip + ADX > 15
+            elif position is None and adx >= 15:
+                if supertrend_flip_bear and 30 < rsi < 70:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    
                     signals.append(Signal(
                         type=SignalType.SHORT,
                         timestamp=timestamp,
@@ -122,30 +109,26 @@ class TrendflowSupertrend(BaseStrategy):
                         confidence=min(1.0, adx / 40),
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={
-                            "adx": adx,
-                            "rsi": rsi,
-                            "reason": "breakdown" if breakdown else "pullback",
-                        },
+                        metadata={"adx": adx, "rsi": rsi, "reason": "SuperTrend flip bear"},
                     ))
                     position = "SHORT"
             
-            # Exit signals (simplified - based on trend reversal)
-            elif position == "LONG" and supertrend_bear:
+            # Exit on SuperTrend reverse
+            elif position == "LONG" and st_trend < 0:
                 signals.append(Signal(
                     type=SignalType.CLOSE_LONG,
                     timestamp=timestamp,
                     price=close,
-                    metadata={"reason": "trend_reversal"},
+                    metadata={"reason": "SuperTrend reversed"},
                 ))
                 position = None
             
-            elif position == "SHORT" and supertrend_bull:
+            elif position == "SHORT" and st_trend > 0:
                 signals.append(Signal(
                     type=SignalType.CLOSE_SHORT,
                     timestamp=timestamp,
                     price=close,
-                    metadata={"reason": "trend_reversal"},
+                    metadata={"reason": "SuperTrend reversed"},
                 ))
                 position = None
         

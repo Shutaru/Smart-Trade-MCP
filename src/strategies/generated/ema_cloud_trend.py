@@ -60,41 +60,38 @@ class EmaCloudTrend(BaseStrategy):
             
             # LONG entry
             if position is None and close > ema_200:
-                pullback = low <= ema_26 or low <= ema_12
-                rsi_ok = 40 <= rsi <= 55
-                trigger = close > ema_12_prev or close > prev_high
+                # Simplified: Just need close above EMA200 and cross above EMA12
+                bullish_cross = close > ema_12 and prev_row["close"] <= ema_12_prev
+                rsi_ok = 35 <= rsi <= 65  # Wider RSI range
                 
-                if pullback and rsi_ok and trigger:
+                if bullish_cross and rsi_ok:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    
                     signals.append(Signal(
                         type=SignalType.LONG,
                         timestamp=timestamp,
                         price=close,
-                        confidence=1.0 - (rsi / 100),
+                        confidence=0.7,
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={"rsi": rsi, "reason": "EMA cloud pullback resume"},
+                        metadata={"rsi": rsi, "reason": "EMA12 bullish cross"},
                     ))
                     position = "LONG"
             
-            # SHORT entry
+            # SHORT entry - simplified
             elif position is None and close < ema_200:
-                pullback = high >= ema_26 or high >= ema_12
-                rsi_ok = 45 <= rsi <= 60
-                trigger = close < ema_12_prev or close < prev_low
+                bearish_cross = close < ema_12 and prev_row["close"] >= ema_12_prev
+                rsi_ok = 35 <= rsi <= 65
                 
-                if pullback and rsi_ok and trigger:
+                if bearish_cross and rsi_ok:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    
                     signals.append(Signal(
                         type=SignalType.SHORT,
                         timestamp=timestamp,
                         price=close,
-                        confidence=(rsi - 50) / 50,
+                        confidence=0.7,
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={"rsi": rsi, "reason": "EMA cloud pullback down"},
+                        metadata={"rsi": rsi, "reason": "EMA12 bearish cross"},
                     ))
                     position = "SHORT"
             

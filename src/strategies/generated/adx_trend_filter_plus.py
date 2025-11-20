@@ -42,23 +42,31 @@ class AdxTrendFilterPlus(BaseStrategy):
             
             # LONG
             if position is None and close > ema_200:
-                if adx >= 25 and 42 <= rsi <= 55 and close > ema_12_prev:
+                if adx >= 20 and 35 <= rsi <= 65:  # Relaxed from ADX>=25, RSI 42-55
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(
-                        type=SignalType.LONG, timestamp=timestamp, price=close,
-                        confidence=min(1.0, adx / 50), stop_loss=sl, take_profit=tp,
-                        metadata={"adx": adx, "rsi": rsi, "reason": "ADX strong trend + RSI pullback"}
+                        type=SignalType.LONG,
+                        timestamp=timestamp,
+                        price=close,
+                        confidence=min(1.0, adx / 40),
+                        stop_loss=sl,
+                        take_profit=tp,
+                        metadata={"adx": adx, "rsi": rsi},
                     ))
                     position = "LONG"
             
             # SHORT
             elif position is None and close < ema_200:
-                if adx >= 25 and 45 <= rsi <= 58 and close < ema_12_prev:
+                if adx >= 20 and 35 <= rsi <= 65:  # Relaxed from ADX>=25, RSI 45-58
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(
-                        type=SignalType.SHORT, timestamp=timestamp, price=close,
-                        confidence=min(1.0, adx / 50), stop_loss=sl, take_profit=tp,
-                        metadata={"adx": adx, "rsi": rsi, "reason": "ADX strong trend + RSI pullback"}
+                        type=SignalType.SHORT,
+                        timestamp=timestamp,
+                        price=close,
+                        confidence=min(1.0, adx / 40),
+                        stop_loss=sl,
+                        take_profit=tp,
+                        metadata={"adx": adx, "rsi": rsi},
                     ))
                     position = "SHORT"
             

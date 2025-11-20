@@ -42,6 +42,7 @@ class TrendVolumeCombo(BaseStrategy):
         for i in range(5, len(df)):
             r = df.iloc[i]
             close, volume = r["close"], r["volume"]
+            obv = r.get("obv", 0)
             atr = r.get("atr", close*0.02)
             vol_avg = df["volume"].iloc[i-5:i].mean()
             # FIX: Relaxed from 1.5x to 1.2x
@@ -56,7 +57,8 @@ class TrendVolumeCombo(BaseStrategy):
                     pos = "LONG"
                 elif obv < df.iloc[i-1].get("obv", 0):
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, 
+                                        {"vol_ratio": volume/vol_avg}))
                     pos = "SHORT"
         logger.info(f"TrendVolumeCombo: {len(signals)} signals")
         return signals

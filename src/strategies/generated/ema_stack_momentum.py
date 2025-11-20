@@ -40,28 +40,40 @@ class EmaStackMomentum(BaseStrategy):
         """
         signals, pos = [], None
         for i in range(1, len(df)):
-            r = df.iloc[i]
+            r, p = df.iloc[i], df.iloc[i-1]
             close = r["close"]
             ema12, ema26, ema200 = r.get("ema_12", close), r.get("ema_26", close), r.get("ema_200", close)
             rsi, macd_hist = r.get("rsi", 50), r.get("macd_hist", 0)
             atr = r.get("atr", close*0.02)
-            # EMA stack aligned
-            stack_bull = ema12 > ema26 > ema200
-            stack_bear = ema12 < ema26 < ema200
+            
+            # FIX: Relaxed - partial stack instead of perfect alignment
+            # LONG: Just need 12 > 26 (don't need 26 > 200)
+            partial_stack_bull = ema12 > ema26
+            partial_stack_bear = ema12 < ema26
+            
+            # FIX: Detect momentum surge
+            macd_prev = p.get("macd_hist", 0)
+            macd_surging = abs(macd_hist) > abs(macd_prev) * 1.1
+            
             if pos is None:
-                if stack_bull and macd_hist > 0 and 40 < rsi < 70:
+                # FIX: Relaxed conditions - partial stack + MACD surge
+                if partial_stack_bull and macd_hist > 0 and macd_surging and 35 < rsi < 75:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, 
+                                        {"ema12": ema12, "ema26": ema26, "macd_hist": macd_hist}))
                     pos = "LONG"
-                elif stack_bear and macd_hist < 0 and 30 < rsi < 60:
+                elif partial_stack_bear and macd_hist < 0 and macd_surging and 25 < rsi < 65:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, 
+                                        {"ema12": ema12, "ema26": ema26, "macd_hist": macd_hist}))
                     pos = "SHORT"
-            elif pos == "LONG" and (not stack_bull or macd_hist < 0):
-                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={}))
+            
+            # Exit when MACD reverses
+            elif pos == "LONG" and macd_hist < 0:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={"reason": "MACD reversed"}))
                 pos = None
-            elif pos == "SHORT" and (not stack_bear or macd_hist > 0):
-                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={}))
+            elif pos == "SHORT" and macd_hist > 0:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={"reason": "MACD reversed"}))
                 pos = None
         logger.info(f"EmaStackMomentum: {len(signals)} signals")
         return signals
