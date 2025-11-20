@@ -1,0 +1,124 @@
+{
+  "date": "2025-11-20T19:05:50.361613",
+  "strategies_tested": 6,
+  "total_before_trades": 6,
+  "total_after_trades": 1574,
+  "avg_before_return": -0.09166666666666667,
+  "avg_after_return": -14.04835910952454,
+  "results": [
+    {
+      "strategy": "multi_oscillator_confluence",
+      "before": {
+        "return": 0.21,
+        "trades": 1,
+        "win_rate": 100.0
+      },
+      "after": {
+        "return": 15.269384914212857,
+        "trades": 240,
+        "win_rate": 66.25
+      },
+      "improvement": {
+        "trades": 239,
+        "trades_pct": 23900.0,
+        "return": 15.059384914212856,
+        "win_rate": -33.75
+      }
+    },
+    {
+      "strategy": "triple_momentum_confluence",
+      "before": {
+        "return": -0.03,
+        "trades": 1,
+        "win_rate": 0.0
+      },
+      "after": {
+        "return": -11.85213889251716,
+        "trades": 493,
+        "win_rate": 28.397565922920894
+      },
+      "improvement": {
+        "trades": 492,
+        "trades_pct": 49200.0,
+        "return": -11.822138892517161,
+        "win_rate": 28.397565922920894
+      }
+    },
+    {
+      "strategy": "donchian_volatility_breakout",
+      "before": {
+        "return": -0.19,
+        "trades": 1,
+        "win_rate": 0.0
+      },
+      "after": {
+        "return": -19.14296752583181,
+        "trades": 226,
+        "win_rate": 28.31858407079646
+      },
+      "improvement": {
+        "trades": 225,
+        "trades_pct": 22500.0,
+        "return": -18.95296752583181,
+        "win_rate": 28.31858407079646
+      }
+    },
+    {
+      "strategy": "atr_expansion_breakout",
+      "before": {
+        "return": -0.24,
+        "trades": 1,
+        "win_rate": 0.0
+      },
+      "after": {
+        "return": 2.215612455714222,
+        "trades": 22,
+        "win_rate": 54.54545454545454
+      },
+      "improvement": {
+        "trades": 21,
+        "trades_pct": 2100.0,
+        "return": 2.4556124557142223,
+        "win_rate": 54.54545454545454
+      }
+    },
+    {
+      "strategy": "channel_squeeze_plus",
+      "before": {
+        "return": -0.12,
+        "trades": 1,
+        "win_rate": 0.0
+      },
+      "after": {
+        "return": -37.80228033388969,
+        "trades": 347,
+        "win_rate": 0.8645533141210375
+      },
+      "improvement": {
+        "trades": 346,
+        "trades_pct": 34600.0,
+        "return": -37.68228033388969,
+        "win_rate": 0.8645533141210375
+      }
+    },
+    {
+      "strategy": "volatility_weighted_breakout",
+      "before": {
+        "return": -0.18,
+        "trades": 1,
+        "win_rate": 0.0
+      },
+      "after": {
+        "return": -32.97776527483567,
+        "trades": 246,
+        "win_rate": 2.4390243902439024
+      },
+      "improvement": {
+        "trades": 245,
+        "trades_pct": 24500.0,
+        "return": -32.79776527483567,
+        "win_rate": 2.4390243902439024
+      }
+    }
+  ]
+}

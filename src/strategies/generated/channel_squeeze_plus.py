@@ -48,6 +48,7 @@ class ChannelSqueezePlus(BaseStrategy):
             bb_width = (bb_u - bb_l) / close if close > 0 else 0
             kc_width = (kc_u - kc_l) / close if close > 0 else 0
             is_squeezed = bb_width < kc_width * 0.85  # Relaxed from exact inside check
+            bb_m = (bb_u + bb_l) / 2  # Calculate BB middle
             
             if pos is None and is_squeezed:
                 # FIX: Don't wait for release, enter during squeeze if breakout
@@ -63,8 +64,6 @@ class ChannelSqueezePlus(BaseStrategy):
                     pos = "SHORT"
             
             # FIX: ADD EXIT LOGIC - exit when returns to BB middle
-            bb_m = (bb_u + bb_l) / 2
-            
             elif pos == "LONG" and close <= bb_m:
                 signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
                                     metadata={"reason": "Returned to BB middle"}))
