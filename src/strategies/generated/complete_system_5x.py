@@ -36,11 +36,52 @@ class CompleteSystem5x(BaseStrategy):
             close = r["close"]
             ema200, rsi, macd_hist, adx = r.get("ema_200", close), r.get("rsi", 50), r.get("macd_hist", 0), r.get("adx", 0)
             st_trend, atr = r.get("supertrend_trend", 0), r.get("atr", close * 0.02)
-            # All conditions aligned for ultra-high confidence
-            if pos is None and close > ema200 and rsi > 50 and macd_hist > 0 and adx > 20 and st_trend > 0:
-                sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.95, sl, tp, {}))
-                pos = "LONG"
+            bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
+            
+            # All 5 confirmations for LONG
+            long_confirmations = sum([
+                close > ema200,
+                rsi > 50,
+                macd_hist > 0,
+                adx > 20,
+                st_trend > 0
+            ])
+            
+            # All 5 confirmations for SHORT
+            short_confirmations = sum([
+                close < ema200,
+                rsi < 50,
+                macd_hist < 0,
+                adx > 20,
+                st_trend < 0
+            ])
+            
+            if pos is None:
+                if long_confirmations >= 4:  # At least 4 of 5 confirmations
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.95, sl, tp,
+                                        {"confirmations": long_confirmations}))
+                    pos = "LONG"
+                elif short_confirmations >= 4:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.95, sl, tp,
+                                        {"confirmations": short_confirmations}))
+                    pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit when any confirmation fails
+            elif pos == "LONG":
+                confirmations_lost = long_confirmations < 3  # Needs at least 3 to stay
+                if confirmations_lost or st_trend < 0:
+                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                        metadata={"reason": "Confirmations failed"}))
+                    pos = None
+            
+            elif pos == "SHORT":
+                confirmations_lost = short_confirmations < 3
+                if confirmations_lost or st_trend > 0:
+                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                        metadata={"reason": "Confirmations failed"}))
+                    pos = None
         logger.info(f"CompleteSystem5x: {len(signals)} signals")
         return signals
 

@@ -69,14 +69,34 @@ class DoubleDonchianPullback(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close = r["close"]
+            close, low, high = r["close"], r["low"], r["high"]
             don_m = r.get("donchian_middle", close)
+            don_u = r.get("donchian_upper", close)
+            don_l = r.get("donchian_lower", close)
             atr = r.get("atr", close*0.02)
+            prev_don_u = df.iloc[i-1].get("donchian_upper", close) if i > 0 else don_u
+            prev_don_l = df.iloc[i-1].get("donchian_lower", close) if i > 0 else don_l
+            
             if pos is None and abs(close - don_m) < atr * 0.5:
                 if close > don_m:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
                     pos = "LONG"
+                elif close < don_m:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {}))
+                    pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit on opposite breakout
+            elif pos == "LONG" and low < prev_don_l:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "Opposite breakout"}))
+                pos = None
+            
+            elif pos == "SHORT" and high > prev_don_u:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "Opposite breakout"}))
+                pos = None
         logger.info(f"DoubleDonchianPullback: {len(signals)} signals")
         return signals
 
@@ -108,14 +128,33 @@ class ObvConfirmationBreakoutPlus(BaseStrategy):
         signals, pos = [], None
         for i in range(5, len(df)):
             r = df.iloc[i]
-            close = r["close"]
+            close, low = r["close"], r["low"]
             bb_u = r.get("bb_upper", close)
+            bb_l = r.get("bb_lower", close)
             obv, atr = r.get("obv", 0), r.get("atr", close*0.02)
             obv_rising = obv > df.iloc[i-5].get("obv", 0)
-            if pos is None and close > bb_u and obv_rising:
-                sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
-                pos = "LONG"
+            obv_falling = obv < df.iloc[i-5].get("obv", 0)
+            
+            if pos is None:
+                if close > bb_u and obv_rising:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "LONG"
+                elif low < bb_l and obv_falling:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit when OBV diverges
+            elif pos == "LONG" and obv < df.iloc[i-1].get("obv", 0):
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "OBV diverged"}))
+                pos = None
+            
+            elif pos == "SHORT" and obv > df.iloc[i-1].get("obv", 0):
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "OBV diverged"}))
+                pos = None
         logger.info(f"ObvConfirmationBreakoutPlus: {len(signals)} signals")
         return signals
 

@@ -40,15 +40,46 @@ class RegimeAdaptiveCore(BaseStrategy):
             close = r["close"]
             adx, ema200, rsi, atr = r.get("adx", 0), r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
             trending = adx > 25
+            ranging = adx <= 25
+            
             if pos is None:
+                # TRENDING regime - follow trend
                 if trending and close > ema200 and rsi > 50:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, 
+                                        {"regime": "trending"}))
                     pos = "LONG"
-                elif not trending and rsi < 30:
+                elif trending and close < ema200 and rsi < 50:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp,
+                                        {"regime": "trending"}))
+                    pos = "SHORT"
+                # RANGING regime - mean reversion
+                elif ranging and rsi < 30:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp,
+                                        {"regime": "ranging"}))
                     pos = "LONG"
+                elif ranging and rsi > 70:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp,
+                                        {"regime": "ranging"}))
+                    pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit when regime changes
+            elif pos == "LONG":
+                regime_changed = (trending and close < ema200) or (ranging and rsi > 70)
+                if regime_changed:
+                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                        metadata={"reason": "Regime changed"}))
+                    pos = None
+            
+            elif pos == "SHORT":
+                regime_changed = (trending and close > ema200) or (ranging and rsi < 30)
+                if regime_changed:
+                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                        metadata={"reason": "Regime changed"}))
+                    pos = None
         logger.info(f"RegimeAdaptiveCore: {len(signals)} signals")
         return signals
 
