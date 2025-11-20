@@ -53,7 +53,8 @@ class DoubleDonchianPullback(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, don_m = r["close"], r.get("donchian_middle", close)
+            close = r["close"]
+            don_m = r.get("donchian_middle", close)
             atr = r.get("atr", close*0.02)
             if pos is None and abs(close - don_m) < atr * 0.5:
                 if close > don_m:
@@ -72,7 +73,8 @@ class PurePriceActionDonchian(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, don_u = r["close"], r.get("donchian_upper", close)
+            close = r["close"]
+            don_u = r.get("donchian_upper", close)
             atr = r.get("atr", close*0.02)
             if pos is None and close > don_u:
                 sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
@@ -90,7 +92,8 @@ class ObvConfirmationBreakoutPlus(BaseStrategy):
         signals, pos = [], None
         for i in range(5, len(df)):
             r = df.iloc[i]
-            close, bb_u = r["close"], r.get("bb_upper", close)
+            close = r["close"]
+            bb_u = r.get("bb_upper", close)
             obv, atr = r.get("obv", 0), r.get("atr", close*0.02)
             obv_rising = obv > df.iloc[i-5].get("obv", 0)
             if pos is None and close > bb_u and obv_rising:

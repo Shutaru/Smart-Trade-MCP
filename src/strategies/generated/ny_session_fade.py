@@ -18,13 +18,9 @@ class NySessionFade(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, bb_u, bb_l, rsi, atr = (
-                r["close"],
-                r.get("bb_upper", close),
-                r.get("bb_lower", close),
-                r.get("rsi", 50),
-                r.get("atr", close * 0.02),
-            )
+            close = r["close"]
+            bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
+            rsi, atr = r.get("rsi", 50), r.get("atr", close * 0.02)
             if pos is None:
                 if close >= bb_u and rsi > 70:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)

@@ -39,7 +39,8 @@ class ChannelSqueezePlus(BaseStrategy):
         signals, pos = [], None
         for i in range(10, len(df)):
             r = df.iloc[i]
-            close, atr = r["close"], r.get("atr", close*0.02)
+            close = r["close"]
+            atr = r.get("atr", close*0.02)
             bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
             kc_u, kc_l = r.get("keltner_upper", close), r.get("keltner_lower", close)
             # Squeeze: BB inside Keltner

@@ -40,7 +40,8 @@ class AtrExpansionBreakout(BaseStrategy):
         signals, pos = [], None
         for i in range(20, len(df)):
             r = df.iloc[i]
-            close, atr = r["close"], r.get("atr", close*0.02)
+            close = r["close"]
+            atr = r.get("atr", close*0.02)
             # ATR expansion: compare to 20-bar average
             atr_avg = df["atr"].iloc[i-20:i].mean() if "atr" in df.columns else atr
             atr_expanding = atr > atr_avg * 1.5

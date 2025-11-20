@@ -37,7 +37,8 @@ class RegimeAdaptiveCore(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, adx, ema200, rsi, atr = r["close"], r.get("adx", 0), r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
+            close = r["close"]
+            adx, ema200, rsi, atr = r.get("adx", 0), r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
             trending = adx > 25
             if pos is None:
                 if trending and close > ema200 and rsi > 50:

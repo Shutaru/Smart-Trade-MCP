@@ -20,7 +20,8 @@ class DoubleDonchianPullback(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, don_m, atr = r["close"], r.get("donchian_middle", close), r.get("atr", close*0.02)
+            close = r["close"]
+            don_m, atr = r.get("donchian_middle", close), r.get("atr", close*0.02)
             if pos is None and abs(close - don_m) < atr * 0.5 and close > don_m:
                 sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                 signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
@@ -40,7 +41,8 @@ class PurePriceActionDonchian(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, don_u, atr = r["close"], r.get("donchian_upper", close), r.get("atr", close*0.02)
+            close = r["close"]
+            don_u, atr = r.get("donchian_upper", close), r.get("atr", close*0.02)
             if pos is None and close > don_u:
                 sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                 signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, {}))
@@ -60,7 +62,8 @@ class ObvConfirmationBreakoutPlus(BaseStrategy):
         signals, pos = [], None
         for i in range(5, len(df)):
             r = df.iloc[i]
-            close, bb_u, obv, atr = r["close"], r.get("bb_upper", close), r.get("obv", 0), r.get("atr", close*0.02)
+            close = r["close"]
+            bb_u, obv, atr = r.get("bb_upper", close), r.get("obv", 0), r.get("atr", close*0.02)
             obv_rising = obv > df.iloc[i-5].get("obv", 0)
             if pos is None and close > bb_u and obv_rising:
                 sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
@@ -81,7 +84,8 @@ class Ema200TapReversion(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, low, ema200, rsi, atr = r["close"], r["low"], r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
+            close = r["close"]
+            low, ema200, rsi, atr = r["low"], r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
             tap_ema = abs(low - ema200) < atr * 0.5
             if pos is None and close > ema200 and tap_ema and 40 < rsi < 55:
                 sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
@@ -102,7 +106,8 @@ class NySessionFade(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, bb_u, bb_l, rsi, atr = r["close"], r.get("bb_upper", close), r.get("bb_lower", close), r.get("rsi", 50), r.get("atr", close*0.02)
+            close = r["close"]
+            bb_u, bb_l, rsi, atr = r.get("bb_upper", close), r.get("bb_lower", close), r.get("rsi", 50), r.get("atr", close*0.02)
             if pos is None:
                 if close >= bb_u and rsi > 70:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
@@ -123,7 +128,8 @@ class RegimeAdaptiveCore(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, adx, ema200, rsi, atr = r["close"], r.get("adx", 0), r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
+            close = r["close"]
+            adx, ema200, rsi, atr = r.get("adx", 0), r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
             trending = adx > 25
             if pos is None:
                 if trending and close > ema200 and rsi > 50:

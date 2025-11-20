@@ -41,7 +41,8 @@ class VwapBreakout(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, vwap = r["close"], r.get("vwap", close)
+            close = r["close"]
+            vwap = r.get("vwap", close)
             rsi, atr = r.get("rsi", 50), r.get("atr", close*0.02)
             if pos is None:
                 # LONG: break above VWAP with momentum

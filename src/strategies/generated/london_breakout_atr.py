@@ -41,8 +41,8 @@ class LondonBreakoutAtr(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, atr = r["close"], r.get("atr", close*0.02)
-            # Simplified: any breakout in high ATR
+            close = r["close"]
+            atr = r.get("atr", close*0.02)
             if pos is None and atr > close * 0.015:  # 1.5% ATR threshold
                 prev_high, prev_low = df.iloc[i-1]["high"], df.iloc[i-1]["low"]
                 if close > prev_high:

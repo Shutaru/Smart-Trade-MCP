@@ -41,7 +41,8 @@ class EmaStackRegimeFlip(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r, p = df.iloc[i], df.iloc[i-1]
-            close, ema12, ema26, ema200 = r["close"], r.get("ema_12", r["close"]), r.get("ema_26", r["close"]), r.get("ema_200", r["close"])
+            close = r["close"]
+            ema12, ema26, ema200 = r.get("ema_12", close), r.get("ema_26", close), r.get("ema_200", close)
             e12p, e26p = p.get("ema_12", close), p.get("ema_26", close)
             atr = r.get("atr", close*0.02)
             flip_bull = e12p <= e26p and ema12 > ema26 and close > ema200

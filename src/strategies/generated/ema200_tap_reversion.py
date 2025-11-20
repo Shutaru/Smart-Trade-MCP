@@ -37,7 +37,8 @@ class Ema200TapReversion(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, low, ema200, rsi, atr = r["close"], r["low"], r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
+            close = r["close"]
+            low, ema200, rsi, atr = r["low"], r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
             tap_ema = abs(low - ema200) < atr * 0.5
             if pos is None and close > ema200 and tap_ema and 40 < rsi < 55:
                 sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)

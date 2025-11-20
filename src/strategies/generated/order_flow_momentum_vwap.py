@@ -16,7 +16,8 @@ class OrderFlowMomentumVwap(BaseStrategy):
         signals, pos = [], None
         for i in range(5, len(df)):
             r = df.iloc[i]
-            close, vwap = r["close"], r.get("vwap", close)
+            close = r["close"]
+            vwap = r.get("vwap", close)
             obv, atr = r.get("obv", 0), r.get("atr", close * 0.02)
             obv_rising = obv > df.iloc[i - 5].get("obv", 0)
             if pos is None:

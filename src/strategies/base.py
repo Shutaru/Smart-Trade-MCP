@@ -166,10 +166,36 @@ class BaseStrategy(ABC):
                 return False
 
         # Check for required indicators
+        # Map indicator names to actual column names
+        indicator_columns_map = {
+            "bollinger": ["bb_upper", "bb_middle", "bb_lower"],
+            "keltner": ["keltner_upper", "keltner_middle", "keltner_lower"],
+            "donchian": ["donchian_upper", "donchian_middle", "donchian_lower"],
+            "macd": ["macd", "macd_signal", "macd_hist"],
+            "stochastic": ["stoch_k", "stoch_d"],
+            "ema": ["ema_12", "ema_26", "ema_50", "ema_200"],
+            "sma": ["sma_20", "sma_50", "sma_200"],
+            "rsi": ["rsi"],
+            "atr": ["atr"],
+            "adx": ["adx"],
+            "cci": ["cci"],
+            "mfi": ["mfi"],
+            "obv": ["obv"],
+            "supertrend": ["supertrend_trend", "supertrend_line"],
+            "vwap": ["vwap"],
+        }
+        
         required_indicators = self.get_required_indicators()
         for indicator in required_indicators:
-            # Handle multi-column indicators (e.g., 'macd' creates macd, macd_signal, macd_hist)
-            if indicator not in df.columns:
+            indicator_lower = indicator.lower()
+            
+            # Check if this indicator maps to specific columns
+            if indicator_lower in indicator_columns_map:
+                columns_to_check = indicator_columns_map[indicator_lower]
+                # Check if ANY of the columns exist (at least one)
+                if not any(col in df.columns for col in columns_to_check):
+                    logger.warning(f"Missing indicator '{indicator}' (looked for columns: {columns_to_check})")
+            elif indicator not in df.columns:
                 logger.warning(f"Missing indicator: {indicator}")
 
         return True

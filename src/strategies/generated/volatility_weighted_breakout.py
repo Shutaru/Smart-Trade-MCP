@@ -41,9 +41,10 @@ class VolatilityWeightedBreakout(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, atr = r["close"], r.get("atr", close*0.02)
-            bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
+            close = r["close"]
             adx = r.get("adx", 0)
+            bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
+            atr = r.get("atr", close*0.02)
             if pos is None and adx >= 20:
                 if close > bb_u:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)

@@ -41,7 +41,8 @@ class ObvConfirmationBreakoutPlus(BaseStrategy):
         signals, pos = [], None
         for i in range(5, len(df)):
             r = df.iloc[i]
-            close, bb_u, obv, atr = r["close"], r.get("bb_upper", close), r.get("obv", 0), r.get("atr", close*0.02)
+            close = r["close"]
+            bb_u, obv, atr = r.get("bb_upper", close), r.get("obv", 0), r.get("atr", close*0.02)
             obv_rising = obv > df.iloc[i-5].get("obv", 0)
             if pos is None and close > bb_u and obv_rising:
                 sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)

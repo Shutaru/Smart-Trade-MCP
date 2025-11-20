@@ -39,7 +39,8 @@ class VwapBandFadePro(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, vwap = r["close"], r.get("vwap", close)
+            close = r["close"]
+            vwap = r.get("vwap", close)
             atr, rsi = r.get("atr", close*0.02), r.get("rsi", 50)
             vwap_upper, vwap_lower = vwap + 2*atr, vwap - 2*atr
             if pos is None:
