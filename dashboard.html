@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Trade MCP - End-to-End Test Results</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+        
+        .section h2 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            transition: transform 0.3s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-card .label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .value {
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+        
+        .stat-card .unit {
+            font-size: 1.2em;
+            opacity: 0.8;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        th, td {
+            padding: 15px;
+            text-align: left;
+        }
+        
+        tbody tr {
+            border-bottom: 1px solid #eee;
+            transition: background 0.3s;
+        }
+        
+        tbody tr:hover {
+            background: #f8f9ff;
+        }
+        
+        tbody tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        
+        .rank {
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: white;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        
+        .rank.gold { background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); }
+        .rank.silver { background: linear-gradient(135deg, #C0C0C0 0%, #808080 100%); }
+        .rank.bronze { background: linear-gradient(135deg, #CD7F32 0%, #8B4513 100%); }
+        
+        .positive {
+            color: #10b981;
+            font-weight: bold;
+        }
+        
+        .negative {
+            color: #ef4444;
+            font-weight: bold;
+        }
+        
+        .regime-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin: 5px;
+        }
+        
+        .regime-trending-up {
+            background: #10b981;
+            color: white;
+        }
+        
+        .regime-trending-down {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .regime-ranging {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        .regime-volatile {
+            background: #8b5cf6;
+            color: white;
+        }
+        
+        .regime-consolidating {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .comparison-box {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+        
+        .comparison-card {
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .winner {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+        
+        .loser {
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+            color: white;
+        }
+        
+        .comparison-card h3 {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        .comparison-card .metric {
+            margin: 15px 0;
+            font-size: 1.1em;
+        }
+        
+        .comparison-card .metric .label {
+            opacity: 0.9;
+        }
+        
+        .comparison-card .metric .value {
+            float: right;
+            font-weight: bold;
+            font-size: 1.3em;
+        }
+        
+        footer {
+            background: #f9fafb;
+            padding: 30px;
+            text-align: center;
+            color: #6b7280;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        .chart-placeholder {
+            background: #f9fafb;
+            border: 2px dashed #d1d5db;
+            border-radius: 10px;
+            padding: 60px;
+            text-align: center;
+            color: #6b7280;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>?? Smart Trade MCP</h1>
+            <p>End-to-End System Test Results</p>
+        </header>
+        
+        <div class="content">
+            <!-- Overall Stats -->
+            <div class="section">
+                <h2>?? Overall Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="label">Strategies Tested</div>
+                        <div class="value" id="total-strategies">40</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Data Coverage</div>
+                        <div class="value" id="data-coverage">208</div>
+                        <div class="unit">days</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Total Candles</div>
+                        <div class="value" id="total-candles">5000</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Regime Periods</div>
+                        <div class="value" id="regime-periods">1</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Top 10 Strategies -->
+            <div class="section">
+                <h2>?? TOP 10 Strategies (Overall)</h2>
+                <table id="top-strategies-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Strategy</th>
+                            <th>Total Return</th>
+                            <th>Trades</th>
+                            <th>Win Rate</th>
+                            <th>Sharpe Ratio</th>
+                            <th>Max Drawdown</th>
+                        </tr>
+                    </thead>
+                    <tbody id="top-strategies-body">
+                        <!-- Will be filled by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Regime Distribution -->
+            <div class="section">
+                <h2>?? Market Regime Distribution</h2>
+                <div id="regime-distribution">
+                    <!-- Will be filled by JavaScript -->
+                </div>
+            </div>
+            
+            <!-- Final Comparison -->
+            <div class="section">
+                <h2>?? Final Comparison</h2>
+                <div class="comparison-box">
+                    <div class="comparison-card winner" id="best-single-card">
+                        <h3>?? Best Single Strategy</h3>
+                        <div class="metric">
+                            <span class="label">Strategy:</span>
+                            <span class="value" id="best-strategy-name">-</span>
+                        </div>
+                        <div class="metric">
+                            <span class="label">Total Return:</span>
+                            <span class="value" id="best-strategy-return">-</span>
+                        </div>
+                        <div class="metric">
+                            <span class="label">Total Trades:</span>
+                            <span class="value" id="best-strategy-trades">-</span>
+                        </div>
+                    </div>
+                    
+                    <div class="comparison-card loser" id="regime-aware-card">
+                        <h3>?? Regime-Aware Strategy</h3>
+                        <div class="metric">
+                            <span class="label">Total Return:</span>
+                            <span class="value" id="regime-return">-</span>
+                        </div>
+                        <div class="metric">
+                            <span class="label">Total Trades:</span>
+                            <span class="value" id="regime-trades">-</span>
+                        </div>
+                        <div class="metric">
+                            <span class="label">Improvement:</span>
+                            <span class="value" id="improvement">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>Smart Trade MCP - Autonomous Trading System</p>
+            <p>Generated: <span id="timestamp">-</span></p>
+        </footer>
+    </div>
+    
+    <script>
+        // Load results from JSON file
+        async function loadResults() {
+            try {
+                const response = await fetch('end_to_end_results.json');
+                const data = await response.json();
+                
+                // Update stats
+                document.getElementById('total-strategies').textContent = data.backtest_results.length;
+                
+                // Fill top 10 table
+                const tbody = document.getElementById('top-strategies-body');
+                data.backtest_results.slice(0, 10).forEach((result, index) => {
+                    const row = tbody.insertRow();
+                    
+                    let rankClass = '';
+                    if (index === 0) rankClass = 'gold';
+                    else if (index === 1) rankClass = 'silver';
+                    else if (index === 2) rankClass = 'bronze';
+                    
+                    row.innerHTML = `
+                        <td><span class="rank ${rankClass}">${index + 1}</span></td>
+                        <td>${result.strategy}</td>
+                        <td class="${result.total_return >= 0 ? 'positive' : 'negative'}">${result.total_return.toFixed(2)}%</td>
+                        <td>${result.total_trades}</td>
+                        <td>${result.win_rate.toFixed(1)}%</td>
+                        <td>${result.sharpe_ratio.toFixed(2)}</td>
+                        <td class="negative">${result.max_drawdown_pct.toFixed(1)}%</td>
+                    `;
+                });
+                
+                // Regime distribution
+                const regimeDiv = document.getElementById('regime-distribution');
+                let regimeHTML = '';
+                for (const [regime, pct] of Object.entries(data.regime_distribution)) {
+                    const regimeClass = 'regime-' + regime.toLowerCase().replace('_', '-');
+                    regimeHTML += `<span class="regime-badge ${regimeClass}">${regime}: ${pct}%</span>`;
+                }
+                regimeDiv.innerHTML = regimeHTML;
+                
+                // Best single strategy
+                const best = data.backtest_results[0];
+                document.getElementById('best-strategy-name').textContent = best.strategy;
+                document.getElementById('best-strategy-return').textContent = best.total_return.toFixed(2) + '%';
+                document.getElementById('best-strategy-trades').textContent = best.total_trades;
+                
+                // Regime-aware
+                document.getElementById('regime-return').textContent = data.regime_aware_result.total_return.toFixed(2) + '%';
+                document.getElementById('regime-trades').textContent = data.regime_aware_result.total_trades;
+                
+                const improvement = data.improvement;
+                const improvementEl = document.getElementById('improvement');
+                improvementEl.textContent = improvement.toFixed(2) + '%';
+                improvementEl.className = 'value ' + (improvement >= 0 ? 'positive' : 'negative');
+                
+                // Update card styles based on winner
+                if (improvement >= 0) {
+                    document.getElementById('regime-aware-card').className = 'comparison-card winner';
+                    document.getElementById('best-single-card').className = 'comparison-card loser';
+                }
+                
+            } catch (error) {
+                console.error('Error loading results:', error);
+            }
+            
+            // Update timestamp
+            document.getElementById('timestamp').textContent = new Date().toLocaleString();
+        }
+        
+        // Load on page load
+        loadResults();
+    </script>
+</body>
+</html>

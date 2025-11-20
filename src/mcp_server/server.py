@@ -311,6 +311,59 @@ class SmartTradeMCPServer:
                     },
                 ),
                 Tool(
+                    name="detect_market_regime",
+                    description="Detect current market regime - Returns regime type and recommended strategies. Critical for strategy selection.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "lookback": {
+                                "type": "integer",
+                                "description": "Number of candles to analyze",
+                                "default": 100,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="detect_historical_regimes",
+                    description="Detect regime changes across historical data - Shows which regimes existed when. Useful for regime-aware backtesting.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of historical candles",
+                                "default": 5000,
+                            },
+                            "window_size": {
+                                "type": "integer",
+                                "description": "Rolling window for detection",
+                                "default": 100,
+                            },
+                        },
+                    },
+                ),
+                Tool(
                     name="get_portfolio_status",
                     description="Get current portfolio holdings and performance",
                     inputSchema={
@@ -352,6 +405,10 @@ class SmartTradeMCPServer:
                 diagnose_strategy_failure,
                 suggest_parameter_fixes,
             )
+            from .tools.regime import (
+                detect_market_regime,
+                detect_historical_regimes,
+            )
 
             try:
                 if name == "get_market_data":
@@ -370,6 +427,10 @@ class SmartTradeMCPServer:
                     result = await diagnose_strategy_failure(**arguments)
                 elif name == "suggest_parameter_fixes":
                     result = await suggest_parameter_fixes(**arguments)
+                elif name == "detect_market_regime":
+                    result = await detect_market_regime(**arguments)
+                elif name == "detect_historical_regimes":
+                    result = await detect_historical_regimes(**arguments)
                 elif name == "get_portfolio_status":
                     result = await get_portfolio_status()
                 elif name == "list_strategies":

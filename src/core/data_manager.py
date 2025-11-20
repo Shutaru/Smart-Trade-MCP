@@ -197,9 +197,12 @@ class DataManager:
         start_date: datetime,
         end_date: Optional[datetime] = None,
         exchange: Optional[str] = None,
+        max_candles: Optional[int] = None,
     ) -> pd.DataFrame:
         """
-        Fetch historical data in chunks with rate limiting.
+        Fetch historical data in chunks with rate limiting and pagination.
+        
+        Automatically handles CCXT limitations and fetches multiple years of data.
 
         Args:
             symbol: Trading pair
@@ -207,6 +210,7 @@ class DataManager:
             start_date: Start date
             end_date: End date (defaults to now)
             exchange: Exchange name
+            max_candles: Maximum number of candles to fetch (None = unlimited)
 
         Returns:
             DataFrame with historical OHLCV data
@@ -224,34 +228,66 @@ class DataManager:
 
         # Calculate timeframe duration
         tf_minutes = self._parse_timeframe_to_minutes(timeframe)
-        chunk_size = 1000  # CCXT limit
+        chunk_size = 1000  # CCXT limit per request
+
+        total_fetched = 0
+        chunks_fetched = 0
 
         while current_since < end_date:
+            # Check if we've hit max_candles limit
+            if max_candles and total_fetched >= max_candles:
+                logger.info(f"Reached max_candles limit: {max_candles}")
+                break
+            
+            # Adjust chunk size if near limit
+            if max_candles:
+                remaining = max_candles - total_fetched
+                chunk_size = min(chunk_size, remaining)
+            
             # Fetch chunk
-            df = await self.fetch_ohlcv(
-                symbol=symbol,
-                timeframe=timeframe,
-                exchange=exchange,
-                since=current_since,
-                limit=chunk_size,
-                use_cache=False,  # Don't use cache for historical fetch
-            )
+            try:
+                df = await self.fetch_ohlcv(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    exchange=exchange,
+                    since=current_since,
+                    limit=chunk_size,
+                    use_cache=False,  # Don't use cache for historical fetch
+                )
+            except Exception as e:
+                logger.error(f"Error fetching chunk: {e}")
+                # Continue with what we have
+                break
 
             if df.empty:
+                logger.warning("Received empty data, stopping fetch")
                 break
 
             all_data.append(df)
+            total_fetched += len(df)
+            chunks_fetched += 1
+
+            # Progress logging
+            if chunks_fetched % 10 == 0:
+                logger.info(f"Progress: {total_fetched} candles fetched ({chunks_fetched} chunks)")
 
             # Move to next chunk
             last_timestamp = df["timestamp"].iloc[-1]
-            current_since = last_timestamp + timedelta(minutes=tf_minutes)
+            next_since = last_timestamp + timedelta(minutes=tf_minutes)
+            
+            # Prevent infinite loop if timestamp doesn't advance
+            if next_since <= current_since:
+                logger.warning("Timestamp not advancing, stopping")
+                break
+            
+            current_since = next_since
 
             # Check if we've reached the end
             if current_since >= end_date:
                 break
 
-            # Rate limiting
-            await asyncio.sleep(0.5)
+            # Rate limiting (respect exchange limits)
+            await asyncio.sleep(exchange_instance.rateLimit / 1000 if hasattr(self, '_exchange_instances') else 0.5)
 
         if not all_data:
             return pd.DataFrame(
@@ -271,7 +307,7 @@ class DataManager:
         # Cache the result
         await self.db.insert_candles(exchange, symbol, timeframe, result)
 
-        logger.info(f"Fetched {len(result)} total candles")
+        logger.info(f"? Fetched {len(result)} total candles in {chunks_fetched} chunks")
         return result
 
     @staticmethod
