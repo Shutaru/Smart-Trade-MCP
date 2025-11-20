@@ -16,11 +16,27 @@ class KeltnerPullbackContinuation(BaseStrategy):
             close = r["close"]
             kc_m, kc_l, kc_u = r.get("keltner_middle", close), r.get("keltner_lower", close), r.get("keltner_upper", close)
             ema200, atr = r.get("ema_200", close), r.get("atr", close*0.02)
+            
             if pos is None:
                 if close > ema200 and kc_l < close < kc_m:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, {}))
                     pos = "LONG"
+                elif close < ema200 and kc_m < close < kc_u:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {}))
+                    pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit when exits Keltner channel
+            elif pos == "LONG" and close < kc_l:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "Exited Keltner channel"}))
+                pos = None
+            
+            elif pos == "SHORT" and close > kc_u:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "Exited Keltner channel"}))
+                pos = None
         logger.info(f"KeltnerPullbackContinuation: {len(signals)} signals")
         return signals
 

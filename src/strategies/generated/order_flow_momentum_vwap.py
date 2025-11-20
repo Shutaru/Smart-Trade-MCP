@@ -29,6 +29,23 @@ class OrderFlowMomentumVwap(BaseStrategy):
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {}))
                     pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit when OBV reverses OR VWAP cross
+            elif pos == "LONG":
+                obv_falling = obv < df.iloc[i-1].get("obv", 0)
+                vwap_cross = close < vwap
+                if obv_falling or vwap_cross:
+                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                        metadata={"reason": "OBV reversed or VWAP cross"}))
+                    pos = None
+            
+            elif pos == "SHORT":
+                obv_rising_now = obv > df.iloc[i-1].get("obv", 0)
+                vwap_cross = close > vwap
+                if obv_rising_now or vwap_cross:
+                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                        metadata={"reason": "OBV reversed or VWAP cross"}))
+                    pos = None
         logger.info(f"OrderFlowMomentumVwap: {len(signals)} signals")
         return signals
 
