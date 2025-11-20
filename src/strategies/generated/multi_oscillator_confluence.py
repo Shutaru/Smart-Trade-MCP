@@ -42,15 +42,22 @@ class MultiOscillatorConfluence(BaseStrategy):
         for i in range(1, len(df)):
             r = df.iloc[i]
             rsi, cci, stoch_k = r.get("rsi", 50), r.get("cci", 0), r.get("stoch_k", 50)
-            atr = r.get("atr", r["close"]*0.02)
+            atr = r.get("atr", r["close"] * 0.02)
+            
             if pos is None:
-                if rsi < 30 and cci < -100 and stoch_k < 20:
+                # FIX: Relaxed - need 2 out of 3 oscillators (not all 3)
+                oversold_count = sum([rsi < 35, cci < -80, stoch_k < 25])
+                overbought_count = sum([rsi > 65, cci > 80, stoch_k > 75])
+                
+                if oversold_count >= 2:  # At least 2 oscillators oversold
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, r["close"], atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], r["close"], 0.9, sl, tp, {}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], r["close"], 0.9, sl, tp, 
+                                        {"rsi": rsi, "cci": cci, "stoch_k": stoch_k}))
                     pos = "LONG"
-                elif rsi > 70 and cci > 100 and stoch_k > 80:
+                elif overbought_count >= 2:  # At least 2 oscillators overbought
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, r["close"], atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.9, sl, tp, {}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.9, sl, tp, 
+                                        {"rsi": rsi, "cci": cci, "stoch_k": stoch_k}))
                     pos = "SHORT"
         logger.info(f"MultiOscillatorConfluence: {len(signals)} signals")
         return signals
