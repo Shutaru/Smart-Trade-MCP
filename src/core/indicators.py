@@ -37,6 +37,21 @@ def ema(arr: ArrayLike, period: int) -> np.ndarray:
     return out
 
 
+def sma(arr: ArrayLike, period: int) -> np.ndarray:
+    """
+    Simple Moving Average.
+
+    Args:
+        arr: Price array
+        period: SMA period
+
+    Returns:
+        SMA values as numpy array
+    """
+    arr = np.asarray(arr, dtype=float)
+    return np.convolve(arr, np.ones(period) / period, mode='same')
+
+
 def rma(arr: ArrayLike, period: int) -> np.ndarray:
     """
     Running Moving Average (Wilder's smoothing).
@@ -159,7 +174,7 @@ def bollinger_bands(
     close = np.asarray(close, dtype=float)
 
     # Calculate SMA
-    middle = np.convolve(close, np.ones(period) / period, mode="same")
+    middle = sma(close, period)
 
     # Calculate rolling standard deviation
     std = np.zeros_like(close)
@@ -208,11 +223,326 @@ def adx(high: ArrayLike, low: ArrayLike, close: ArrayLike, period: int = 14) -> 
 
     # Calculate DX
     dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-12)
-    dx = np.insert(dx, 0, dx[0])
+    dx = np.insert(dx, 0, dx[0] if len(dx) > 0 else 0)
 
     # Calculate ADX
     adx_values = rma(dx, period)
     return np.concatenate([[adx_values[0]], adx_values])[: len(close)]
+
+
+# ============================================================================
+# NEW INDICATORS (7 additional)
+# ============================================================================
+
+
+def cci(high: ArrayLike, low: ArrayLike, close: ArrayLike, period: int = 20) -> np.ndarray:
+    """
+    Commodity Channel Index.
+
+    Args:
+        high: High prices
+        low: Low prices
+        close: Close prices
+        period: CCI period
+
+    Returns:
+        CCI values as numpy array
+    """
+    high = np.asarray(high, dtype=float)
+    low = np.asarray(low, dtype=float)
+    close = np.asarray(close, dtype=float)
+
+    # Typical Price
+    tp = (high + low + close) / 3.0
+
+    # Moving Average of TP
+    ma = sma(tp, period)
+
+    # Mean Deviation
+    dev = np.zeros_like(tp)
+    for i in range(len(tp)):
+        start = max(0, i - period + 1)
+        window = tp[start : i + 1]
+        dev[i] = np.mean(np.abs(window - np.mean(window)))
+
+    # CCI
+    return (tp - ma) / (0.015 * (dev + 1e-12))
+
+
+def donchian_channels(
+    high: ArrayLike,
+    low: ArrayLike,
+    period: int = 20,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Donchian Channels.
+
+    Args:
+        high: High prices
+        low: Low prices
+        period: Period for channel
+
+    Returns:
+        Tuple of (upper_channel, middle_channel, lower_channel)
+    """
+    high = np.asarray(high, dtype=float)
+    low = np.asarray(low, dtype=float)
+
+    upper = np.zeros_like(high)
+    lower = np.zeros_like(low)
+
+    for i in range(len(high)):
+        start = max(0, i - period + 1)
+        upper[i] = np.max(high[start : i + 1])
+        lower[i] = np.min(low[start : i + 1])
+
+    middle = (upper + lower) / 2.0
+
+    return upper, middle, lower
+
+
+def keltner_channels(
+    high: ArrayLike,
+    low: ArrayLike,
+    close: ArrayLike,
+    period: int = 20,
+    atr_mult: float = 2.0,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Keltner Channels.
+
+    Args:
+        high: High prices
+        low: Low prices
+        close: Close prices
+        period: EMA period
+        atr_mult: ATR multiplier
+
+    Returns:
+        Tuple of (upper_channel, middle_channel, lower_channel)
+    """
+    close = np.asarray(close, dtype=float)
+
+    # Middle line (EMA of close)
+    middle = ema(close, period)
+
+    # Calculate ATR
+    atr_values = atr(high, low, close, period)
+
+    # Channels
+    upper = middle + (atr_mult * atr_values)
+    lower = middle - (atr_mult * atr_values)
+
+    return upper, middle, lower
+
+
+def mfi(
+    high: ArrayLike,
+    low: ArrayLike,
+    close: ArrayLike,
+    volume: ArrayLike,
+    period: int = 14,
+) -> np.ndarray:
+    """
+    Money Flow Index.
+
+    Args:
+        high: High prices
+        low: Low prices
+        close: Close prices
+        volume: Volume
+        period: MFI period
+
+    Returns:
+        MFI values as numpy array (0-100)
+    """
+    high = np.asarray(high, dtype=float)
+    low = np.asarray(low, dtype=float)
+    close = np.asarray(close, dtype=float)
+    volume = np.asarray(volume, dtype=float)
+
+    # Typical Price
+    tp = (high + low + close) / 3.0
+
+    # Money Flow
+    mf = tp * volume
+
+    # Positive and Negative Money Flow
+    pos_mf = np.zeros_like(mf)
+    neg_mf = np.zeros_like(mf)
+
+    for i in range(1, len(tp)):
+        if tp[i] > tp[i - 1]:
+            pos_mf[i] = mf[i]
+        elif tp[i] < tp[i - 1]:
+            neg_mf[i] = mf[i]
+
+    # Money Flow Ratio
+    mfr = np.zeros_like(mf)
+    for i in range(period, len(mf)):
+        pos_sum = np.sum(pos_mf[i - period + 1 : i + 1])
+        neg_sum = np.sum(neg_mf[i - period + 1 : i + 1])
+        mfr[i] = pos_sum / (neg_sum + 1e-12)
+
+    # Money Flow Index
+    return 100.0 - (100.0 / (1.0 + mfr))
+
+
+def obv(close: ArrayLike, volume: ArrayLike) -> np.ndarray:
+    """
+    On-Balance Volume.
+
+    Args:
+        close: Close prices
+        volume: Volume
+
+    Returns:
+        OBV values as numpy array
+    """
+    close = np.asarray(close, dtype=float)
+    volume = np.asarray(volume, dtype=float)
+
+    obv_values = np.zeros_like(volume)
+    obv_values[0] = volume[0]
+
+    for i in range(1, len(close)):
+        if close[i] > close[i - 1]:
+            obv_values[i] = obv_values[i - 1] + volume[i]
+        elif close[i] < close[i - 1]:
+            obv_values[i] = obv_values[i - 1] - volume[i]
+        else:
+            obv_values[i] = obv_values[i - 1]
+
+    return obv_values
+
+
+def stochastic(
+    high: ArrayLike,
+    low: ArrayLike,
+    close: ArrayLike,
+    k_period: int = 14,
+    d_period: int = 3,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Stochastic Oscillator.
+
+    Args:
+        high: High prices
+        low: Low prices
+        close: Close prices
+        k_period: %K period
+        d_period: %D period
+
+    Returns:
+        Tuple of (%K, %D)
+    """
+    high = np.asarray(high, dtype=float)
+    low = np.asarray(low, dtype=float)
+    close = np.asarray(close, dtype=float)
+
+    k_values = np.zeros_like(close)
+
+    for i in range(len(close)):
+        start = max(0, i - k_period + 1)
+        highest = np.max(high[start : i + 1])
+        lowest = np.min(low[start : i + 1])
+        
+        range_val = highest - lowest
+        if range_val == 0:
+            k_values[i] = 50.0
+        else:
+            k_values[i] = 100.0 * (close[i] - lowest) / range_val
+
+    # %D is SMA of %K
+    d_values = sma(k_values, d_period)
+
+    return k_values, d_values
+
+
+def supertrend(
+    high: ArrayLike,
+    low: ArrayLike,
+    close: ArrayLike,
+    period: int = 10,
+    multiplier: float = 3.0,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    SuperTrend Indicator.
+
+    Args:
+        high: High prices
+        low: Low prices
+        close: Close prices
+        period: ATR period
+        multiplier: ATR multiplier
+
+    Returns:
+        Tuple of (supertrend_values, trend_direction)
+        trend_direction: 1 for bullish, -1 for bearish
+    """
+    high = np.asarray(high, dtype=float)
+    low = np.asarray(low, dtype=float)
+    close = np.asarray(close, dtype=float)
+
+    # Calculate ATR
+    atr_values = atr(high, low, close, period)
+
+    # Basic bands
+    hl_avg = (high + low) / 2.0
+    upper_band = hl_avg + (multiplier * atr_values)
+    lower_band = hl_avg - (multiplier * atr_values)
+
+    # SuperTrend
+    supertrend_values = np.zeros_like(close)
+    trend = np.ones_like(close)  # 1 for bullish, -1 for bearish
+
+    for i in range(1, len(close)):
+        # Update bands
+        if close[i] > upper_band[i - 1]:
+            trend[i] = 1
+        elif close[i] < lower_band[i - 1]:
+            trend[i] = -1
+        else:
+            trend[i] = trend[i - 1]
+
+        # SuperTrend value
+        if trend[i] == 1:
+            supertrend_values[i] = lower_band[i]
+        else:
+            supertrend_values[i] = upper_band[i]
+
+    return supertrend_values, trend
+
+
+def vwap(high: ArrayLike, low: ArrayLike, close: ArrayLike, volume: ArrayLike) -> np.ndarray:
+    """
+    Volume Weighted Average Price.
+
+    Args:
+        high: High prices
+        low: Low prices
+        close: Close prices
+        volume: Volume
+
+    Returns:
+        VWAP values as numpy array
+    """
+    high = np.asarray(high, dtype=float)
+    low = np.asarray(low, dtype=float)
+    close = np.asarray(close, dtype=float)
+    volume = np.asarray(volume, dtype=float)
+
+    # Typical Price
+    tp = (high + low + close) / 3.0
+
+    # Cumulative TP * Volume
+    cumulative_tp_volume = np.cumsum(tp * volume)
+
+    # Cumulative Volume
+    cumulative_volume = np.cumsum(volume)
+
+    # VWAP
+    return cumulative_tp_volume / (cumulative_volume + 1e-12)
 
 
 def calculate_all_indicators(df: pd.DataFrame, indicators: list[str]) -> pd.DataFrame:
@@ -243,6 +573,13 @@ def calculate_all_indicators(df: pd.DataFrame, indicators: list[str]) -> pd.Data
         elif indicator == "ema":
             df["ema_12"] = ema(df["close"].values, 12)
             df["ema_26"] = ema(df["close"].values, 26)
+            df["ema_50"] = ema(df["close"].values, 50)
+            df["ema_200"] = ema(df["close"].values, 200)
+
+        elif indicator == "sma":
+            df["sma_20"] = sma(df["close"].values, 20)
+            df["sma_50"] = sma(df["close"].values, 50)
+            df["sma_200"] = sma(df["close"].values, 200)
 
         elif indicator == "bollinger":
             upper, middle, lower = bollinger_bands(df["close"].values)
@@ -256,16 +593,75 @@ def calculate_all_indicators(df: pd.DataFrame, indicators: list[str]) -> pd.Data
         elif indicator == "adx":
             df["adx"] = adx(df["high"].values, df["low"].values, df["close"].values)
 
+        elif indicator == "cci":
+            df["cci"] = cci(df["high"].values, df["low"].values, df["close"].values)
+
+        elif indicator == "donchian":
+            upper, middle, lower = donchian_channels(df["high"].values, df["low"].values)
+            df["donchian_upper"] = upper
+            df["donchian_middle"] = middle
+            df["donchian_lower"] = lower
+
+        elif indicator == "keltner":
+            upper, middle, lower = keltner_channels(
+                df["high"].values, df["low"].values, df["close"].values
+            )
+            df["keltner_upper"] = upper
+            df["keltner_middle"] = middle
+            df["keltner_lower"] = lower
+
+        elif indicator == "mfi":
+            df["mfi"] = mfi(
+                df["high"].values,
+                df["low"].values,
+                df["close"].values,
+                df["volume"].values,
+            )
+
+        elif indicator == "obv":
+            df["obv"] = obv(df["close"].values, df["volume"].values)
+
+        elif indicator == "stochastic":
+            k_values, d_values = stochastic(
+                df["high"].values, df["low"].values, df["close"].values
+            )
+            df["stoch_k"] = k_values
+            df["stoch_d"] = d_values
+
+        elif indicator == "supertrend":
+            st_values, trend = supertrend(
+                df["high"].values, df["low"].values, df["close"].values
+            )
+            df["supertrend"] = st_values
+            df["supertrend_trend"] = trend
+
+        elif indicator == "vwap":
+            df["vwap"] = vwap(
+                df["high"].values,
+                df["low"].values,
+                df["close"].values,
+                df["volume"].values,
+            )
+
     return df
 
 
 __all__ = [
     "ema",
+    "sma",
     "rma",
     "atr",
     "rsi",
     "macd",
     "bollinger_bands",
     "adx",
+    "cci",
+    "donchian_channels",
+    "keltner_channels",
+    "mfi",
+    "obv",
+    "stochastic",
+    "supertrend",
+    "vwap",
     "calculate_all_indicators",
 ]
