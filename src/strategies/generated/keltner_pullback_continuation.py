@@ -128,14 +128,32 @@ class Ema200TapReversion(BaseStrategy):
         signals, pos = [], None
         for i in range(1, len(df)):
             r = df.iloc[i]
-            close, low = r["close"], r["low"]
+            close, low, high = r["close"], r["low"], r["high"]
             ema200, rsi = r.get("ema_200", close), r.get("rsi", 50)
             atr = r.get("atr", close*0.02)
-            tap_ema = abs(low - ema200) < atr * 0.5
-            if pos is None and close > ema200 and tap_ema and 40 < rsi < 55:
-                sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
-                pos = "LONG"
+            tap_ema_long = abs(low - ema200) < atr * 0.5
+            tap_ema_short = abs(high - ema200) < atr * 0.5
+            
+            if pos is None:
+                if close > ema200 and tap_ema_long and 40 < rsi < 55:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "LONG"
+                elif close < ema200 and tap_ema_short and 45 < rsi < 60:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit when moves away from EMA200
+            elif pos == "LONG" and abs(close - ema200) / ema200 > 0.02:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "Moved away from EMA200"}))
+                pos = None
+            
+            elif pos == "SHORT" and abs(close - ema200) / ema200 > 0.02:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "Moved away from EMA200"}))
+                pos = None
         logger.info(f"Ema200TapReversion: {len(signals)} signals")
         return signals
 
