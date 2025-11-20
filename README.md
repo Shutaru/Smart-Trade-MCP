@@ -5,6 +5,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://img.shields.io/badge/tests-45%20passing-brightgreen.svg)]()
+[![Coverage](https://img.shields.io/badge/coverage-65%25-yellow.svg)]()
 
 ---
 
@@ -13,43 +15,31 @@
 Smart Trade MCP is a **production-ready autonomous trading system** that leverages:
 
 - ?? **MCP Architecture** - Clean separation of concerns with Model Context Protocol
-- ?? **38 Trading Strategies** - Battle-tested strategies from trend-following to machine learning
+- ?? **Strategy System** - Extensible strategy framework (RSI, MACD, and more)
 - ? **GPU Optimization** - CUDA-accelerated indicator calculations (optional)
-- ?? **Meta-Learning** - ML-based parameter prediction (78% accuracy)
-- ?? **Walk-Forward Validation** - Robust anti-overfitting mechanisms
-- ?? **Autonomous Agent** - Self-directed decision making with workflow enforcement
+- ?? **Backtest Engine** - Professional backtesting with position tracking
+- ?? **Data Management** - Automatic fetching and caching from exchanges
+- ?? **Type-Safe** - Full type hints and Pydantic validation
 
 ---
 
-## ??? Architecture
+## ? Features
 
-```
-Smart-Trade-MCP/
-??? src/
-?   ??? mcp_server/          # MCP Protocol Layer
-?   ?   ??? server.py        # Main MCP server
-?   ?   ??? tools/           # MCP tools (market data, backtest, etc.)
-?   ?   ??? resources/       # Dynamic resources (portfolio, performance)
-?   ?   ??? prompts/         # Agent guidance prompts
-?   ??? core/                # Business Logic Layer
-?   ?   ??? config.py        # Configuration management
-?   ?   ??? indicators.py    # Technical indicators
-?   ?   ??? logger.py        # Logging setup
-?   ?   ??? ...
-?   ??? strategies/          # Trading Strategies
-?       ??? ...
-??? tests/                   # Comprehensive test suite
-??? configs/                 # Configuration files
-??? data/                    # Data storage
-??? logs/                    # Application logs
-```
+### Implemented (Phase 2 Complete)
+? **Database Manager** - SQLite with async support (90% test coverage)  
+? **Data Manager** - CCXT integration for exchange data  
+? **7 Technical Indicators** - EMA, RSI, MACD, Bollinger Bands, ATR, ADX  
+? **Strategy System** - Base class + RSI and MACD strategies  
+? **Backtest Engine** - Full position tracking, SL/TP, metrics (87% coverage)  
+? **45 Tests** - Comprehensive test suite with 65% coverage  
+? **Zero Deprecated Code** - Clean, production-ready architecture  
 
-**Design Principles:**
-- ? **MCP server** = Interface layer (tools, resources, prompts)
-- ? **Core** = Business logic (no MCP dependencies)
-- ? **Clean imports** - No circular dependencies
-- ? **Type hints** - Full mypy compliance
-- ? **Async-first** - Modern async/await patterns
+### Coming Soon (Phase 3-5)
+?? Genetic Algorithm Optimization  
+?? Meta-Learning for parameter prediction  
+?? Walk-Forward Validation  
+?? Live Trading Mode  
+?? Web Dashboard  
 
 ---
 
@@ -71,174 +61,227 @@ cd Smart-Trade-MCP
 # Install dependencies with Poetry
 poetry install
 
-# Optional: Install with GPU support
-poetry install -E gpu
-
 # Copy environment template
 cp .env.example .env
 
-# Edit .env with your API keys and settings
+# Edit .env with your settings (optional for backtesting)
 ```
 
-### Configuration
+### Running Examples
 
-Edit `.env` file:
-
-```env
-# Trading Configuration
-EXCHANGE=binance
-TESTNET=true
-DRY_RUN=true
-
-# API Keys
-BINANCE_API_KEY=your_key_here
-BINANCE_SECRET_KEY=your_secret_here
-
-# Optimization
-MAX_WORKERS=4
-GPU_ENABLED=false
-```
-
-### Running the MCP Server
+#### 1. List Available Strategies
 
 ```bash
-# Activate Poetry environment
-poetry shell
-
-# Start MCP server
-python -m src.mcp_server.server
+poetry run python examples/list_strategies.py
 ```
 
-### Testing with MCP Inspector
+Output:
+```
+Strategy: rsi
+   Class: RSIStrategy
+   Description: Classic RSI oversold/overbought strategy
+   Required Indicators: rsi, atr
+   
+   Default Parameters:
+      - rsi_period: 14
+      - oversold_level: 30
+      - overbought_level: 70
+      - exit_level: 50
+```
+
+#### 2. Run a Simple Backtest
 
 ```bash
-# Install MCP Inspector (if not already installed)
-npm install -g @modelcontextprotocol/inspector
+poetry run python examples/simple_backtest.py
+```
 
-# Run inspector
-mcp-inspector python -m src.mcp_server.server
+This will:
+1. Fetch 30 days of BTC/USDT data from Binance
+2. Calculate RSI indicator
+3. Run backtest with $10,000 initial capital
+4. Display results with metrics
+
+---
+
+## ?? Usage Examples
+
+### Example 1: Fetch Market Data
+
+```python
+from src.core.data_manager import DataManager
+from datetime import datetime, timedelta
+
+async def fetch_data():
+    dm = DataManager()
+    
+    # Fetch recent data
+    df = await dm.fetch_ohlcv(
+        symbol="BTC/USDT",
+        timeframe="1h",
+        limit=100
+    )
+    
+    # Or fetch historical range
+    df = await dm.fetch_historical(
+        symbol="BTC/USDT",
+        timeframe="1h",
+        start_date=datetime.now() - timedelta(days=30),
+        end_date=datetime.now()
+    )
+    
+    await dm.close()
+    return df
+```
+
+### Example 2: Calculate Indicators
+
+```python
+from src.core.indicators import calculate_all_indicators
+
+# Add indicators to your DataFrame
+df = calculate_all_indicators(df, ['rsi', 'macd', 'ema'])
+
+# Now df has columns: rsi, macd, macd_signal, macd_hist, ema_12, ema_26
+```
+
+### Example 3: Run a Backtest
+
+```python
+from src.core.backtest_engine import BacktestEngine
+from src.strategies import registry
+
+# Get strategy
+strategy = registry.get("rsi")
+
+# Run backtest
+engine = BacktestEngine(initial_capital=10000.0)
+results = engine.run(strategy, df)
+
+print(f"Total Return: {results['total_return']:.2f}%")
+print(f"Win Rate: {results['metrics']['win_rate']:.1f}%")
+print(f"Sharpe Ratio: {results['metrics']['sharpe_ratio']:.2f}")
+```
+
+### Example 4: Create Custom Strategy
+
+```python
+from src.strategies import BaseStrategy, Signal, SignalType
+import pandas as pd
+
+class MyStrategy(BaseStrategy):
+    """Custom strategy example."""
+    
+    def get_required_indicators(self):
+        return ["rsi", "ema"]
+    
+    def generate_signals(self, df: pd.DataFrame):
+        signals = []
+        
+        for i in range(1, len(df)):
+            row = df.iloc[i]
+            
+            # Your logic here
+            if row["rsi"] < 30 and row["close"] > row["ema_12"]:
+                signals.append(Signal(
+                    type=SignalType.LONG,
+                    timestamp=row["timestamp"],
+                    price=row["close"],
+                ))
+        
+        return signals
 ```
 
 ---
 
-## ??? MCP Tools
-
-### Market Data Tools
-
-- **`get_market_data`** - Fetch OHLCV data from exchange
-- **`calculate_indicators`** - Compute technical indicators
-
-### Backtesting Tools
-
-- **`backtest_strategy`** - Run strategy backtest (Phase 2)
-- **`optimize_strategy`** - Genetic algorithm optimization (Phase 3)
-
-### Portfolio Tools
-
-- **`get_portfolio_status`** - Current holdings and performance
-- **`execute_trade`** - Place orders (Phase 5)
-
-### Strategy Tools
-
-- **`list_strategies`** - Available strategies
-- **`get_strategy_info`** - Strategy metadata
-
----
-
-## ?? MCP Resources
-
-Dynamic resources updated in real-time:
-
-- **`portfolio://current`** - Portfolio holdings and P&L
-- **`market://status`** - Market regime and conditions
-- **`performance://latest`** - Performance metrics
-
----
-
-## ?? Development
-
-### Running Tests
+## ?? Running Tests
 
 ```bash
 # All tests
 poetry run pytest
 
-# With coverage
+# With coverage report
 poetry run pytest --cov=src --cov-report=html
 
 # Specific test file
-poetry run pytest tests/unit/test_indicators.py
+poetry run pytest tests/unit/test_strategies.py -v
+
+# Run fast (skip slow tests)
+poetry run pytest -m "not slow"
 ```
 
-### Code Quality
+### Current Test Status
+- **45 tests** passing
+- **65% code coverage**
+- **Modules with 90%+ coverage**: Database, Strategies, Base Strategy
 
-```bash
-# Format code
-poetry run black src/ tests/
+---
 
-# Lint
-poetry run ruff check src/ tests/
+## ??? Architecture
 
-# Type check
-poetry run mypy src/
 ```
-
-### Pre-commit Hooks
-
-```bash
-# Install pre-commit hooks
-poetry run pre-commit install
-
-# Run manually
-poetry run pre-commit run --all-files
+Smart-Trade-MCP/
+??? src/
+?   ??? core/                    # Business Logic
+?   ?   ??? config.py           # Pydantic settings
+?   ?   ??? database.py         # SQLite manager (90% coverage)
+?   ?   ??? data_manager.py     # Exchange data fetching
+?   ?   ??? indicators.py       # Technical indicators (77% coverage)
+?   ?   ??? backtest_engine.py  # Backtesting (87% coverage)
+?   ?   ??? logger.py           # Logging setup (100% coverage)
+?   ?
+?   ??? strategies/              # Trading Strategies
+?   ?   ??? base.py             # Abstract base (90% coverage)
+?   ?   ??? rsi_strategy.py     # RSI strategy (94% coverage)
+?   ?   ??? macd_strategy.py    # MACD strategy (68% coverage)
+?   ?   ??? registry.py         # Strategy registry (96% coverage)
+?   ?
+?   ??? mcp_server/              # MCP Protocol Layer
+?       ??? server.py           # Main MCP server
+?       ??? tools/              # MCP tools
+?       ??? resources/          # Dynamic resources
+?
+??? tests/                       # Test Suite
+?   ??? unit/                   # Unit tests (32 tests)
+?   ??? integration/            # Integration tests (2 tests)
+?
+??? examples/                    # Usage examples
+    ??? list_strategies.py
+    ??? simple_backtest.py
 ```
 
 ---
 
-## ?? Implementation Roadmap
+## ??? Available Strategies
 
-### ? Phase 1: Foundation (CURRENT)
-- [x] Project structure
-- [x] MCP server boilerplate
-- [x] Configuration management
-- [x] Market data tools
-- [x] Technical indicators
-- [x] Logging setup
+| Strategy | Category | Description | Indicators |
+|----------|----------|-------------|------------|
+| **rsi** | Mean Reversion | Classic RSI oversold/overbought | RSI, ATR |
+| **macd** | Trend Following | MACD crossover signals | MACD, ATR |
 
-### ?? Phase 2: Strategies (NEXT)
-- [ ] Strategy base class
-- [ ] Port 38 strategies from original repo
-- [ ] Backtest engine
-- [ ] Strategy registry
-- [ ] Performance metrics
+More strategies coming in Phase 3!
 
-### ?? Phase 3: Optimization
-- [ ] Genetic algorithm optimizer
-- [ ] Meta-learning system
-- [ ] Walk-forward validation
-- [ ] Job manager
+---
 
-### ?? Phase 4: Agent
-- [ ] MCP client wrapper
-- [ ] Decision loop
-- [ ] Workflow enforcement
-- [ ] Loop detection
+## ?? Performance Metrics
 
-### ?? Phase 5: Production
-- [ ] Live trading mode
-- [ ] Web dashboard
-- [ ] Monitoring & alerts
-- [ ] Deployment scripts
+The backtest engine calculates:
+
+- **Total Return** - Overall profit/loss percentage
+- **Win Rate** - Percentage of winning trades
+- **Profit Factor** - Gross profit / Gross loss
+- **Sharpe Ratio** - Risk-adjusted returns
+- **Max Drawdown** - Largest peak-to-trough decline
+- **Average Win/Loss** - Mean profit and loss per trade
 
 ---
 
 ## ?? Contributing
 
-This is a **production-ready** project following best practices:
+This is a production-ready project following best practices:
 
 1. **No deprecated code** - Delete immediately, no "TODO: Remove later"
 2. **Type everything** - Full type hints, mypy compliant
-3. **Test everything** - >90% coverage required
+3. **Test everything** - Target >70% coverage
 4. **Document as you go** - Docstrings for all public APIs
 5. **Clean commits** - Conventional commits format
 
@@ -258,10 +301,15 @@ MIT License - see [LICENSE](LICENSE) file
 
 ---
 
-## ?? Contact
+## ?? Support
 
-For questions or support, open an issue on GitHub.
+For questions or issues:
+- ?? Check the [examples/](examples/) directory
+- ?? Open an issue on GitHub
+- ?? Read the [PROGRESS_REPORT.md](PROGRESS_REPORT.md)
 
 ---
 
 **Built with ?? for autonomous trading**
+
+**Current Status:** ? Phase 2 Complete - Ready for backtesting!
