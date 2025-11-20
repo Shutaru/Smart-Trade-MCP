@@ -8,6 +8,13 @@
       "sharpe": 0.32680826349574343
     },
     {
+      "strategy": "bollinger_mean_reversion",
+      "return": 2.907316875826438,
+      "trades": 87,
+      "win_rate": 57.47126436781609,
+      "sharpe": 0.14307012711052516
+    },
+    {
       "strategy": "rsi_supertrend_flip",
       "return": 0.5434873367104798,
       "trades": 1,
@@ -218,6 +225,13 @@
       "sharpe": 0.12305093883315442
     },
     {
+      "strategy": "bollinger_squeeze_breakout",
+      "return": -2.64900282763183,
+      "trades": 23,
+      "win_rate": 4.3478260869565215,
+      "sharpe": 0.06610994190332084
+    },
+    {
       "strategy": "keltner_expansion",
       "return": -3.328220553623651,
       "trades": 110,
@@ -232,6 +246,13 @@
       "sharpe": 0.19707587734031407
     },
     {
+      "strategy": "stoch_signal_reversal",
+      "return": -4.411662776258796,
+      "trades": 69,
+      "win_rate": 31.88405797101449,
+      "sharpe": 0.12195933022097397
+    },
+    {
       "strategy": "trendflow_supertrend",
       "return": -8.757789498958424,
       "trades": 171,
@@ -239,35 +260,14 @@
       "sharpe": 0.19858064670480147
     },
     {
-      "strategy": "stoch_signal_reversal",
-      "return": -8.929629485536516,
-      "trades": 160,
-      "win_rate": 0.625,
-      "sharpe": 0.1919698017664122
-    },
-    {
       "strategy": "ema_stack_momentum",
       "return": -8.934217604847216,
       "trades": 312,
       "win_rate": 27.564102564102566,
       "sharpe": 0.2765614067185259
-    },
-    {
-      "strategy": "bollinger_squeeze_breakout",
-      "return": -19.757907853076194,
-      "trades": 160,
-      "win_rate": 0.0,
-      "sharpe": 0.19473578915554818
-    },
-    {
-      "strategy": "bollinger_mean_reversion",
-      "return": -132.32511741136113,
-      "trades": 3861,
-      "win_rate": 12.224812224812224,
-      "sharpe": 0.20146755202333677
     }
   ],
   "stats": {
-    "profitable": 5
+    "profitable": 6
   }
 }

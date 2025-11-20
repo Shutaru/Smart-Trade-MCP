@@ -28,31 +28,41 @@ class BollingerMeanReversion(BaseStrategy):
             bb_l, bb_m, bb_u = r.get("bb_lower", close), r.get("bb_middle", close), r.get("bb_upper", close)
             rsi, atr = r.get("rsi", 50), r.get("atr", close*0.02)
             
+            # Calculate BB bandwidth for volatility filter
+            bb_width = ((bb_u - bb_l) / bb_m) * 100 if bb_m > 0 else 0
+            
             if pos is None:
-                # LONG: Near BB lower + RSI oversold (RELAXED: 20-60)
-                near_bb_lower = low <= bb_l * 1.02  # Within 2%
-                if near_bb_lower and 20 <= rsi <= 60:
+                # LONG: Price TOUCHES/BREAKS BB lower + RSI oversold + sufficient volatility
+                # FIX: Much more restrictive conditions
+                touches_bb_lower = low <= bb_l  # Must actually touch/break
+                rsi_oversold = rsi < 35  # Truly oversold (was 20-60!)
+                has_volatility = bb_width > 2.0  # BB must be expanded (not flat)
+                
+                if touches_bb_lower and rsi_oversold and has_volatility:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    # TP = 80% to BB middle (mean reversion target)
-                    tp = close + (bb_m - close) * 0.8
+                    # TP = BB middle (mean reversion target)
+                    tp = bb_m
                     signals.append(Signal(SignalType.LONG, r["timestamp"], close, 1.0 - (rsi/100), sl, tp, 
-                                        {"rsi": rsi, "bb_dist": ((bb_m-close)/bb_m)*100, "reason": "BB lower reversion"}))
+                                        {"rsi": rsi, "bb_width": bb_width, "reason": "BB lower reversion"}))
                     pos = "LONG"
                 
-                # SHORT: Near BB upper + RSI overbought (RELAXED: 40-80)
-                near_bb_upper = high >= bb_u * 0.98
-                if near_bb_upper and 40 <= rsi <= 80:
+                # SHORT: Price TOUCHES/BREAKS BB upper + RSI overbought + sufficient volatility
+                # FIX: Much more restrictive
+                touches_bb_upper = high >= bb_u  # Must actually touch/break
+                rsi_overbought = rsi > 65  # Truly overbought (was 40-80!)
+                
+                if touches_bb_upper and rsi_overbought and has_volatility:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    tp = close - (close - bb_m) * 0.8
+                    tp = bb_m
                     signals.append(Signal(SignalType.SHORT, r["timestamp"], close, (rsi-50)/50, sl, tp,
-                                        {"rsi": rsi, "bb_dist": ((close-bb_m)/bb_m)*100, "reason": "BB upper reversion"}))
+                                        {"rsi": rsi, "bb_width": bb_width, "reason": "BB upper reversion"}))
                     pos = "SHORT"
             
             # Exit when price returns to BB middle
-            elif pos == "LONG" and close >= bb_m * 0.99:
+            elif pos == "LONG" and close >= bb_m:
                 signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={"reason": "BB mean reversion complete"}))
                 pos = None
-            elif pos == "SHORT" and close <= bb_m * 1.01:
+            elif pos == "SHORT" and close <= bb_m:
                 signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={"reason": "BB mean reversion complete"}))
                 pos = None
                 
