@@ -86,7 +86,7 @@ class ObvConfirmationBreakoutPlus(BaseStrategy):
         super().__init__(config)
     def get_required_indicators(self) -> List[str]:
         return ["obv", "bollinger", "atr"]
-    def generate_signals(self, df: pd.DataFrame) -> List<Signal]:
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         signals, pos = [], None
         for i in range(5, len(df)):
             r = df.iloc[i]

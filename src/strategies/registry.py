@@ -83,6 +83,13 @@ class StrategyRegistry:
         except ImportError:
             logger.warning("TrendflowSupertrend not available (implementation pending)")
 
+        # Auto-register all 38 generated strategies
+        try:
+            from .generated.auto_register import register_all_generated_strategies
+            register_all_generated_strategies(self)
+        except Exception as e:
+            logger.warning(f"Could not auto-register generated strategies: {e}")
+
         logger.info(f"Registered {len(self._strategies)} built-in strategies")
 
     def register(

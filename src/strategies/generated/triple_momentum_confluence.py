@@ -1,13 +1,12 @@
 """
-RSI + MACD + Stochastic alignment
+Triple Momentum Confluence
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class TripleMomentumConfluence(BaseStrategy):
