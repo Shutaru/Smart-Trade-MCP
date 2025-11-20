@@ -1,50 +1,53 @@
 """
-Keltner Channel expansion breakout with volume
+Keltner Expansion - Keltner channel expansion breakout
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class KeltnerExpansion(BaseStrategy):
-    """
-    KeltnerExpansion - Keltner Channel expansion breakout with volume
+    """Keltner Channel expansion breakout with volume"""
     
-    Category: breakout
-    Indicators: keltner, atr, ema
-    """
-
     def __init__(self, config: StrategyConfig = None):
-        """Initialize KeltnerExpansion strategy."""
         super().__init__(config)
-        
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
+        self.config.stop_loss_atr_mult = 2.0
+        self.config.take_profit_rr_ratio = 2.0
         
     def get_required_indicators(self) -> List[str]:
-        """Required indicators for this strategy."""
-        return ['keltner', 'atr', 'ema']
+        return ["keltner", "atr", "ema"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
-        """
-        Generate trading signals.
-        
-        Args:
-            df: DataFrame with OHLCV and indicator data
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r, p = df.iloc[i], df.iloc[i-1]
+            close = r["close"]
+            kc_u, kc_l = r.get("keltner_upper", close), r.get("keltner_lower", close)
+            ema_200, atr = r.get("ema_200", close), r.get("atr", close*0.02)
             
-        Returns:
-            List of trading signals
-        """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"KeltnerExpansion generated {len(signals)} signals")
+            if pos is None:
+                # LONG: break above Keltner upper in uptrend
+                if close > kc_u and close > ema_200:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {"reason": "Keltner upper breakout"}))
+                    pos = "LONG"
+                # SHORT
+                elif close < kc_l and close < ema_200:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {"reason": "Keltner lower breakdown"}))
+                    pos = "SHORT"
+            
+            elif pos == "LONG" and close < ema_200:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={"reason": "Trend reversal"}))
+                pos = None
+            elif pos == "SHORT" and close > ema_200:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={"reason": "Trend reversal"}))
+                pos = None
+                
+        logger.info(f"KeltnerExpansion: {len(signals)} signals")
         return signals
 
 

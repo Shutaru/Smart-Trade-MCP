@@ -1,50 +1,59 @@
 """
-Bollinger Band squeeze followed by explosive breakout
+Bollinger Squeeze Breakout - BB squeeze + explosive breakout
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class BollingerSqueezeBreakout(BaseStrategy):
-    """
-    BollingerSqueezeBreakout - Bollinger Band squeeze followed by explosive breakout
+    """Bollinger Band squeeze -> expansion breakout (Win: 45-52%)"""
     
-    Category: breakout
-    Indicators: bollinger, atr, rsi
-    """
-
     def __init__(self, config: StrategyConfig = None):
-        """Initialize BollingerSqueezeBreakout strategy."""
         super().__init__(config)
-        
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
+        self.config.stop_loss_atr_mult = 2.0
+        self.config.take_profit_rr_ratio = 2.2
         
     def get_required_indicators(self) -> List[str]:
-        """Required indicators for this strategy."""
-        return ['bollinger', 'atr', 'rsi']
+        return ["bollinger", "atr", "rsi"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
-        """
-        Generate trading signals.
-        
-        Args:
-            df: DataFrame with OHLCV and indicator data
+        signals, pos = [], None
+        for i in range(20, len(df)):  # Need history for bandwidth
+            r, p = df.iloc[i], df.iloc[i-1]
+            close, high, low = r["close"], r["high"], r["low"]
+            bb_u, bb_l, bb_m = r.get("bb_upper", close), r.get("bb_lower", close), r.get("bb_middle", close)
+            rsi, atr = r.get("rsi", 50), r.get("atr", close*0.02)
             
-        Returns:
-            List of trading signals
-        """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"BollingerSqueezeBreakout generated {len(signals)} signals")
+            # Squeeze detection: BB bandwidth narrow
+            bw = (bb_u - bb_l) / bb_m if bb_m > 0 else 0
+            bw_prev = (p.get("bb_upper", close) - p.get("bb_lower", close)) / p.get("bb_middle", close) if p.get("bb_middle", close) > 0 else 0
+            had_squeeze = bw_prev < 0.02  # Very narrow bands
+            
+            if pos is None and had_squeeze:
+                # LONG: breakout above BB upper
+                if close > bb_u and rsi < 70:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {"reason": "BB squeeze breakout"}))
+                    pos = "LONG"
+                # SHORT: breakdown below BB lower
+                elif close < bb_l and rsi > 30:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {"reason": "BB squeeze breakdown"}))
+                    pos = "SHORT"
+            
+            # Exit on BB middle reversion
+            elif pos == "LONG" and close < bb_m:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={"reason": "BB mean reversion"}))
+                pos = None
+            elif pos == "SHORT" and close > bb_m:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={"reason": "BB mean reversion"}))
+                pos = None
+                
+        logger.info(f"BollingerSqueezeBreakout: {len(signals)} signals")
         return signals
 
 

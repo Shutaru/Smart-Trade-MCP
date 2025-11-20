@@ -4,10 +4,9 @@ Breakout weighted by volatility regime
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class VolatilityWeightedBreakout(BaseStrategy):
@@ -39,12 +38,22 @@ class VolatilityWeightedBreakout(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"VolatilityWeightedBreakout generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close, atr = r["close"], r.get("atr", close*0.02)
+            bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
+            adx = r.get("adx", 0)
+            if pos is None and adx >= 20:
+                if close > bb_u:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, min(1.0, adx/40), sl, tp, {}))
+                    pos = "LONG"
+                elif close < bb_l:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, min(1.0, adx/40), sl, tp, {}))
+                    pos = "SHORT"
+        logger.info(f"VolatilityWeightedBreakout: {len(signals)} signals")
         return signals
 
 

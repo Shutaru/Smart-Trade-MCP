@@ -1,13 +1,12 @@
 """
-EMA stack flips indicate regime change
+EMA Stack Regime Flip
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class EmaStackRegimeFlip(BaseStrategy):
@@ -27,7 +26,7 @@ class EmaStackRegimeFlip(BaseStrategy):
         
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
-        return ['ema', 'rsi', 'atr']
+        return ['ema', 'atr']
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         """
@@ -39,12 +38,18 @@ class EmaStackRegimeFlip(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"EmaStackRegimeFlip generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r, p = df.iloc[i], df.iloc[i-1]
+            close, ema12, ema26, ema200 = r["close"], r.get("ema_12", r["close"]), r.get("ema_26", r["close"]), r.get("ema_200", r["close"])
+            e12p, e26p = p.get("ema_12", close), p.get("ema_26", close)
+            atr = r.get("atr", close*0.02)
+            flip_bull = e12p <= e26p and ema12 > ema26 and close > ema200
+            if pos is None and flip_bull:
+                sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                pos = "LONG"
+        logger.info(f"EmaStackRegimeFlip: {len(signals)} signals")
         return signals
 
 

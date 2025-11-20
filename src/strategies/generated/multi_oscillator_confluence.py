@@ -4,10 +4,9 @@ Multiple oscillators align for high-probability setup
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class MultiOscillatorConfluence(BaseStrategy):
@@ -39,12 +38,21 @@ class MultiOscillatorConfluence(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"MultiOscillatorConfluence generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            rsi, cci, stoch_k = r.get("rsi", 50), r.get("cci", 0), r.get("stoch_k", 50)
+            atr = r.get("atr", r["close"]*0.02)
+            if pos is None:
+                if rsi < 30 and cci < -100 and stoch_k < 20:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, r["close"], atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], r["close"], 0.9, sl, tp, {}))
+                    pos = "LONG"
+                elif rsi > 70 and cci > 100 and stoch_k > 80:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, r["close"], atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.9, sl, tp, {}))
+                    pos = "SHORT"
+        logger.info(f"MultiOscillatorConfluence: {len(signals)} signals")
         return signals
 
 

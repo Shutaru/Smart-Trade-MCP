@@ -1,13 +1,10 @@
-"""
-Professional VWAP band fading system
-"""
+"""VWAP Band Fade Pro"""
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class VwapBandFadePro(BaseStrategy):
@@ -27,7 +24,7 @@ class VwapBandFadePro(BaseStrategy):
         
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
-        return ['vwap', 'rsi', 'atr']
+        return ["vwap", "atr", "rsi"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         """
@@ -39,12 +36,26 @@ class VwapBandFadePro(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"VwapBandFadePro generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close, vwap = r["close"], r.get("vwap", close)
+            atr, rsi = r.get("atr", close*0.02), r.get("rsi", 50)
+            vwap_upper, vwap_lower = vwap + 2*atr, vwap - 2*atr
+            if pos is None:
+                if close <= vwap_lower and rsi < 35:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "LONG"
+                elif close >= vwap_upper and rsi > 65:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "SHORT"
+            elif pos and abs(close - vwap) < atr * 0.5:
+                sig_type = SignalType.CLOSE_LONG if pos == "LONG" else SignalType.CLOSE_SHORT
+                signals.append(Signal(sig_type, r["timestamp"], close, metadata={}))
+                pos = None
+        logger.info(f"VwapBandFadePro: {len(signals)} signals")
         return signals
 
 

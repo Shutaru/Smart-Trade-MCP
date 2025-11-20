@@ -1,50 +1,34 @@
-"""
-Order flow momentum around VWAP levels
-"""
-
+"""Order Flow Momentum VWAP"""
 from typing import List
 import pandas as pd
-import numpy as np
-
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class OrderFlowMomentumVwap(BaseStrategy):
-    """
-    OrderFlowMomentumVwap - Order flow momentum around VWAP levels
-    
-    Category: momentum
-    Indicators: vwap, obv, atr
-    """
-
     def __init__(self, config: StrategyConfig = None):
-        """Initialize OrderFlowMomentumVwap strategy."""
         super().__init__(config)
-        
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+
     def get_required_indicators(self) -> List[str]:
-        """Required indicators for this strategy."""
-        return ['vwap', 'obv', 'atr']
-    
+        return ["vwap", "obv", "atr"]
+
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
-        """
-        Generate trading signals.
-        
-        Args:
-            df: DataFrame with OHLCV and indicator data
-            
-        Returns:
-            List of trading signals
-        """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"OrderFlowMomentumVwap generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(5, len(df)):
+            r = df.iloc[i]
+            close, vwap = r["close"], r.get("vwap", close)
+            obv, atr = r.get("obv", 0), r.get("atr", close * 0.02)
+            obv_rising = obv > df.iloc[i - 5].get("obv", 0)
+            if pos is None:
+                if close > vwap and obv_rising:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, {}))
+                    pos = "LONG"
+                elif close < vwap and not obv_rising:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {}))
+                    pos = "SHORT"
+        logger.info(f"OrderFlowMomentumVwap: {len(signals)} signals")
         return signals
 
 

@@ -1,13 +1,8 @@
-"""
-Adapts strategy based on market regime detection
-"""
-
+"""Regime Adaptive Core"""
 from typing import List
 import pandas as pd
-import numpy as np
-
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class RegimeAdaptiveCore(BaseStrategy):
@@ -27,7 +22,7 @@ class RegimeAdaptiveCore(BaseStrategy):
         
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
-        return ['adx', 'atr', 'ema', 'rsi']
+        return ["adx", "ema", "rsi", "atr"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         """
@@ -39,12 +34,21 @@ class RegimeAdaptiveCore(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"RegimeAdaptiveCore generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close, adx, ema200, rsi, atr = r["close"], r.get("adx", 0), r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
+            trending = adx > 25
+            if pos is None:
+                if trending and close > ema200 and rsi > 50:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "LONG"
+                elif not trending and rsi < 30:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
+                    pos = "LONG"
+        logger.info(f"RegimeAdaptiveCore: {len(signals)} signals")
         return signals
 
 

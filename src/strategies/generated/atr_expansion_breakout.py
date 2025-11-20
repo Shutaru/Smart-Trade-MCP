@@ -1,13 +1,12 @@
 """
-ATR expansion signals volatility breakout
+ATR Expansion Breakout
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class AtrExpansionBreakout(BaseStrategy):
@@ -21,13 +20,12 @@ class AtrExpansionBreakout(BaseStrategy):
     def __init__(self, config: StrategyConfig = None):
         """Initialize AtrExpansionBreakout strategy."""
         super().__init__(config)
-        
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
+        self.config.stop_loss_atr_mult = 2.2
+        self.config.take_profit_rr_ratio = 2.4
         
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
-        return ['atr', 'ema', 'rsi']
+        return ["atr", "ema", "supertrend", "adx"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         """
@@ -39,12 +37,27 @@ class AtrExpansionBreakout(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"AtrExpansionBreakout generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(20, len(df)):
+            r = df.iloc[i]
+            close, atr = r["close"], r.get("atr", close*0.02)
+            # ATR expansion: compare to 20-bar average
+            atr_avg = df["atr"].iloc[i-20:i].mean() if "atr" in df.columns else atr
+            atr_expanding = atr > atr_avg * 1.5
+            ema_200 = r.get("ema_200", close)
+            st_trend = r.get("supertrend_trend", 0)
+            prev_high, prev_low = df.iloc[i-1]["high"], df.iloc[i-1]["low"]
+            
+            if pos is None and atr_expanding:
+                if close > ema_200 and st_trend > 0 and close > prev_high:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {"reason": "ATR expansion"}))
+                    pos = "LONG"
+                elif close < ema_200 and st_trend < 0 and close < prev_low:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {"reason": "ATR expansion"}))
+                    pos = "SHORT"
+        logger.info(f"AtrExpansionBreakout: {len(signals)} signals")
         return signals
 
 

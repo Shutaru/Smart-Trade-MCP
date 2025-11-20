@@ -1,13 +1,12 @@
 """
-OBV trend confirms price trend
+OBV Trend Confirmation
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class ObvTrendConfirmation(BaseStrategy):
@@ -22,12 +21,9 @@ class ObvTrendConfirmation(BaseStrategy):
         """Initialize ObvTrendConfirmation strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
-        return ['obv', 'ema', 'adx', 'atr']
+        return ["obv", "ema", "atr"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         """
@@ -39,12 +35,22 @@ class ObvTrendConfirmation(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"ObvTrendConfirmation generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(10, len(df)):
+            r = df.iloc[i]
+            obv, obv_prev = r.get("obv", 0), df.iloc[i-1].get("obv", 0)
+            ema200, atr = r.get("ema_200", r["close"]), r.get("atr", r["close"]*0.02)
+            obv_rising = obv > obv_prev and obv > df.iloc[i-10].get("obv", 0)
+            if pos is None:
+                if r["close"] > ema200 and obv_rising:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, r["close"], atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], r["close"], 0.7, sl, tp, {}))
+                    pos = "LONG"
+                elif r["close"] < ema200 and not obv_rising:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, r["close"], atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.7, sl, tp, {}))
+                    pos = "SHORT"
+        logger.info(f"ObvTrendConfirmation: {len(signals)} signals")
         return signals
 
 

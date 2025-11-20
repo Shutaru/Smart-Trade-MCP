@@ -1,13 +1,12 @@
 """
-MFI surge indicates strong buying/selling pressure
+MFI Impulse Momentum
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class MfiImpulseMomentum(BaseStrategy):
@@ -27,7 +26,7 @@ class MfiImpulseMomentum(BaseStrategy):
         
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
-        return ['mfi', 'ema', 'atr']
+        return ["mfi", "ema", "atr"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         """
@@ -39,12 +38,21 @@ class MfiImpulseMomentum(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"MfiImpulseMomentum generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close, mfi = r["close"], r.get("mfi", 50)
+            ema200, atr = r.get("ema_200", close), r.get("atr", close*0.02)
+            if pos is None:
+                if close > ema200 and 20 < mfi < 80 and mfi > df.iloc[i-1].get("mfi", 50):
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {"mfi": mfi}))
+                    pos = "LONG"
+                elif close < ema200 and 20 < mfi < 80 and mfi < df.iloc[i-1].get("mfi", 50):
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {"mfi": mfi}))
+                    pos = "SHORT"
+        logger.info(f"MfiImpulseMomentum: {len(signals)} signals")
         return signals
 
 

@@ -1,50 +1,46 @@
-"""
-New York session fade strategy
-"""
+"""NY Session Fade"""
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class NySessionFade(BaseStrategy):
-    """
-    NySessionFade - New York session fade strategy
-    
-    Category: advanced
-    Indicators: vwap, atr, ema
-    """
-
     def __init__(self, config: StrategyConfig = None):
-        """Initialize NySessionFade strategy."""
         super().__init__(config)
-        
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+
     def get_required_indicators(self) -> List[str]:
-        """Required indicators for this strategy."""
-        return ['vwap', 'atr', 'ema']
-    
+        return ["rsi", "bollinger", "atr"]
+
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
-        """
-        Generate trading signals.
-        
-        Args:
-            df: DataFrame with OHLCV and indicator data
-            
-        Returns:
-            List of trading signals
-        """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"NySessionFade generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close, bb_u, bb_l, rsi, atr = (
+                r["close"],
+                r.get("bb_upper", close),
+                r.get("bb_lower", close),
+                r.get("rsi", 50),
+                r.get("atr", close * 0.02),
+            )
+            if pos is None:
+                if close >= bb_u and rsi > 70:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(
+                        Signal(
+                            SignalType.SHORT,
+                            r["timestamp"],
+                            close,
+                            0.7,
+                            sl,
+                            tp,
+                            {},
+                        )
+                    )
+                    pos = "SHORT"
+        logger.info(f"NySessionFade: {len(signals)} signals")
         return signals
 
 

@@ -1,13 +1,12 @@
 """
-VWAP level breakout with volume confirmation
+VWAP Breakout
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class VwapBreakout(BaseStrategy):
@@ -39,12 +38,29 @@ class VwapBreakout(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"VwapBreakout generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close, vwap = r["close"], r.get("vwap", close)
+            rsi, atr = r.get("rsi", 50), r.get("atr", close*0.02)
+            if pos is None:
+                # LONG: break above VWAP with momentum
+                if close > vwap * 1.002 and rsi > 50 and rsi < 70:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
+                    pos = "LONG"
+                # SHORT: break below VWAP
+                elif close < vwap * 0.998 and rsi < 50 and rsi > 30:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {}))
+                    pos = "SHORT"
+            elif pos == "LONG" and close < vwap:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={}))
+                pos = None
+            elif pos == "SHORT" and close > vwap:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={}))
+                pos = None
+        logger.info(f"VwapBreakout: {len(signals)} signals")
         return signals
 
 

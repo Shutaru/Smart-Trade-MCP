@@ -1,13 +1,12 @@
 """
-OBV confirms price breakout with volume
+OBV Confirmation Breakout Plus
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class ObvConfirmationBreakoutPlus(BaseStrategy):
@@ -27,7 +26,7 @@ class ObvConfirmationBreakoutPlus(BaseStrategy):
         
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
-        return ['obv', 'ema', 'atr']
+        return ['obv', 'bollinger', 'atr']
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         """
@@ -39,12 +38,17 @@ class ObvConfirmationBreakoutPlus(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"ObvConfirmationBreakoutPlus generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(5, len(df)):
+            r = df.iloc[i]
+            close, bb_u, obv, atr = r["close"], r.get("bb_upper", close), r.get("obv", 0), r.get("atr", close*0.02)
+            obv_rising = obv > df.iloc[i-5].get("obv", 0)
+            if pos is None and close > bb_u and obv_rising:
+                sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                pos = "LONG"
+                
+        logger.info(f"ObvConfirmationBreakoutPlus: {len(signals)} signals")
         return signals
 
 

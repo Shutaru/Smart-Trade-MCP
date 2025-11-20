@@ -39,12 +39,23 @@ class TripleMomentumConfluence(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"TripleMomentumConfluence generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close = r["close"]
+            rsi, mfi, macd_hist = r.get("rsi", 50), r.get("mfi", 50), r.get("macd_hist", 0)
+            atr = r.get("atr", close*0.02)
+            # All 3 oscillators bullish
+            if pos is None:
+                if rsi > 50 and mfi > 50 and macd_hist > 0:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.85, sl, tp, {}))
+                    pos = "LONG"
+                elif rsi < 50 and mfi < 50 and macd_hist < 0:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.85, sl, tp, {}))
+                    pos = "SHORT"
+        logger.info(f"TripleMomentumConfluence: {len(signals)} signals")
         return signals
 
 

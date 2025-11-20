@@ -1,13 +1,12 @@
 """
-London session breakout with ATR filter
+London Breakout ATR
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class LondonBreakoutAtr(BaseStrategy):
@@ -27,7 +26,7 @@ class LondonBreakoutAtr(BaseStrategy):
         
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
-        return ['atr', 'ema']
+        return ["atr", "ema"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         """
@@ -39,12 +38,22 @@ class LondonBreakoutAtr(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"LondonBreakoutAtr generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close, atr = r["close"], r.get("atr", close*0.02)
+            # Simplified: any breakout in high ATR
+            if pos is None and atr > close * 0.015:  # 1.5% ATR threshold
+                prev_high, prev_low = df.iloc[i-1]["high"], df.iloc[i-1]["low"]
+                if close > prev_high:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
+                    pos = "LONG"
+                elif close < prev_low:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {}))
+                    pos = "SHORT"
+        logger.info(f"LondonBreakoutAtr: {len(signals)} signals")
         return signals
 
 

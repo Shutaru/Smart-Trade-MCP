@@ -1,13 +1,12 @@
 """
-Donchian breakout during volatility expansion
+Donchian Volatility Breakout
 """
 
 from typing import List
 import pandas as pd
-import numpy as np
 
-from .base import BaseStrategy, Signal, SignalType, StrategyConfig
-from ..core.logger import logger
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
 
 
 class DonchianVolatilityBreakout(BaseStrategy):
@@ -21,13 +20,12 @@ class DonchianVolatilityBreakout(BaseStrategy):
     def __init__(self, config: StrategyConfig = None):
         """Initialize DonchianVolatilityBreakout strategy."""
         super().__init__(config)
-        
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
+        self.config.stop_loss_atr_mult = 2.0
+        self.config.take_profit_rr_ratio = 2.5
         
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
-        return ['donchian', 'atr', 'adx']
+        return ["donchian", "atr", "adx"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         """
@@ -39,12 +37,25 @@ class DonchianVolatilityBreakout(BaseStrategy):
         Returns:
             List of trading signals
         """
-        signals = []
-        
-        # TODO: Implement strategy logic
-        # This is a placeholder - needs migration from old format
-        
-        logger.info(f"DonchianVolatilityBreakout generated {len(signals)} signals")
+        signals, pos = [], None
+        for i in range(5, len(df)):
+            r = df.iloc[i]
+            close = r["close"]
+            don_u, don_l = r.get("donchian_upper", close), r.get("donchian_lower", close)
+            adx, atr = r.get("adx", 0), r.get("atr", close*0.02)
+            adx_5ago = df.iloc[i-5].get("adx", 0)
+            
+            if pos is None:
+                if close > don_u and (adx > adx_5ago or adx >= 20):
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, {"adx": adx}))
+                    pos = "LONG"
+                elif close < don_l and (adx > adx_5ago or adx >= 20):
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {"adx": adx}))
+                    pos = "SHORT"
+                    
+        logger.info(f"DonchianVolatilityBreakout: {len(signals)} signals")
         return signals
 
 
