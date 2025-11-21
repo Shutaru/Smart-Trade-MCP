@@ -10,17 +10,14 @@ Tests the complete optimization pipeline:
 5. Display results
 """
 
-import asyncio
+# ==============================================================================
+# STEP 1: FIX ENCODING (BEFORE ANY IMPORTS)
+# ==============================================================================
 import sys
-from pathlib import Path
-import json
+import os
 
-# Fix Windows encoding BEFORE any other imports
 if sys.platform == 'win32':
-    import os
     os.environ['PYTHONIOENCODING'] = 'utf-8'
-    
-    # Try to reconfigure stdout/stderr to UTF-8
     try:
         if hasattr(sys.stdout, 'reconfigure'):
             sys.stdout.reconfigure(encoding='utf-8')
@@ -28,6 +25,24 @@ if sys.platform == 'win32':
             sys.stderr.reconfigure(encoding='utf-8')
     except:
         pass
+
+# ==============================================================================
+# STEP 2: SILENCE ALL LOGGING (BEFORE IMPORTING PROJECT MODULES)
+# ==============================================================================
+import logging
+
+# Disable ALL logging immediately
+logging.disable(logging.CRITICAL)
+
+# Also configure root logger to highest level
+logging.basicConfig(level=logging.CRITICAL + 100)
+
+# ==============================================================================
+# NOW SAFE TO IMPORT PROJECT MODULES (no logs will appear)
+# ==============================================================================
+import asyncio
+from pathlib import Path
+import json
 
 sys.path.insert(0, str(Path(__file__).parent))
 

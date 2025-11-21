@@ -35,7 +35,6 @@ from rich.console import Console
 from .config import OptimizationConfig
 from .parameter_space import ParameterSpace, ParameterType
 from .fitness_evaluator import FitnessEvaluator, FitnessMetrics
-from .logging_utils import silence_all_logging
 from ..core.cli_dashboard import OptimizationDashboard
 from ..core.logger import logger
 
@@ -271,90 +270,88 @@ class GeneticOptimizer:
         # Start dashboard
         self.dashboard.start()
         
-        # Print initial dashboard (before suppressing logs)
+        # Print initial dashboard
         console.clear()
         console.print(self.dashboard.render())
         
-        # Run optimization with silenced logging
-        with silence_all_logging():
-            # Evolution loop
-            for gen in range(1, self.config.n_generations + 1):
-                gen_start = time.time()
-                
-                # Evaluate population
-                fitnesses = list(map(self.toolbox.evaluate, population))
-                for ind, fit in zip(population, fitnesses):
-                    ind.fitness.values = fit
-                
-                # Update dashboard
-                self.dashboard.update_generation(gen, len(population))
-                
-                # Track best individual
-                best_ind = tools.selBest(population, 1)[0]
-                best_fit_tuple = best_ind.fitness.values
-                best_params = self._individual_to_params(best_ind)
-                
-                # Create FitnessMetrics from tuple
-                best_metrics_dict = {
-                    "sharpe_ratio": best_fit_tuple[0],
-                    "win_rate": best_fit_tuple[1],
-                    "max_drawdown": best_fit_tuple[2],
-                }
-                
-                # Calculate average fitness
-                avg_sharpe = sum(ind.fitness.values[0] for ind in population) / len(population)
-                avg_wr = sum(ind.fitness.values[1] for ind in population) / len(population)
-                avg_dd = sum(ind.fitness.values[2] for ind in population) / len(population)
-                
-                avg_metrics_dict = {
-                    "sharpe_ratio": avg_sharpe,
-                    "win_rate": avg_wr,
-                    "max_drawdown": avg_dd,
-                }
-                
-                # Complete generation
-                self.dashboard.complete_generation(best_metrics_dict, avg_metrics_dict)
-                
-                # Store history
-                self.history["best_fitness"].append(best_metrics_dict)
-                self.history["avg_fitness"].append(avg_metrics_dict)
-                self.history["best_params"].append(best_params)
-                self.history["generation_times"].append(time.time() - gen_start)
-                
-                # Refresh display every generation (manual refresh avoids Live encoding issues)
-                console.clear()
-                console.print(self.dashboard.render())
-                
-                # Last generation - skip evolution
-                if gen == self.config.n_generations:
-                    break
-                
-                # Select next generation
-                offspring = self.toolbox.select(population, len(population))
-                offspring = list(map(self.toolbox.clone, offspring))
-                
-                # Apply crossover
-                for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                    if random.random() < self.config.crossover_prob:
-                        self.toolbox.mate(child1, child2)
-                        del child1.fitness.values
-                        del child2.fitness.values
-                
-                # Apply mutation
-                for mutant in offspring:
-                    if random.random() < self.config.mutation_prob:
-                        self.toolbox.mutate(mutant)
-                        del mutant.fitness.values
-                
-                # Elitism - preserve best individuals
-                if self.config.elite_size > 0:
-                    elites = tools.selBest(population, self.config.elite_size)
-                    offspring[:self.config.elite_size] = elites
-                
-                # Replace population
-                population[:] = offspring
+        # Evolution loop (logging already disabled globally in test script)
+        for gen in range(1, self.config.n_generations + 1):
+            gen_start = time.time()
+            
+            # Evaluate population
+            fitnesses = list(map(self.toolbox.evaluate, population))
+            for ind, fit in zip(population, fitnesses):
+                ind.fitness.values = fit
+            
+            # Update dashboard
+            self.dashboard.update_generation(gen, len(population))
+            
+            # Track best individual
+            best_ind = tools.selBest(population, 1)[0]
+            best_fit_tuple = best_ind.fitness.values
+            best_params = self._individual_to_params(best_ind)
+            
+            # Create FitnessMetrics from tuple
+            best_metrics_dict = {
+                "sharpe_ratio": best_fit_tuple[0],
+                "win_rate": best_fit_tuple[1],
+                "max_drawdown": best_fit_tuple[2],
+            }
+            
+            # Calculate average fitness
+            avg_sharpe = sum(ind.fitness.values[0] for ind in population) / len(population)
+            avg_wr = sum(ind.fitness.values[1] for ind in population) / len(population)
+            avg_dd = sum(ind.fitness.values[2] for ind in population) / len(population)
+            
+            avg_metrics_dict = {
+                "sharpe_ratio": avg_sharpe,
+                "win_rate": avg_wr,
+                "max_drawdown": avg_dd,
+            }
+            
+            # Complete generation
+            self.dashboard.complete_generation(best_metrics_dict, avg_metrics_dict)
+            
+            # Store history
+            self.history["best_fitness"].append(best_metrics_dict)
+            self.history["avg_fitness"].append(avg_metrics_dict)
+            self.history["best_params"].append(best_params)
+            self.history["generation_times"].append(time.time() - gen_start)
+            
+            # Refresh display every generation (manual refresh avoids Live encoding issues)
+            console.clear()
+            console.print(self.dashboard.render())
+            
+            # Last generation - skip evolution
+            if gen == self.config.n_generations:
+                break
+            
+            # Select next generation
+            offspring = self.toolbox.select(population, len(population))
+            offspring = list(map(self.toolbox.clone, offspring))
+            
+            # Apply crossover
+            for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                if random.random() < self.config.crossover_prob:
+                    self.toolbox.mate(child1, child2)
+                    del child1.fitness.values
+                    del child2.fitness.values
+            
+            # Apply mutation
+            for mutant in offspring:
+                if random.random() < self.config.mutation_prob:
+                    self.toolbox.mutate(mutant)
+                    del mutant.fitness.values
+            
+            # Elitism - preserve best individuals
+            if self.config.elite_size > 0:
+                elites = tools.selBest(population, self.config.elite_size)
+                offspring[:self.config.elite_size] = elites
+            
+            # Replace population
+            population[:] = offspring
         
-        # Final best (STILL INSIDE silence_all_logging!)
+        # Final best
         final_best = tools.selBest(population, 1)[0]
         self.best_individual = final_best
         self.best_params = self._individual_to_params(final_best)
@@ -377,17 +374,9 @@ class GeneticOptimizer:
         console.clear()
         console.print(self.dashboard.render())
         
-        # Logging restored here - safe to log now!
         total_time = time.time() - start_time
         
-        logger.info(
-            "Optimization complete",
-            total_time=f"{total_time:.1f}s",
-            best_sharpe=self.best_fitness.sharpe_ratio,
-            best_params=self.best_params
-        )
-        
-        # Return results
+        # Return results (no logging needed - test script handles output)
         return {
             "best_params": self.best_params,
             "best_fitness": self.best_fitness.to_dict(),
