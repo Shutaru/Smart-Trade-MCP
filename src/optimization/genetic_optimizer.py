@@ -306,13 +306,11 @@ class GeneticOptimizer:
                 # Track best individual
                 best_ind = tools.selBest(self.population, 1)[0]
                 best_fitness = self._fitness_to_dict(best_ind.fitness.values)
+                avg_fitness = self._calculate_avg_fitness(self.population)
                 
-                dashboard.update_generation(
-                    generation=0,
-                    best_fitness=best_fitness,
-                    avg_fitness=self._calculate_avg_fitness(self.population),
-                    population=self.population,
-                )
+                # Update dashboard (generation 0)
+                dashboard.update_generation(generation=0, evaluated=self.config.population_size)
+                dashboard.complete_generation(best_fitness=best_fitness, avg_fitness=avg_fitness)
                 
                 # Evolution
                 for gen in range(1, self.config.n_generations + 1):
@@ -356,24 +354,14 @@ class GeneticOptimizer:
                         best_ind = current_best
                         best_fitness = self._fitness_to_dict(best_ind.fitness.values)
                     
-                    # Update dashboard
-                    dashboard.update_generation(
-                        generation=gen,
-                        best_fitness=best_fitness,
-                        avg_fitness=self._calculate_avg_fitness(self.population),
-                        population=self.population,
-                    )
+                    avg_fitness = self._calculate_avg_fitness(self.population)
                     
-                    gen_time = time.time() - gen_start
-                    dashboard.generation_times.append(gen_time)
+                    # Update dashboard
+                    dashboard.update_generation(generation=gen, evaluated=len(invalid_ind))
+                    dashboard.complete_generation(best_fitness=best_fitness, avg_fitness=avg_fitness)
             
             # Show final results
-            dashboard.show_final_results(
-                best_params=self._individual_to_params(best_ind),
-                best_fitness=best_fitness,
-                total_time=time.time() - start_time,
-                total_evaluations=self.evaluator.eval_count,
-            )
+            dashboard.complete(final_best=best_fitness)
         
         # Return results (logs re-enabled here)
         logger.info(
