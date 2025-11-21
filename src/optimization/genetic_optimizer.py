@@ -53,13 +53,18 @@ if sys.platform == 'win32':
     # Set environment variable
     os.environ['PYTHONIOENCODING'] = 'utf-8'
 
-# Rich console for live display with safe encoding
+# Rich console for live display with safe encoding AND ASCII-only for Windows compatibility
 try:
     console = Console(
         force_terminal=True,
         legacy_windows=False,
         force_interactive=False,
+        no_color=False,  # Keep colors
+        emoji=False,     # Disable emojis (Unicode)
+        markup=True,     # Keep markup
     )
+    # Set console to use ASCII for progress bars (no Unicode spinners)
+    console._emoji = False
 except:
     # Fallback to basic console
     console = Console()

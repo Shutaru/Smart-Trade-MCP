@@ -17,7 +17,6 @@ Features:
 from rich.console import Console
 from rich.progress import (
     Progress,
-    SpinnerColumn,
     BarColumn,
     TextColumn,
     TimeRemainingColumn,
@@ -33,7 +32,11 @@ from typing import Dict, List, Optional
 import time
 
 
-console = Console()
+# Console with Windows-compatible settings (no emoji, simple characters)
+console = Console(
+    emoji=False,
+    legacy_windows=False,
+)
 
 
 class OptimizationDashboard:
@@ -74,12 +77,12 @@ class OptimizationDashboard:
         # Rich components
         self.layout = Layout()
         self.progress = Progress(
-            SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
+            BarColumn(bar_width=40),  # Fixed width, simple ASCII bar
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeElapsedColumn(),
             TimeRemainingColumn(),
+            console=console,
         )
         
         self.overall_task = self.progress.add_task(
