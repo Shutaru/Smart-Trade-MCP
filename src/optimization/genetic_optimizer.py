@@ -260,10 +260,7 @@ class GeneticOptimizer:
         # Initialize population
         population = self.toolbox.population(n=self.config.population_size)
         
-        # Start dashboard
-        self.dashboard.start()
-        
-        # Run optimization with Live dashboard (legacy mode for PowerShell compatibility)
+        # Run optimization with Live dashboard
         with Live(self.dashboard.render(), console=console, refresh_per_second=2) as live:
             # Evolution loop
             for gen in range(1, self.config.n_generations + 1):
@@ -357,9 +354,8 @@ class GeneticOptimizer:
             profit_factor=0.0,
         )
         
-        # Complete dashboard and show final
+        # Complete dashboard (this will print the final results)
         self.dashboard.complete(self.history["best_fitness"][-1])
-        console.print(self.dashboard.render())
         
         total_time = time.time() - start_time
         
