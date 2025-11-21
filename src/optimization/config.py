@@ -1,0 +1,187 @@
+# -*- coding: utf-8 -*-
+"""
+Optimization Configuration
+
+Type-safe configuration for optimization runs using Pydantic.
+"""
+
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal, Optional
+from pathlib import Path
+
+
+class OptimizationConfig(BaseModel):
+    """Configuration for optimization runs"""
+    
+    # Algorithm settings
+    algorithm: Literal["genetic", "bayesian", "grid", "random"] = Field(
+        default="genetic",
+        description="Optimization algorithm to use"
+    )
+    
+    # Genetic Algorithm settings
+    population_size: int = Field(
+        default=50,
+        ge=10,
+        le=500,
+        description="Population size for GA"
+    )
+    
+    n_generations: int = Field(
+        default=20,
+        ge=1,
+        le=1000,
+        description="Number of generations"
+    )
+    
+    crossover_prob: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description="Crossover probability"
+    )
+    
+    mutation_prob: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Mutation probability"
+    )
+    
+    elite_size: int = Field(
+        default=2,
+        ge=0,
+        le=10,
+        description="Number of elite individuals to preserve"
+    )
+    
+    # Performance settings
+    use_gpu: bool = Field(
+        default=False,
+        description="Use GPU acceleration for fitness evaluation"
+    )
+    
+    use_ray: bool = Field(
+        default=False,
+        description="Use Ray for distributed computing"
+    )
+    
+    n_workers: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Number of parallel workers (None = auto-detect)"
+    )
+    
+    # Fitness evaluation
+    fitness_weights: tuple[float, float, float] = Field(
+        default=(1.0, 1.0, -1.0),
+        description="Weights for (Sharpe, Win Rate, Max DD) - positive to maximize, negative to minimize"
+    )
+    
+    # Data settings
+    initial_capital: float = Field(
+        default=10000.0,
+        gt=0,
+        description="Initial capital for backtesting"
+    )
+    
+    commission: float = Field(
+        default=0.001,
+        ge=0.0,
+        le=0.1,
+        description="Commission rate (0.001 = 0.1%)"
+    )
+    
+    slippage: float = Field(
+        default=0.0005,
+        ge=0.0,
+        le=0.1,
+        description="Slippage rate"
+    )
+    
+    # Storage
+    save_to_db: bool = Field(
+        default=True,
+        description="Save optimization results to database"
+    )
+    
+    save_checkpoints: bool = Field(
+        default=True,
+        description="Save generation checkpoints"
+    )
+    
+    checkpoint_dir: Path = Field(
+        default=Path("optimization_checkpoints"),
+        description="Directory for checkpoints"
+    )
+    
+    # Logging
+    verbose: bool = Field(
+        default=True,
+        description="Show detailed progress"
+    )
+    
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        default="INFO",
+        description="Logging level"
+    )
+    
+    @field_validator("checkpoint_dir")
+    @classmethod
+    def create_checkpoint_dir(cls, v: Path) -> Path:
+        """Ensure checkpoint directory exists"""
+        v.mkdir(parents=True, exist_ok=True)
+        return v
+    
+    class Config:
+        """Pydantic config"""
+        validate_assignment = True
+        use_enum_values = True
+
+
+# Preset configurations
+class OptimizationPresets:
+    """Common optimization presets"""
+    
+    @staticmethod
+    def quick_test() -> OptimizationConfig:
+        """Quick test run (small population, few generations)"""
+        return OptimizationConfig(
+            population_size=20,
+            n_generations=5,
+            use_gpu=False,
+            use_ray=False,
+            save_to_db=False,
+            save_checkpoints=False,
+        )
+    
+    @staticmethod
+    def standard() -> OptimizationConfig:
+        """Standard optimization run"""
+        return OptimizationConfig(
+            population_size=50,
+            n_generations=20,
+            use_gpu=False,
+            use_ray=False,
+        )
+    
+    @staticmethod
+    def intensive() -> OptimizationConfig:
+        """Intensive optimization (large population, many generations)"""
+        return OptimizationConfig(
+            population_size=100,
+            n_generations=50,
+            use_gpu=True,
+            use_ray=True,
+        )
+    
+    @staticmethod
+    def gpu_accelerated() -> OptimizationConfig:
+        """GPU-accelerated optimization"""
+        return OptimizationConfig(
+            population_size=200,
+            n_generations=30,
+            use_gpu=True,
+            use_ray=True,
+            n_workers=4,
+        )

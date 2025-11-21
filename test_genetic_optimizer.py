@@ -1,0 +1,129 @@
+# -*- coding: utf-8 -*-
+"""
+Test Genetic Optimizer
+
+Quick test to validate GA implementation with Rich dashboard.
+"""
+
+import asyncio
+import sys
+from pathlib import Path
+from datetime import datetime, timedelta
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.core.data_manager import DataManager
+from src.core.indicators import calculate_all_indicators
+from src.strategies import registry
+from src.optimization import (
+    GeneticOptimizer,
+    OptimizationConfig,
+    ParameterSpace,
+    ParameterType,
+    CommonParameterSpaces,
+    OptimizationPresets
+)
+
+print("="*80)
+print("GENETIC OPTIMIZER TEST")
+print("="*80)
+print()
+
+
+async def main():
+    """Test genetic optimizer with RSI strategy"""
+    
+    # Fetch data
+    print("?? Fetching historical data...")
+    dm = DataManager()
+    
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=180)  # 6 months
+    
+    df = await dm.fetch_historical(
+        symbol="BTC/USDT",
+        timeframe="1h",
+        start_date=start_date,
+        end_date=end_date,
+        max_candles=5000
+    )
+    
+    await dm.close()
+    
+    print(f"? Fetched {len(df)} candles ({(df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).days} days)")
+    print()
+    
+    # Get strategy
+    print("?? Loading RSI strategy...")
+    strategy_class = registry.get("rsi")
+    print(f"? Strategy: {strategy_class.name}")
+    print()
+    
+    # Calculate indicators
+    print("?? Calculating indicators...")
+    required = strategy_class.get_required_indicators()
+    df = calculate_all_indicators(df, required, use_gpu=False)
+    print(f"? Calculated {len(required)} indicators")
+    print()
+    
+    # Define parameter space
+    print("?? Defining parameter space...")
+    param_space = CommonParameterSpaces.rsi_strategy()
+    print(f"? {len(param_space)} parameters:")
+    for name, param_def in param_space.parameters.items():
+        if param_def.type == ParameterType.INT:
+            print(f"   - {name}: int [{param_def.low}, {param_def.high}]")
+        elif param_def.type == ParameterType.FLOAT:
+            print(f"   - {name}: float [{param_def.low:.1f}, {param_def.high:.1f}]")
+    print()
+    
+    # Create optimizer with QUICK TEST config
+    print("?? Initializing Genetic Optimizer...")
+    print("   Config: QUICK TEST (20 pop, 5 gen)")
+    print()
+    
+    config = OptimizationPresets.quick_test()
+    
+    optimizer = GeneticOptimizer(
+        df=df,
+        strategy_class=strategy_class,
+        param_space=param_space,
+        config=config
+    )
+    
+    # RUN OPTIMIZATION
+    print("?? Starting optimization...")
+    print()
+    
+    results = optimizer.optimize()
+    
+    # Display results
+    print()
+    print("="*80)
+    print("RESULTS SUMMARY")
+    print("="*80)
+    print()
+    print(f"Best Parameters:")
+    for param, value in results["best_params"].items():
+        print(f"   {param}: {value}")
+    print()
+    print(f"Best Fitness:")
+    for metric, value in results["best_fitness"].items():
+        print(f"   {metric}: {value:.2f}")
+    print()
+    print(f"Total Time: {results['total_time']:.1f}s")
+    print(f"Total Evaluations: {results['total_evaluations']}")
+    print(f"Evaluation Speed: {results['total_evaluations']/results['total_time']:.1f} evals/s")
+    print()
+    
+    # Save results
+    import json
+    with open("ga_test_results.json", "w") as f:
+        json.dump(results, f, indent=2, default=str)
+    
+    print("? Results saved to: ga_test_results.json")
+    print()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
