@@ -3,6 +3,7 @@
 from .base import BaseStrategy, Signal, SignalType, StrategyConfig
 from .rsi_strategy import RSIStrategy
 from .macd_strategy import MACDStrategy
+from .volume_shooter_strategy import VolumeShooterStrategy
 from .registry import StrategyRegistry, StrategyMetadata, registry
 
 __all__ = [
@@ -12,6 +13,7 @@ __all__ = [
     "StrategyConfig",
     "RSIStrategy",
     "MACDStrategy",
+    "VolumeShooterStrategy",
     "StrategyRegistry",
     "StrategyMetadata",
     "registry",

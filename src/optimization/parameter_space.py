@@ -220,6 +220,36 @@ class CommonParameterSpaces:
         }, strategy_name="macd")
     
     @staticmethod
+    def volume_shooter_strategy() -> ParameterSpace:
+        """Parameter space for Volume Shooter strategy"""
+        return ParameterSpace.from_dict({
+            "volume_factor": {
+                "type": ParameterType.FLOAT,
+                "low": 1.5,
+                "high": 3.0,
+                "description": "Volume spike multiplier"
+            },
+            "volume_period": {
+                "type": ParameterType.INT,
+                "low": 30,
+                "high": 100,
+                "description": "Volume SMA period"
+            },
+            "take_profit_pct": {
+                "type": ParameterType.FLOAT,
+                "low": 50.0,
+                "high": 150.0,
+                "description": "Take profit percentage"
+            },
+            "stop_loss_pct": {
+                "type": ParameterType.FLOAT,
+                "low": 5.0,
+                "high": 20.0,
+                "description": "Stop loss percentage"
+            },
+        }, strategy_name="volume_shooter")
+    
+    @staticmethod
     def generic_strategy(n_params: int = 5) -> ParameterSpace:
         """Generic parameter space for testing"""
         params = {}

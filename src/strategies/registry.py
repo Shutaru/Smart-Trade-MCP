@@ -65,6 +65,28 @@ class StrategyRegistry:
             },
         )
         
+        # Volume Shooter Strategy
+        try:
+            from .volume_shooter_strategy import VolumeShooterStrategy
+            
+            self.register(
+                name="volume_shooter",
+                strategy_class=VolumeShooterStrategy,
+                category="momentum",
+                description="High-volume breakout with momentum confirmation",
+                default_params={
+                    "volume_factor": 2.0,
+                    "volume_period": 50,
+                    "take_profit_pct": 95.0,
+                    "stop_loss_pct": 10.0,
+                    "use_sar_filter": False,
+                    "enable_longs": True,
+                    "enable_shorts": False,
+                },
+            )
+        except ImportError as e:
+            logger.warning(f"VolumeShooterStrategy not available: {e}")
+        
         # TrendFlow SuperTrend (from generated)
         try:
             from .generated.trendflow_supertrend import TrendflowSupertrend
