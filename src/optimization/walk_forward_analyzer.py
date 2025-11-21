@@ -276,22 +276,21 @@ class WalkForwardAnalyzer:
             # Create strategy instance with config
             strategy = strategy_cls(config)
             
-            # Run backtest on this fold
+            # Create backtest engine
             engine = BacktestEngine(
-                df=fold['df'],
-                strategy=strategy,
                 initial_capital=10000.0,
-                commission=0.001,
-                slippage=0.0005,
+                commission_rate=0.001,
+                slippage_rate=0.0005,
             )
             
-            results = engine.run()
+            # Run backtest on this fold (df is passed to run(), not __init__)
+            results = engine.run(strategy, fold['df'])
             
             # Validate against thresholds
             is_valid = (
-                results.get('sharpe_ratio', 0.0) >= self.config.min_sharpe_ratio and
-                results.get('win_rate', 0.0) >= self.config.min_win_rate and
-                results.get('max_drawdown_pct', 0.0) >= self.config.max_drawdown_pct
+                results.get('metrics', {}).get('sharpe_ratio', 0.0) >= self.config.min_sharpe_ratio and
+                results.get('metrics', {}).get('win_rate', 0.0) >= self.config.min_win_rate and
+                results.get('metrics', {}).get('max_drawdown_pct', 0.0) >= self.config.max_drawdown_pct
             )
             
             # Create fold result
@@ -300,10 +299,10 @@ class WalkForwardAnalyzer:
                 start=fold['start'],
                 end=fold['end'],
                 candles=len(fold['df']),
-                sharpe=results.get('sharpe_ratio', 0.0),
-                win_rate=results.get('win_rate', 0.0),
-                max_dd=results.get('max_drawdown_pct', 0.0),
-                total_return=results.get('total_return_pct', 0.0),
+                sharpe=results.get('metrics', {}).get('sharpe_ratio', 0.0),
+                win_rate=results.get('metrics', {}).get('win_rate', 0.0),
+                max_dd=results.get('metrics', {}).get('max_drawdown_pct', 0.0),
+                total_return=results.get('total_return', 0.0),
                 trades=results.get('total_trades', 0),
                 is_valid=is_valid,
             )
