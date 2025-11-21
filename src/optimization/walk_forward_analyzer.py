@@ -259,7 +259,13 @@ class WalkForwardAnalyzer:
         
         for fold in window['folds']:
             # Create strategy instance with optimized params
-            strategy = self.strategy_class(params=optimized_params)
+            # Check if strategy_class is already an instance or a class
+            if isinstance(self.strategy_class, type):
+                # It's a class - instantiate it
+                strategy = self.strategy_class(params=optimized_params)
+            else:
+                # It's already an instance - clone it with new params
+                strategy = self.strategy_class.__class__(params=optimized_params)
             
             # Run backtest on this fold
             engine = BacktestEngine(
