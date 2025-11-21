@@ -20,6 +20,8 @@ import time
 from datetime import datetime
 import pandas as pd
 from pathlib import Path
+import sys
+import os
 
 try:
     from deap import base, creator, tools, algorithms
@@ -38,9 +40,30 @@ from .logging_utils import silence_all_logging
 from ..core.cli_dashboard import OptimizationDashboard
 from ..core.logger import logger
 
-# Rich console for live display (force UTF-8 encoding for Windows)
-import sys
-console = Console(force_terminal=True, legacy_windows=False)
+# Fix Windows encoding issues
+if sys.platform == 'win32':
+    # Try to set UTF-8 encoding
+    try:
+        # For Python 3.7+
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+    except:
+        pass
+    
+    # Set environment variable
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+
+# Rich console for live display with safe encoding
+try:
+    console = Console(
+        force_terminal=True,
+        legacy_windows=False,
+        force_interactive=False,
+    )
+except:
+    # Fallback to basic console
+    console = Console()
 
 class GeneticOptimizer:
     """
@@ -246,7 +269,7 @@ class GeneticOptimizer:
         
         # Run optimization with live dashboard and silenced logging
         with silence_all_logging():
-            with Live(self.dashboard.render(), console=console, refresh_per_second=10) as live:
+            with Live(self.dashboard.render(), console=console, refresh_per_second=4) as live:
                 
                 # Evolution loop
                 for gen in range(1, self.config.n_generations + 1):
@@ -324,7 +347,7 @@ class GeneticOptimizer:
                     # Replace population
                     population[:] = offspring
         
-        # Final best (logging restored here BUT we don't need to re-evaluate!)
+        # Final best (STILL INSIDE silence_all_logging!)
         final_best = tools.selBest(population, 1)[0]
         self.best_individual = final_best
         self.best_params = self._individual_to_params(final_best)
@@ -344,6 +367,7 @@ class GeneticOptimizer:
         # Complete dashboard (use what we have)
         self.dashboard.complete(self.history["best_fitness"][-1])
         
+        # Logging restored here - safe to log now!
         total_time = time.time() - start_time
         
         logger.info(

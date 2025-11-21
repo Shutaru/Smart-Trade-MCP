@@ -1,28 +1,47 @@
 # -*- coding: utf-8 -*-
 """
-Test Genetic Optimizer
+Genetic Algorithm Optimizer Test
 
-Quick test to validate GA implementation with Rich dashboard.
+Tests the complete optimization pipeline:
+1. Fetch historical data
+2. Calculate indicators
+3. Define parameter space
+4. Run genetic algorithm
+5. Display results
 """
 
 import asyncio
 import sys
 from pathlib import Path
+import json
+
+# Fix Windows encoding BEFORE any other imports
+if sys.platform == 'win32':
+    import os
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    
+    # Try to reconfigure stdout/stderr to UTF-8
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8')
+    except:
+        pass
+
+sys.path.insert(0, str(Path(__file__).parent))
+
 from datetime import datetime, timedelta
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from src.core.data_manager import DataManager
 from src.core.indicators import calculate_all_indicators
 from src.strategies import registry
 from src.optimization import (
     GeneticOptimizer,
-    OptimizationConfig,
     ParameterSpace,
-    ParameterType,
+    OptimizationPresets,
     CommonParameterSpaces,
-    OptimizationPresets
 )
+from src.optimization.parameter_space import ParameterType
 
 print("="*80)
 print("GENETIC OPTIMIZER TEST")
@@ -117,8 +136,7 @@ async def main():
     print()
     
     # Save results
-    import json
-    with open("ga_test_results.json", "w") as f:
+    with open("ga_test_results.json", "w", encoding='utf-8') as f:
         json.dump(results, f, indent=2, default=str)
     
     print("? Results saved to: ga_test_results.json")
