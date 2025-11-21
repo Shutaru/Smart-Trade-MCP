@@ -2,15 +2,20 @@
 """
 Optimization Module
 
-Genetic Algorithm and other optimization techniques for trading strategies.
+Genetic Algorithm and Walk-Forward Analysis for trading strategies.
 """
 
 from .genetic_optimizer import GeneticOptimizer
 from .parameter_space import ParameterSpace, ParameterDefinition, ParameterType, CommonParameterSpaces
 from .fitness_evaluator import FitnessEvaluator, FitnessMetrics
 from .config import OptimizationConfig, OptimizationPresets
+from .walk_forward_analyzer import WalkForwardAnalyzer
+from .walk_forward_config import WalkForwardConfig, WalkForwardPresets
+from .walk_forward_results import WindowResult, WalkForwardResults
+from .walk_forward_dashboard import WalkForwardDashboard
 
 __all__ = [
+    # Genetic Optimization
     "GeneticOptimizer",
     "ParameterSpace",
     "ParameterDefinition",
@@ -20,4 +25,11 @@ __all__ = [
     "FitnessMetrics",
     "OptimizationConfig",
     "OptimizationPresets",
+    # Walk-Forward Analysis
+    "WalkForwardAnalyzer",
+    "WalkForwardConfig",
+    "WalkForwardPresets",
+    "WindowResult",
+    "WalkForwardResults",
+    "WalkForwardDashboard",
 ]

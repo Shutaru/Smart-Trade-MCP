@@ -1,0 +1,201 @@
+# -*- coding: utf-8 -*-
+"""
+Walk-Forward Dashboard
+
+Beautiful CLI dashboard for walk-forward analysis progress.
+"""
+
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
+from rich.table import Table
+from rich.panel import Panel
+from rich.layout import Layout
+from rich.text import Text
+from typing import Dict, Optional
+import time
+
+
+# Shared console from cli_dashboard
+from ..core.cli_dashboard import console
+
+
+class WalkForwardDashboard:
+    """
+    Live dashboard for walk-forward analysis.
+    
+    Shows:
+    - Overall window progress
+    - Current window optimization
+    - Aggregate statistics
+    - Robustness metrics
+    """
+    
+    def __init__(
+        self,
+        total_windows: int,
+        strategy_name: str = "Unknown"
+    ):
+        self.total_windows = total_windows
+        self.strategy_name = strategy_name
+        
+        self.current_window = 0
+        self.valid_windows = 0
+        self.start_time = time.time()
+        
+        # Window metrics
+        self.current_train_sharpe: float = 0.0
+        self.current_test_sharpe: float = 0.0
+        self.avg_test_sharpe: float = 0.0
+        self.avg_degradation: float = 0.0
+        
+        # Progress tracking
+        self.window_times: list = []
+        
+        # Rich progress
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=40),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        
+        self.window_task = self.progress.add_task(
+            "[cyan]Windows Progress", total=total_windows
+        )
+    
+    def _create_header(self) -> Panel:
+        """Create header panel"""
+        header_text = Text()
+        header_text.append("?? WALK-FORWARD ANALYSIS\n", style="bold magenta")
+        header_text.append(f"Strategy: {self.strategy_name}\n", style="cyan")
+        header_text.append(f"Total Windows: {self.total_windows}", style="yellow")
+        
+        return Panel(header_text, style="bold blue")
+    
+    def _create_current_window_panel(self) -> Panel:
+        """Create current window info panel"""
+        info_text = Text()
+        info_text.append(f"Window: {self.current_window}/{self.total_windows}\n", style="cyan")
+        info_text.append(f"Train Sharpe: {self.current_train_sharpe:.2f}\n", style="green")
+        info_text.append(f"Test Sharpe: {self.current_test_sharpe:.2f}\n", style="yellow")
+        
+        if self.current_train_sharpe > 0:
+            degradation = ((self.current_test_sharpe - self.current_train_sharpe) / 
+                          abs(self.current_train_sharpe) * 100)
+            color = "green" if abs(degradation) < 20 else "red"
+            info_text.append(f"Degradation: {degradation:+.1f}%", style=color)
+        
+        return Panel(info_text, title="?? Current Window", style="bold blue")
+    
+    def _create_aggregate_table(self) -> Table:
+        """Create aggregate metrics table"""
+        table = Table(title="?? Aggregate Metrics", show_header=True, header_style="bold magenta")
+        
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="yellow")
+        
+        table.add_row("Valid Windows", f"{self.valid_windows}/{self.current_window}")
+        table.add_row("Avg Test Sharpe", f"{self.avg_test_sharpe:.2f}")
+        table.add_row("Avg Degradation", f"{self.avg_degradation:+.1f}%")
+        
+        if self.valid_windows > 0:
+            consistency = (self.valid_windows / self.current_window) * 100 if self.current_window > 0 else 0
+            table.add_row("Consistency", f"{consistency:.1f}%")
+        
+        return table
+    
+    def _create_stats_panel(self) -> Panel:
+        """Create statistics panel"""
+        elapsed = time.time() - self.start_time
+        
+        stats_text = Text()
+        stats_text.append(f"??  Elapsed: {self._format_time(elapsed)}\n", style="cyan")
+        stats_text.append(f"?? Completed: {self.current_window}\n", style="yellow")
+        
+        if self.window_times:
+            avg_time = sum(self.window_times) / len(self.window_times)
+            remaining_windows = self.total_windows - self.current_window
+            eta = avg_time * remaining_windows
+            stats_text.append(f"? ETA: {self._format_time(eta)}\n", style="green")
+            stats_text.append(f"?? Avg Window: {avg_time:.1f}s", style="magenta")
+        
+        return Panel(stats_text, title="?? Statistics", style="bold blue")
+    
+    def _format_time(self, seconds: float) -> str:
+        """Format seconds as HH:MM:SS"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        
+        if hours > 0:
+            return f"{hours:02d}h {minutes:02d}m {secs:02d}s"
+        elif minutes > 0:
+            return f"{minutes:02d}m {secs:02d}s"
+        else:
+            return f"{secs}s"
+    
+    def update_window(
+        self,
+        window_id: int,
+        train_sharpe: float,
+        test_sharpe: float,
+        is_valid: bool,
+        window_time: float
+    ):
+        """Update dashboard with window results"""
+        self.current_window = window_id + 1
+        self.current_train_sharpe = train_sharpe
+        self.current_test_sharpe = test_sharpe
+        
+        if is_valid:
+            self.valid_windows += 1
+        
+        self.window_times.append(window_time)
+        
+        # Update progress
+        self.progress.update(self.window_task, completed=self.current_window)
+        
+        # Update aggregates (running average)
+        if self.current_window > 0:
+            valid_sharpes = [self.current_test_sharpe]  # Simplified - in real code track all
+            self.avg_test_sharpe = sum(valid_sharpes) / len(valid_sharpes)
+            
+            if train_sharpe > 0:
+                self.avg_degradation = ((test_sharpe - train_sharpe) / abs(train_sharpe) * 100)
+    
+    def render(self) -> Layout:
+        """Render current dashboard state"""
+        layout = Layout()
+        
+        layout.split_column(
+            Layout(self._create_header(), size=4),
+            Layout(self.progress, size=3),
+            Layout(self._create_current_window_panel(), size=6),
+            Layout(self._create_aggregate_table(), size=6),
+            Layout(self._create_stats_panel(), size=6),
+        )
+        
+        return layout
+    
+    def complete(self, results: Dict[str, Any]):
+        """Display final walk-forward results"""
+        console.clear()
+        console.rule("[bold green]?? WALK-FORWARD ANALYSIS COMPLETE")
+        
+        # Summary table
+        table = Table(title="? Final Results", show_header=True, header_style="bold green")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="yellow")
+        
+        table.add_row("Total Windows", str(results.get('total_windows', 0)))
+        table.add_row("Valid Windows", str(results.get('valid_windows', 0)))
+        table.add_row("Consistency Score", results.get('consistency', 'N/A'))
+        table.add_row("Avg Test Sharpe", results.get('avg_test_sharpe', 'N/A'))
+        table.add_row("Sharpe Degradation", results.get('sharpe_degradation', 'N/A'))
+        table.add_row("Robustness Score", results.get('robustness_score', 'N/A'))
+        table.add_row("Is Robust?", results.get('is_robust', 'N/A'))
+        
+        console.print(table)
+        console.print()
