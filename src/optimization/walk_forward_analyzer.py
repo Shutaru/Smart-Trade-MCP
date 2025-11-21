@@ -382,11 +382,125 @@ class WalkForwardAnalyzer:
         window_results = []
         
         if self.config.use_parallel:
-            # Parallel processing (Phase 6B - GPU batch)
-            # For now, sequential
-            for window in self.windows:
-                result = self._process_window(window)
-                window_results.append(result)
+            # PARALLEL PROCESSING WITH RAY
+            try:
+                from .ray_batch_evaluator import (
+                    RayBatchEvaluator,
+                    BatchEvaluationConfig,
+                    evaluate_window_remote,
+                    RAY_AVAILABLE,
+                )
+                
+                if RAY_AVAILABLE:
+                    logger.info("Using Ray for parallel window processing")
+                    
+                    # Create batch evaluator
+                    batch_config = BatchEvaluationConfig(
+                        use_ray=True,
+                        n_workers=self.config.n_jobs,
+                        batch_size=min(len(self.windows), 4),  # Process up to 4 windows at once
+                    )
+                    
+                    with RayBatchEvaluator(batch_config) as evaluator:
+                        # Convert windows to serializable format
+                        window_data_list = []
+                        for window in self.windows:
+                            window_data_list.append({
+                                'id': window['id'],
+                                'train_start': window['train_start'],
+                                'train_end': window['train_end'],
+                                'test_start': window['test_start'],
+                                'test_end': window['test_end'],
+                                'train_df': window['train_df'],
+                                'folds': window['folds'],
+                            })
+                        
+                        # Create optimization config
+                        opt_config = OptimizationConfig(
+                            population_size=self.config.population_size,
+                            n_generations=self.config.n_generations,
+                            use_gpu=False,
+                        )
+                        
+                        # Evaluate all windows in parallel
+                        import ray
+                        futures = [
+                            evaluate_window_remote.remote(
+                                window_data,
+                                self.strategy_class,
+                                self.param_space,
+                                opt_config,
+                                self.config,
+                            )
+                            for window_data in window_data_list
+                        ]
+                        
+                        # Get results
+                        raw_results = ray.get(futures)
+                        
+                        # Convert to WindowResult objects
+                        for raw in raw_results:
+                            from .walk_forward_results import FoldResult
+                            
+                            fold_objs = [
+                                FoldResult(
+                                    fold_id=f['fold_id'],
+                                    start=f['start'],
+                                    end=f['end'],
+                                    candles=f['candles'],
+                                    sharpe=f['sharpe'],
+                                    win_rate=f['win_rate'],
+                                    max_dd=f['max_dd'],
+                                    total_return=f['total_return'],
+                                    trades=f['trades'],
+                                    is_valid=f['is_valid'],
+                                )
+                                for f in raw['folds']
+                            ]
+                            
+                            result = WindowResult(
+                                window_id=raw['window_id'],
+                                train_start=raw['train_start'],
+                                train_end=raw['train_end'],
+                                test_start=raw['test_start'],
+                                test_end=raw['test_end'],
+                                train_candles=raw['train_candles'],
+                                train_sharpe=raw['train_fitness']['sharpe_ratio'],
+                                train_win_rate=raw['train_fitness']['win_rate'],
+                                train_max_dd=raw['train_fitness']['max_drawdown_pct'],
+                                folds=fold_objs,
+                                test_candles=0,
+                                test_sharpe=0.0,
+                                test_win_rate=0.0,
+                                test_max_dd=0.0,
+                                test_total_return=0.0,
+                                test_trades=0,
+                                best_params=raw['best_params'],
+                                sharpe_degradation=0.0,
+                                win_rate_degradation=0.0,
+                                valid_folds=0,
+                                fold_consistency=0.0,
+                                is_valid=False,
+                                optimization_time=raw['optimization_time'],
+                            )
+                            
+                            # Calculate aggregates
+                            result.calculate_aggregates()
+                            result.calculate_degradation()
+                            result.is_valid = result.valid_folds >= self.config.min_valid_folds
+                            
+                            window_results.append(result)
+                    
+                    logger.info(f"Ray parallel processing complete: {len(window_results)} windows")
+                else:
+                    raise ImportError("Ray not available")
+                    
+            except (ImportError, Exception) as e:
+                logger.warning(f"Ray parallel processing failed: {e}, falling back to sequential")
+                # Fall back to sequential
+                for window in self.windows:
+                    result = self._process_window(window)
+                    window_results.append(result)
         else:
             # Sequential processing
             for window in self.windows:

@@ -13,6 +13,7 @@ from .walk_forward_analyzer import WalkForwardAnalyzer
 from .walk_forward_config import WalkForwardConfig, WalkForwardPresets
 from .walk_forward_results import WindowResult, WalkForwardResults, FoldResult
 from .walk_forward_dashboard import WalkForwardDashboard
+from .ray_batch_evaluator import RayBatchEvaluator, BatchEvaluationConfig
 
 __all__ = [
     # Genetic Optimization
@@ -33,4 +34,7 @@ __all__ = [
     "WalkForwardResults",
     "FoldResult",
     "WalkForwardDashboard",
+    # Ray Batch Processing
+    "RayBatchEvaluator",
+    "BatchEvaluationConfig",
 ]
