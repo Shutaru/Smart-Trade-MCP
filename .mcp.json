@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "smart-trade": {
+      "command": "python",
+      "args": [
+        "-m",
+        "src.mcp_server.server"
+      ],
+      "cwd": "C:\\Users\\shuta\\source\\repos\\Smart-Trade-MCP",
+      "env": {
+        "PYTHONPATH": "C:\\Users\\shuta\\source\\repos\\Smart-Trade-MCP",
+        "SMART_TRADE_ENV": "production"
+      }
+    }
+  }
+}
