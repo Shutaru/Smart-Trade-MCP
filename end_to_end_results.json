@@ -1,0 +1,476 @@
+{
+  "backtest_results": [
+    {
+      "strategy": "multi_oscillator_confluence",
+      "category": "momentum",
+      "total_return": 31.90155204518137,
+      "total_trades": 466,
+      "win_rate": 65.02145922746782,
+      "sharpe_ratio": 0.21287622913555515,
+      "max_drawdown_pct": 8.214526462348502,
+      "profit_factor": 2.178265410092487
+    },
+    {
+      "strategy": "cci_extreme_snapback",
+      "category": "mean_reversion",
+      "total_return": 19.985795014080733,
+      "total_trades": 465,
+      "win_rate": 69.46236559139784,
+      "sharpe_ratio": 0.2191505738052145,
+      "max_drawdown_pct": 10.022924345872047,
+      "profit_factor": 3.71712126396668
+    },
+    {
+      "strategy": "ny_session_fade",
+      "category": "advanced",
+      "total_return": 10.986449169522427,
+      "total_trades": 56,
+      "win_rate": 83.92857142857143,
+      "sharpe_ratio": 0.09017797102643003,
+      "max_drawdown_pct": 10.465048959202655,
+      "profit_factor": 9.28372377949557
+    },
+    {
+      "strategy": "bollinger_mean_reversion",
+      "category": "mean_reversion",
+      "total_return": 5.901609440236966,
+      "total_trades": 256,
+      "win_rate": 59.375,
+      "sharpe_ratio": 0.1702122312907258,
+      "max_drawdown_pct": 10.611085103888168,
+      "profit_factor": 1.6320980256665387
+    },
+    {
+      "strategy": "atr_expansion_breakout",
+      "category": "breakout",
+      "total_return": 2.4795534141494047,
+      "total_trades": 42,
+      "win_rate": 45.23809523809524,
+      "sharpe_ratio": 0.07305928514771469,
+      "max_drawdown_pct": 12.264839695287153,
+      "profit_factor": 1.4725818615667867
+    },
+    {
+      "strategy": "keltner_pullback_continuation",
+      "category": "hybrid",
+      "total_return": 0.9437235260873367,
+      "total_trades": 213,
+      "win_rate": 38.967136150234744,
+      "sharpe_ratio": 0.1538790720224072,
+      "max_drawdown_pct": 13.377670549309203,
+      "profit_factor": 1.0443859479664808
+    },
+    {
+      "strategy": "vwap_band_fade_pro",
+      "category": "hybrid",
+      "total_return": 0.641864669279113,
+      "total_trades": 22,
+      "win_rate": 54.54545454545454,
+      "sharpe_ratio": 0.051593952453073966,
+      "max_drawdown_pct": 10.730194461874326,
+      "profit_factor": 1.3397076998686759
+    },
+    {
+      "strategy": "ema200_tap_reversion",
+      "category": "hybrid",
+      "total_return": 0.21626932789131637,
+      "total_trades": 1,
+      "win_rate": 100.0,
+      "sharpe_ratio": 0.012811657599088354,
+      "max_drawdown_pct": 10.052235691536989,
+      "profit_factor": 0
+    },
+    {
+      "strategy": "double_donchian_pullback",
+      "category": "advanced",
+      "total_return": 0.21478876395339963,
+      "total_trades": 1,
+      "win_rate": 100.0,
+      "sharpe_ratio": 0.012843949537480347,
+      "max_drawdown_pct": 10.082530359018328,
+      "profit_factor": 0
+    },
+    {
+      "strategy": "rsi_band_reversion",
+      "category": "mean_reversion",
+      "total_return": 0.19390718926317607,
+      "total_trades": 15,
+      "win_rate": 53.333333333333336,
+      "sharpe_ratio": 0.04200527245001858,
+      "max_drawdown_pct": 10.152101131091214,
+      "profit_factor": 1.4207271434446613
+    },
+    {
+      "strategy": "rsi_supertrend_flip",
+      "category": "momentum",
+      "total_return": 0.1622473438088301,
+      "total_trades": 3,
+      "win_rate": 33.33333333333333,
+      "sharpe_ratio": 0.019462891752644075,
+      "max_drawdown_pct": 10.338153680518717,
+      "profit_factor": 1.42557797405762
+    },
+    {
+      "strategy": "trendflow_supertrend",
+      "category": "trend_following",
+      "total_return": 0.06290105443367278,
+      "total_trades": 7,
+      "win_rate": 42.857142857142854,
+      "sharpe_ratio": 0.02853167303633876,
+      "max_drawdown_pct": 10.344891383826411,
+      "profit_factor": 1.0858093774781081
+    },
+    {
+      "strategy": "vwap_mean_reversion",
+      "category": "hybrid",
+      "total_return": -0.006957397296647461,
+      "total_trades": 27,
+      "win_rate": 48.148148148148145,
+      "sharpe_ratio": 0.05597104007366791,
+      "max_drawdown_pct": 10.843920793817178,
+      "profit_factor": 0.9973435149106463
+    },
+    {
+      "strategy": "vwap_institutional_trend",
+      "category": "hybrid",
+      "total_return": -0.029985007496247107,
+      "total_trades": 1,
+      "win_rate": 0.0,
+      "sharpe_ratio": 0.01043016198628052,
+      "max_drawdown_pct": 10.004997501249381,
+      "profit_factor": 0.0
+    },
+    {
+      "strategy": "obv_confirmation_breakout_plus",
+      "category": "advanced",
+      "total_return": -0.029985007496247107,
+      "total_trades": 1,
+      "win_rate": 0.0,
+      "sharpe_ratio": 0.01043016198628052,
+      "max_drawdown_pct": 10.004997501249381,
+      "profit_factor": 0.0
+    },
+    {
+      "strategy": "macd_zero_trend",
+      "category": "trend_following",
+      "total_return": -0.6169082032545181,
+      "total_trades": 48,
+      "win_rate": 35.41666666666667,
+      "sharpe_ratio": 0.07363932071097652,
+      "max_drawdown_pct": 12.110602219805894,
+      "profit_factor": 0.9084891249878447
+    },
+    {
+      "strategy": "donchian_continuation",
+      "category": "trend_following",
+      "total_return": -2.2673620546494355,
+      "total_trades": 47,
+      "win_rate": 34.04255319148936,
+      "sharpe_ratio": 0.07137998991202936,
+      "max_drawdown_pct": 12.812572614970904,
+      "profit_factor": 0.6481766445136671
+    },
+    {
+      "strategy": "mfi_divergence_reversion",
+      "category": "mean_reversion",
+      "total_return": -2.525722020469434,
+      "total_trades": 141,
+      "win_rate": 41.13475177304964,
+      "sharpe_ratio": 0.12747825436132898,
+      "max_drawdown_pct": 13.096084733652482,
+      "profit_factor": 0.654629525586932
+    },
+    {
+      "strategy": "vwap_breakout",
+      "category": "breakout",
+      "total_return": -2.613232349082373,
+      "total_trades": 53,
+      "win_rate": 16.9811320754717,
+      "sharpe_ratio": 0.07555579080238153,
+      "max_drawdown_pct": 13.269321902463924,
+      "profit_factor": 0.5407870504447422
+    },
+    {
+      "strategy": "ema_cloud_trend",
+      "category": "trend_following",
+      "total_return": -3.709170019020147,
+      "total_trades": 270,
+      "win_rate": 25.555555555555554,
+      "sharpe_ratio": 0.17537780680573187,
+      "max_drawdown_pct": 15.518522021722445,
+      "profit_factor": 0.8339197290221901
+    },
+    {
+      "strategy": "bollinger_squeeze_breakout",
+      "category": "breakout",
+      "total_return": -5.725833165824312,
+      "total_trades": 48,
+      "win_rate": 2.083333333333333,
+      "sharpe_ratio": 0.06853006122004601,
+      "max_drawdown_pct": 15.647176796229651,
+      "profit_factor": 0.03435337693114797
+    },
+    {
+      "strategy": "keltner_expansion",
+      "category": "breakout",
+      "total_return": -5.809314803022348,
+      "total_trades": 199,
+      "win_rate": 32.663316582914575,
+      "sharpe_ratio": 0.1519513157656368,
+      "max_drawdown_pct": 16.3050441187307,
+      "profit_factor": 0.713633920799486
+    },
+    {
+      "strategy": "stoch_signal_reversal",
+      "category": "mean_reversion",
+      "total_return": -7.1383074332069585,
+      "total_trades": 117,
+      "win_rate": 35.04273504273504,
+      "sharpe_ratio": 0.11414799941474343,
+      "max_drawdown_pct": 17.56121809593613,
+      "profit_factor": 0.2876626178243742
+    },
+    {
+      "strategy": "ema_stack_regime_flip",
+      "category": "momentum",
+      "total_return": -7.941373996523959,
+      "total_trades": 261,
+      "win_rate": 29.50191570881226,
+      "sharpe_ratio": 0.1746353930212244,
+      "max_drawdown_pct": 19.094211982960903,
+      "profit_factor": 0.6630549651018701
+    },
+    {
+      "strategy": "adx_trend_filter_plus",
+      "category": "trend_following",
+      "total_return": -9.941018486609444,
+      "total_trades": 374,
+      "win_rate": 20.32085561497326,
+      "sharpe_ratio": 0.21278566385377443,
+      "max_drawdown_pct": 19.991612725308624,
+      "profit_factor": 0.6725875884003994
+    },
+    {
+      "strategy": "triple_momentum_confluence",
+      "category": "momentum",
+      "total_return": -10.521087472531743,
+      "total_trades": 571,
+      "win_rate": 32.22416812609457,
+      "sharpe_ratio": 0.2642893054668756,
+      "max_drawdown_pct": 21.642391069733996,
+      "profit_factor": 0.7850054980614719
+    },
+    {
+      "strategy": "rsi",
+      "category": "mean_reversion",
+      "total_return": -19.178773807496086,
+      "total_trades": 256,
+      "win_rate": 42.1875,
+      "sharpe_ratio": 0.1679981147604821,
+      "max_drawdown_pct": 19.98507229971218,
+      "profit_factor": 0.6228637150609639
+    },
+    {
+      "strategy": "macd",
+      "category": "trend_following",
+      "total_return": -22.288924222568816,
+      "total_trades": 673,
+      "win_rate": 27.934621099554235,
+      "sharpe_ratio": 0.3139517118685337,
+      "max_drawdown_pct": 32.600788923317914,
+      "profit_factor": 0.575050085983831
+    },
+    {
+      "strategy": "regime_adaptive_core",
+      "category": "advanced",
+      "total_return": -23.244915304131542,
+      "total_trades": 360,
+      "win_rate": 26.944444444444443,
+      "sharpe_ratio": 0.20631615894822938,
+      "max_drawdown_pct": 23.765608608983012,
+      "profit_factor": 0.6220097873839708
+    },
+    {
+      "strategy": "ema_stack_momentum",
+      "category": "momentum",
+      "total_return": -23.629212693451997,
+      "total_trades": 816,
+      "win_rate": 29.77941176470588,
+      "sharpe_ratio": 0.34305808006339633,
+      "max_drawdown_pct": 34.98387549234423,
+      "profit_factor": 0.6042716782604208
+    },
+    {
+      "strategy": "donchian_volatility_breakout",
+      "category": "breakout",
+      "total_return": -26.01095538027547,
+      "total_trades": 453,
+      "win_rate": 28.47682119205298,
+      "sharpe_ratio": 0.23517735692075825,
+      "max_drawdown_pct": 26.3102376584624,
+      "profit_factor": 0.650245637685557
+    },
+    {
+      "strategy": "london_breakout_atr",
+      "category": "breakout",
+      "total_return": -26.96588283843776,
+      "total_trades": 693,
+      "win_rate": 29.87012987012987,
+      "sharpe_ratio": 0.3018632502811188,
+      "max_drawdown_pct": 27.611363727543125,
+      "profit_factor": 0.5740271999443872
+    },
+    {
+      "strategy": "complete_system_5x",
+      "category": "advanced",
+      "total_return": -36.54529950856943,
+      "total_trades": 1233,
+      "win_rate": 20.60016220600162,
+      "sharpe_ratio": 0.4656773871314992,
+      "max_drawdown_pct": 47.1430311638876,
+      "profit_factor": 0.4427379663606562
+    },
+    {
+      "strategy": "pure_price_action_donchian",
+      "category": "advanced",
+      "total_return": -38.00497035996514,
+      "total_trades": 857,
+      "win_rate": 25.32088681446908,
+      "sharpe_ratio": 0.35442714802428776,
+      "max_drawdown_pct": 38.413612484778355,
+      "profit_factor": 0.580145380875151
+    },
+    {
+      "strategy": "mfi_impulse_momentum",
+      "category": "momentum",
+      "total_return": -41.14402624297152,
+      "total_trades": 1496,
+      "win_rate": 30.080213903743314,
+      "sharpe_ratio": 0.5387425208831073,
+      "max_drawdown_pct": 51.775051740762024,
+      "profit_factor": 0.5731385166683223
+    },
+    {
+      "strategy": "volatility_weighted_breakout",
+      "category": "breakout",
+      "total_return": -77.70730642293884,
+      "total_trades": 536,
+      "win_rate": 2.425373134328358,
+      "sharpe_ratio": 0.5767073614604762,
+      "max_drawdown_pct": 87.64113493125933,
+      "profit_factor": 0.023169397360049793
+    },
+    {
+      "strategy": "channel_squeeze_plus",
+      "category": "breakout",
+      "total_return": -89.8477366752197,
+      "total_trades": 784,
+      "win_rate": 1.403061224489796,
+      "sharpe_ratio": 0.7915569736268416,
+      "max_drawdown_pct": 99.72516003635059,
+      "profit_factor": 0.007569323855624464
+    },
+    {
+      "strategy": "trend_volume_combo",
+      "category": "momentum",
+      "total_return": -90.48833209286093,
+      "total_trades": 2812,
+      "win_rate": 19.096728307254622,
+      "sharpe_ratio": -0.1360473009880238,
+      "max_drawdown_pct": 100.80012712444592,
+      "profit_factor": 0.31971055584828934
+    },
+    {
+      "strategy": "obv_trend_confirmation",
+      "category": "momentum",
+      "total_return": -103.55482472490986,
+      "total_trades": 3368,
+      "win_rate": 17.992874109263656,
+      "sharpe_ratio": -0.12926392551175198,
+      "max_drawdown_pct": 113.88830457180946,
+      "profit_factor": 0.3532994646916568
+    },
+    {
+      "strategy": "order_flow_momentum_vwap",
+      "category": "hybrid",
+      "total_return": -117.55078261405858,
+      "total_trades": 3602,
+      "win_rate": 18.406440866185452,
+      "sharpe_ratio": 0.14418221706615117,
+      "max_drawdown_pct": 117.73565865625379,
+      "profit_factor": 0.302412558776647
+    }
+  ],
+  "regime_distribution": {
+    "VOLATILE": 100.0
+  },
+  "regime_performance": {
+    "VOLATILE": [
+      {
+        "strategy": "cci_extreme_snapback",
+        "return": 20.12509944642018,
+        "trades": 460,
+        "win_rate": 70.21739130434783
+      },
+      {
+        "strategy": "bollinger_mean_reversion",
+        "return": 5.927670078376823,
+        "trades": 254,
+        "win_rate": 59.4488188976378
+      },
+      {
+        "strategy": "atr_expansion_breakout",
+        "return": 2.217231696791777,
+        "trades": 43,
+        "win_rate": 44.18604651162791
+      },
+      {
+        "strategy": "rsi_band_reversion",
+        "return": 0.22912886430628276,
+        "trades": 16,
+        "win_rate": 56.25
+      },
+      {
+        "strategy": "trendflow_supertrend",
+        "return": 0.06290105443367278,
+        "trades": 7,
+        "win_rate": 42.857142857142854
+      },
+      {
+        "strategy": "macd_zero_trend",
+        "return": -0.555481432928151,
+        "trades": 49,
+        "win_rate": 36.734693877551024
+      },
+      {
+        "strategy": "donchian_continuation",
+        "return": -2.0449235374027763,
+        "trades": 48,
+        "win_rate": 35.41666666666667
+      },
+      {
+        "strategy": "mfi_divergence_reversion",
+        "return": -2.52572202046929,
+        "trades": 141,
+        "win_rate": 41.13475177304964
+      },
+      {
+        "strategy": "vwap_breakout",
+        "return": -3.8526161641721957,
+        "trades": 82,
+        "win_rate": 14.634146341463413
+      },
+      {
+        "strategy": "ema_cloud_trend",
+        "return": -4.027263210130783,
+        "trades": 268,
+        "win_rate": 25.37313432835821
+      }
+    ]
+  },
+  "regime_aware_result": {
+    "total_return": 20.12509944642018,
+    "total_trades": 460
+  },
+  "improvement": -11.776452598761189
+}

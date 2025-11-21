@@ -287,7 +287,7 @@ class DataManager:
                 break
 
             # Rate limiting (respect exchange limits)
-            await asyncio.sleep(exchange_instance.rateLimit / 1000 if hasattr(self, '_exchange_instances') else 0.5)
+            await asyncio.sleep(0.5)  # Simple rate limit
 
         if not all_data:
             return pd.DataFrame(
