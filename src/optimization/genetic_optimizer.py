@@ -242,6 +242,31 @@ class GeneticOptimizer:
         param_names = list(self.param_space.parameters.keys())
         return {name: value for name, value in zip(param_names, individual)}
     
+    def _fitness_to_dict(self, fitness_tuple: Tuple[float, float, float]) -> Dict[str, float]:
+        """Convert fitness tuple to dictionary"""
+        return {
+            "sharpe_ratio": fitness_tuple[0],
+            "win_rate": fitness_tuple[1],
+            "max_drawdown_pct": fitness_tuple[2],
+        }
+    
+    def _calculate_avg_fitness(self, population: List) -> Dict[str, float]:
+        """Calculate average fitness across population"""
+        valid_pop = [ind for ind in population if ind.fitness.valid]
+        
+        if not valid_pop:
+            return {"sharpe_ratio": 0.0, "win_rate": 0.0, "max_drawdown_pct": 0.0}
+        
+        avg_sharpe = sum(ind.fitness.values[0] for ind in valid_pop) / len(valid_pop)
+        avg_wr = sum(ind.fitness.values[1] for ind in valid_pop) / len(valid_pop)
+        avg_dd = sum(ind.fitness.values[2] for ind in valid_pop) / len(valid_pop)
+        
+        return {
+            "sharpe_ratio": avg_sharpe,
+            "win_rate": avg_wr,
+            "max_drawdown_pct": avg_dd,
+        }
+    
     def _evaluate_individual(self, individual: List) -> Tuple[float, float, float]:
         """Evaluate fitness of an individual"""
         params = self._individual_to_params(individual)
@@ -259,6 +284,9 @@ class GeneticOptimizer:
         
         start_time = time.time()
         
+        # INITIALIZE POPULATION BEFORE SILENT MODE
+        self.population = self.toolbox.population(n=self.config.population_size)
+        
         # Silence logs during dashboard
         with silent_logs():
             # Create dashboard
@@ -271,8 +299,6 @@ class GeneticOptimizer:
             # Start progress display
             with dashboard.progress:
                 # Evaluate initial population
-                logger.info(f"Evaluating initial population ({self.config.population_size} individuals)")
-                
                 fitnesses = list(map(self.toolbox.evaluate, self.population))
                 for ind, fit in zip(self.population, fitnesses):
                     ind.fitness.values = fit
@@ -346,7 +372,7 @@ class GeneticOptimizer:
                 best_params=self._individual_to_params(best_ind),
                 best_fitness=best_fitness,
                 total_time=time.time() - start_time,
-                total_evaluations=self.fitness_evaluator.eval_count,
+                total_evaluations=self.evaluator.eval_count,
             )
         
         # Return results (logs re-enabled here)
@@ -359,5 +385,5 @@ class GeneticOptimizer:
             "best_params": self._individual_to_params(best_ind),
             "best_fitness": best_fitness,
             "total_time": time.time() - start_time,
-            "total_evaluations": self.fitness_evaluator.eval_count,
+            "total_evaluations": self.evaluator.eval_count,
         }
