@@ -7,6 +7,7 @@ Genetic Algorithm and Walk-Forward Analysis for trading strategies.
 
 from .genetic_optimizer import GeneticOptimizer
 from .parameter_space import ParameterSpace, ParameterDefinition, ParameterType, CommonParameterSpaces
+from .all_parameter_spaces import AllParameterSpaces
 from .fitness_evaluator import FitnessEvaluator, FitnessMetrics
 from .config import OptimizationConfig, OptimizationPresets
 from .walk_forward_analyzer import WalkForwardAnalyzer
@@ -22,6 +23,7 @@ __all__ = [
     "ParameterDefinition",
     "ParameterType",
     "CommonParameterSpaces",
+    "AllParameterSpaces",
     "FitnessEvaluator",
     "FitnessMetrics",
     "OptimizationConfig",
