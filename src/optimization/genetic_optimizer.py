@@ -31,6 +31,7 @@ except ImportError:
     print("??  DEAP not available. Install with: pip install deap")
 
 from rich.console import Console
+from rich.live import Live
 
 from .config import OptimizationConfig
 from .parameter_space import ParameterSpace, ParameterType
@@ -52,21 +53,13 @@ if sys.platform == 'win32':
     # Set environment variable
     os.environ['PYTHONIOENCODING'] = 'utf-8'
 
-# Rich console for live display with safe encoding AND ASCII-only for Windows compatibility
-try:
-    console = Console(
-        force_terminal=True,
-        legacy_windows=False,
-        force_interactive=False,
-        no_color=False,  # Keep colors
-        emoji=False,     # Disable emojis (Unicode)
-        markup=True,     # Keep markup
-    )
-    # Set console to use ASCII for progress bars (no Unicode spinners)
-    console._emoji = False
-except:
-    # Fallback to basic console
-    console = Console()
+# Rich console for live display with safe encoding AND legacy mode
+console = Console(
+    force_terminal=True,
+    legacy_windows=True,  # Better PowerShell compatibility
+    emoji=False,
+    no_color=False,
+)
 
 class GeneticOptimizer:
     """
@@ -270,93 +263,90 @@ class GeneticOptimizer:
         # Start dashboard
         self.dashboard.start()
         
-        # Print initial dashboard
-        console.clear()
-        console.print(self.dashboard.render())
+        # Run optimization with Live dashboard (legacy mode for PowerShell compatibility)
+        with Live(self.dashboard.render(), console=console, refresh_per_second=2) as live:
+            # Evolution loop
+            for gen in range(1, self.config.n_generations + 1):
+                gen_start = time.time()
+                
+                # Evaluate population
+                fitnesses = list(map(self.toolbox.evaluate, population))
+                for ind, fit in zip(population, fitnesses):
+                    ind.fitness.values = fit
+                
+                # Update dashboard
+                self.dashboard.update_generation(gen, len(population))
+                
+                # Track best individual
+                best_ind = tools.selBest(population, 1)[0]
+                best_fit_tuple = best_ind.fitness.values
+                best_params = self._individual_to_params(best_ind)
+                
+                # Create FitnessMetrics from tuple
+                best_metrics_dict = {
+                    "sharpe_ratio": best_fit_tuple[0],
+                    "win_rate": best_fit_tuple[1],
+                    "max_drawdown": best_fit_tuple[2],
+                }
+                
+                # Calculate average fitness
+                avg_sharpe = sum(ind.fitness.values[0] for ind in population) / len(population)
+                avg_wr = sum(ind.fitness.values[1] for ind in population) / len(population)
+                avg_dd = sum(ind.fitness.values[2] for ind in population) / len(population)
+                
+                avg_metrics_dict = {
+                    "sharpe_ratio": avg_sharpe,
+                    "win_rate": avg_wr,
+                    "max_drawdown": avg_dd,
+                }
+                
+                # Complete generation
+                self.dashboard.complete_generation(best_metrics_dict, avg_metrics_dict)
+                
+                # Store history
+                self.history["best_fitness"].append(best_metrics_dict)
+                self.history["avg_fitness"].append(avg_metrics_dict)
+                self.history["best_params"].append(best_params)
+                self.history["generation_times"].append(time.time() - gen_start)
+                
+                # Update live display
+                live.update(self.dashboard.render())
+                
+                # Last generation - skip evolution
+                if gen == self.config.n_generations:
+                    break
+                
+                # Select next generation
+                offspring = self.toolbox.select(population, len(population))
+                offspring = list(map(self.toolbox.clone, offspring))
+                
+                # Apply crossover
+                for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                    if random.random() < self.config.crossover_prob:
+                        self.toolbox.mate(child1, child2)
+                        del child1.fitness.values
+                        del child2.fitness.values
+                
+                # Apply mutation
+                for mutant in offspring:
+                    if random.random() < self.config.mutation_prob:
+                        self.toolbox.mutate(mutant)
+                        del mutant.fitness.values
+                
+                # Elitism - preserve best individuals
+                if self.config.elite_size > 0:
+                    elites = tools.selBest(population, self.config.elite_size)
+                    offspring[:self.config.elite_size] = elites
+                
+                # Replace population
+                population[:] = offspring
         
-        # Evolution loop (logging already disabled globally in test script)
-        for gen in range(1, self.config.n_generations + 1):
-            gen_start = time.time()
-            
-            # Evaluate population
-            fitnesses = list(map(self.toolbox.evaluate, population))
-            for ind, fit in zip(population, fitnesses):
-                ind.fitness.values = fit
-            
-            # Update dashboard
-            self.dashboard.update_generation(gen, len(population))
-            
-            # Track best individual
-            best_ind = tools.selBest(population, 1)[0]
-            best_fit_tuple = best_ind.fitness.values
-            best_params = self._individual_to_params(best_ind)
-            
-            # Create FitnessMetrics from tuple
-            best_metrics_dict = {
-                "sharpe_ratio": best_fit_tuple[0],
-                "win_rate": best_fit_tuple[1],
-                "max_drawdown": best_fit_tuple[2],
-            }
-            
-            # Calculate average fitness
-            avg_sharpe = sum(ind.fitness.values[0] for ind in population) / len(population)
-            avg_wr = sum(ind.fitness.values[1] for ind in population) / len(population)
-            avg_dd = sum(ind.fitness.values[2] for ind in population) / len(population)
-            
-            avg_metrics_dict = {
-                "sharpe_ratio": avg_sharpe,
-                "win_rate": avg_wr,
-                "max_drawdown": avg_dd,
-            }
-            
-            # Complete generation
-            self.dashboard.complete_generation(best_metrics_dict, avg_metrics_dict)
-            
-            # Store history
-            self.history["best_fitness"].append(best_metrics_dict)
-            self.history["avg_fitness"].append(avg_metrics_dict)
-            self.history["best_params"].append(best_params)
-            self.history["generation_times"].append(time.time() - gen_start)
-            
-            # Refresh display every generation (manual refresh avoids Live encoding issues)
-            console.clear()
-            console.print(self.dashboard.render())
-            
-            # Last generation - skip evolution
-            if gen == self.config.n_generations:
-                break
-            
-            # Select next generation
-            offspring = self.toolbox.select(population, len(population))
-            offspring = list(map(self.toolbox.clone, offspring))
-            
-            # Apply crossover
-            for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                if random.random() < self.config.crossover_prob:
-                    self.toolbox.mate(child1, child2)
-                    del child1.fitness.values
-                    del child2.fitness.values
-            
-            # Apply mutation
-            for mutant in offspring:
-                if random.random() < self.config.mutation_prob:
-                    self.toolbox.mutate(mutant)
-                    del mutant.fitness.values
-            
-            # Elitism - preserve best individuals
-            if self.config.elite_size > 0:
-                elites = tools.selBest(population, self.config.elite_size)
-                offspring[:self.config.elite_size] = elites
-            
-            # Replace population
-            population[:] = offspring
-        
-        # Final best
+        # Final best (outside Live context)
         final_best = tools.selBest(population, 1)[0]
         self.best_individual = final_best
         self.best_params = self._individual_to_params(final_best)
         
-        # Use the fitness from the final generation (already evaluated!)
+        # Use the fitness from the final generation
         best_fit_tuple = final_best.fitness.values
         self.best_fitness = FitnessMetrics(
             sharpe_ratio=best_fit_tuple[0],
@@ -367,16 +357,13 @@ class GeneticOptimizer:
             profit_factor=0.0,
         )
         
-        # Complete dashboard
+        # Complete dashboard and show final
         self.dashboard.complete(self.history["best_fitness"][-1])
-        
-        # Final render
-        console.clear()
         console.print(self.dashboard.render())
         
         total_time = time.time() - start_time
         
-        # Return results (no logging needed - test script handles output)
+        # Return results
         return {
             "best_params": self.best_params,
             "best_fitness": self.best_fitness.to_dict(),

@@ -32,10 +32,11 @@ from typing import Dict, List, Optional
 import time
 
 
-# Console with Windows-compatible settings (no emoji, simple characters)
+# Console with Windows-compatible settings (ASCII-only, no fancy Unicode)
 console = Console(
     emoji=False,
-    legacy_windows=False,
+    legacy_windows=True,  # Enable legacy mode for better compatibility
+    force_terminal=True,
 )
 
 
