@@ -198,11 +198,13 @@ class DataManager:
         end_date: Optional[datetime] = None,
         exchange: Optional[str] = None,
         max_candles: Optional[int] = None,
+        use_cache: bool = True,
     ) -> pd.DataFrame:
         """
         Fetch historical data in chunks with rate limiting and pagination.
         
         Automatically handles CCXT limitations and fetches multiple years of data.
+        Uses database cache to avoid redundant API calls.
 
         Args:
             symbol: Trading pair
@@ -211,6 +213,7 @@ class DataManager:
             end_date: End date (defaults to now)
             exchange: Exchange name
             max_candles: Maximum number of candles to fetch (None = unlimited)
+            use_cache: Use cached data if available (default: True)
 
         Returns:
             DataFrame with historical OHLCV data
@@ -222,6 +225,20 @@ class DataManager:
             f"Fetching historical data: {symbol} {timeframe} "
             f"from {start_date} to {end_date}"
         )
+
+        # Check if we have complete cached data for this range
+        if use_cache:
+            cached_data = await self._check_complete_cached_range(
+                exchange, symbol, timeframe, start_date, end_date
+            )
+            if cached_data is not None and len(cached_data) > 0:
+                logger.info(f"? Using complete cached data: {len(cached_data)} candles")
+                
+                # Apply max_candles limit if specified
+                if max_candles and len(cached_data) > max_candles:
+                    cached_data = cached_data.tail(max_candles)
+                
+                return cached_data
 
         all_data = []
         current_since = start_date
@@ -244,7 +261,7 @@ class DataManager:
                 remaining = max_candles - total_fetched
                 chunk_size = min(chunk_size, remaining)
             
-            # Fetch chunk
+            # Fetch chunk (now uses cache!)
             try:
                 df = await self.fetch_ohlcv(
                     symbol=symbol,
@@ -252,7 +269,7 @@ class DataManager:
                     exchange=exchange,
                     since=current_since,
                     limit=chunk_size,
-                    use_cache=False,  # Don't use cache for historical fetch
+                    use_cache=use_cache,
                 )
             except Exception as e:
                 logger.error(f"Error fetching chunk: {e}")
@@ -267,9 +284,9 @@ class DataManager:
             total_fetched += len(df)
             chunks_fetched += 1
 
-            # Progress logging
+            # Progress logging (only every 10 chunks to avoid spam)
             if chunks_fetched % 10 == 0:
-                logger.info(f"Progress: {total_fetched} candles fetched ({chunks_fetched} chunks)")
+                logger.debug(f"Progress: {total_fetched} candles fetched ({chunks_fetched} chunks)")
 
             # Move to next chunk
             last_timestamp = df["timestamp"].iloc[-1]
@@ -287,7 +304,7 @@ class DataManager:
                 break
 
             # Rate limiting (respect exchange limits)
-            await asyncio.sleep(0.5)  # Simple rate limit
+            await asyncio.sleep(0.1)  # Reduced from 0.5s for faster fetching
 
         if not all_data:
             return pd.DataFrame(
@@ -304,11 +321,67 @@ class DataManager:
             (result["timestamp"] <= end_date)
         ]
 
-        # Cache the result
-        await self.db.insert_candles(exchange, symbol, timeframe, result)
+        # Cache the complete result
+        if use_cache:
+            await self.db.insert_candles(exchange, symbol, timeframe, result)
 
         logger.info(f"? Fetched {len(result)} total candles in {chunks_fetched} chunks")
         return result
+
+    async def _check_complete_cached_range(
+        self,
+        exchange: str,
+        symbol: str,
+        timeframe: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Check if we have complete cached data for the requested range.
+        
+        Args:
+            exchange: Exchange name
+            symbol: Trading pair
+            timeframe: Timeframe
+            start_date: Requested start date
+            end_date: Requested end date
+            
+        Returns:
+            Cached DataFrame if complete range is available, None otherwise
+        """
+        # Get available data range from DB
+        data_range = await self.db.get_data_range(exchange, symbol, timeframe)
+        
+        if not data_range:
+            logger.debug("No cached data available")
+            return None
+        
+        cached_start, cached_end = data_range
+        
+        # Check if cached range covers requested range
+        if cached_start <= start_date and cached_end >= end_date:
+            logger.debug(
+                f"Cache covers full range: cached {cached_start} to {cached_end}, "
+                f"requested {start_date} to {end_date}"
+            )
+            
+            # Load data from cache
+            start_ts = int(start_date.timestamp() * 1000)
+            end_ts = int(end_date.timestamp() * 1000)
+            
+            df = await self.db.load_candles(
+                exchange, symbol, timeframe,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            )
+            
+            return df
+        else:
+            logger.debug(
+                f"Cache incomplete: cached {cached_start} to {cached_end}, "
+                f"requested {start_date} to {end_date}"
+            )
+            return None
 
     @staticmethod
     def _parse_timeframe_to_minutes(timeframe: str) -> int:

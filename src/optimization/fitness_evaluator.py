@@ -101,14 +101,28 @@ class FitnessEvaluator:
         self.eval_count += 1
         
         try:
-            # Create strategy instance with parameters
-            strategy = self.strategy_class(**params)
+            # Get strategy class (not instance)
+            if hasattr(self.strategy_class, '__class__') and hasattr(self.strategy_class.__class__, '__name__'):
+                # It's an instance, get the class
+                strategy_cls = self.strategy_class.__class__
+            else:
+                # It's already a class
+                strategy_cls = self.strategy_class
+            
+            # Import StrategyConfig
+            from ..strategies import StrategyConfig
+            
+            # Create StrategyConfig with parameters
+            config = StrategyConfig(params=params)
+            
+            # Create strategy instance with config
+            strategy = strategy_cls(config)
             
             # Run backtest
             engine = BacktestEngine(
                 initial_capital=self.initial_capital,
-                commission=self.commission,
-                slippage=self.slippage,
+                commission_rate=self.commission,
+                slippage_rate=self.slippage,
                 use_gpu=False,  # GPU backtest not yet implemented
             )
             
