@@ -1,13 +1,13 @@
-"""Backtesting tools for strategy validation."""
+"""Backtesting tool for strategy validation."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
 from ...core.logger import logger
-from ...core.backtest_engine import BacktestEngine
+from ...strategies import registry
 from ...core.data_manager import DataManager
 from ...core.indicators import calculate_all_indicators
-from ...strategies import registry
+from ...core.backtest_engine import BacktestEngine
 
 
 async def backtest_strategy(
@@ -21,77 +21,88 @@ async def backtest_strategy(
     """
     Run backtest for a trading strategy.
 
+    **AUTO-FETCHES DATA** if insufficient data is available!
+
     Args:
-        strategy_name: Name of strategy to test
+        strategy_name: Name of strategy to backtest
         symbol: Trading pair
-        timeframe: Timeframe to use
-        start_date: Start date (YYYY-MM-DD)
-        end_date: End date (YYYY-MM-DD)
+        timeframe: Timeframe (e.g., '1h', '4h', '1d')
+        start_date: Start date (YYYY-MM-DD) - defaults to 1 year ago
+        end_date: End date (YYYY-MM-DD) - defaults to now
         initial_capital: Starting capital
 
     Returns:
-        Dictionary with backtest results
+        Backtest results with performance metrics
     """
-    logger.info(f"Running backtest: {strategy_name} on {symbol} {timeframe}")
+    logger.info(f"Backtesting {strategy_name} on {symbol} {timeframe}")
 
     try:
-        # Get strategy from registry
+        # Get strategy
         strategy = registry.get(strategy_name)
 
-        # Fetch market data
-        dm = DataManager()
-
-        since_dt = datetime.fromisoformat(start_date) if start_date else None
-        end_dt = datetime.fromisoformat(end_date) if end_date else None
-
-        if since_dt and end_dt:
-            df = await dm.fetch_historical(
-                symbol=symbol,
-                timeframe=timeframe,
-                start_date=since_dt,
-                end_date=end_dt,
-            )
+        # Parse dates - DEFAULT TO 1 YEAR if not specified!
+        if end_date is None:
+            end_dt = datetime.now()
         else:
-            df = await dm.fetch_ohlcv(
-                symbol=symbol,
-                timeframe=timeframe,
-                since=since_dt,
-                limit=1000,
-            )
+            end_dt = datetime.fromisoformat(end_date)
 
+        if start_date is None:
+            # DEFAULT: 1 year of data
+            start_dt = end_dt - timedelta(days=365)
+            logger.info(f"No start_date specified, using 1 year default: {start_dt}")
+        else:
+            start_dt = datetime.fromisoformat(start_date)
+
+        # Fetch historical data with pagination (HANDLES MULTI-YEAR DATA!)
+        dm = DataManager()
+        df = await dm.fetch_historical(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_dt,
+            end_date=end_dt,
+            max_candles=20000,  # Up to ~2.3 years of hourly data
+        )
         await dm.close()
 
         if df.empty:
             return {
-                "error": "No market data available",
-                "strategy": strategy_name,
+                "error": "No market data available for the specified period",
                 "symbol": symbol,
+                "timeframe": timeframe,
+                "start_date": str(start_dt),
+                "end_date": str(end_dt),
             }
 
-        # Calculate required indicators
+        actual_days = (df["timestamp"].iloc[-1] - df["timestamp"].iloc[0]).days
+        logger.info(f"Fetched {len(df)} candles ({actual_days} days)")
+
+        # Calculate indicators
         required_indicators = strategy.get_required_indicators()
-        df = calculate_all_indicators(df, required_indicators)
+        df = calculate_all_indicators(df, required_indicators, use_gpu=False)
 
         # Run backtest
-        engine = BacktestEngine(initial_capital=initial_capital)
+        engine = BacktestEngine(initial_capital=initial_capital, use_gpu=False)
         results = engine.run(strategy, df)
 
         logger.info(
             f"Backtest complete: {results['total_trades']} trades, "
-            f"Return: {results['total_return']:.2f}%"
+            f"return: {results['total_return']:.2f}%"
         )
 
-        return results
-
-    except KeyError as e:
-        logger.error(f"Strategy not found: {e}")
         return {
-            "error": f"Strategy not found: {strategy_name}",
-            "available_strategies": [s.name for s in registry.list_strategies()],
+            "strategy": strategy_name,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "start_date": str(df["timestamp"].iloc[0]),
+            "end_date": str(df["timestamp"].iloc[-1]),
+            "days_tested": actual_days,
+            "candles_tested": len(df),
+            **results,
         }
+
     except Exception as e:
-        logger.error(f"Error running backtest: {e}", exc_info=True)
-        raise
+        logger.error(f"Backtest failed: {e}", exc_info=True)
+        return {"error": str(e), "strategy": strategy_name}
 
 
 __all__ = ["backtest_strategy"]
