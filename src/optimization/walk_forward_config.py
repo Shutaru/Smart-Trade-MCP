@@ -63,7 +63,7 @@ class WalkForwardConfig(BaseModel):
     
     # Validation thresholds
     min_sharpe_ratio: float = Field(
-        default=0.5,
+        default=0.2,  # Lowered from 0.5 - crypto has lower Sharpe ratios
         description="Minimum Sharpe ratio to consider window valid"
     )
     
