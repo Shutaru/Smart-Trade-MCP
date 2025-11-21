@@ -11,7 +11,7 @@ from .fitness_evaluator import FitnessEvaluator, FitnessMetrics
 from .config import OptimizationConfig, OptimizationPresets
 from .walk_forward_analyzer import WalkForwardAnalyzer
 from .walk_forward_config import WalkForwardConfig, WalkForwardPresets
-from .walk_forward_results import WindowResult, WalkForwardResults
+from .walk_forward_results import WindowResult, WalkForwardResults, FoldResult
 from .walk_forward_dashboard import WalkForwardDashboard
 
 __all__ = [
@@ -31,5 +31,6 @@ __all__ = [
     "WalkForwardPresets",
     "WindowResult",
     "WalkForwardResults",
+    "FoldResult",
     "WalkForwardDashboard",
 ]

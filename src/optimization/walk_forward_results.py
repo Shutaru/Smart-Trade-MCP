@@ -10,16 +10,37 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 
+class FoldResult(BaseModel):
+    """Results from a single fold within a window"""
+    
+    fold_id: int = Field(description="Fold number")
+    
+    # Date range
+    start: datetime
+    end: datetime
+    
+    # Metrics
+    candles: int
+    sharpe: float
+    win_rate: float
+    max_dd: float
+    total_return: float
+    trades: int
+    
+    # Validation
+    is_valid: bool
+
+
 class WindowResult(BaseModel):
-    """Results from a single walk-forward window"""
+    """Results from a single walk-forward window (can have multiple folds)"""
     
     window_id: int = Field(description="Window number")
     
     # Date ranges
     train_start: datetime
     train_end: datetime
-    test_start: datetime
-    test_end: datetime
+    test_start: datetime  # Start of first fold
+    test_end: datetime    # End of last fold
     
     # Training metrics
     train_candles: int
@@ -27,32 +48,62 @@ class WindowResult(BaseModel):
     train_win_rate: float
     train_max_dd: float
     
-    # Testing metrics (out-of-sample)
+    # Individual fold results
+    folds: List[FoldResult] = Field(default_factory=list, description="Results from each test fold")
+    
+    # Aggregate test metrics (across all folds)
     test_candles: int
-    test_sharpe: float
-    test_win_rate: float
-    test_max_dd: float
-    test_total_return: float
-    test_trades: int
+    test_sharpe: float = Field(description="Average Sharpe across folds")
+    test_win_rate: float = Field(description="Average win rate across folds")
+    test_max_dd: float = Field(description="Worst drawdown across folds")
+    test_total_return: float = Field(description="Average return across folds")
+    test_trades: int = Field(description="Total trades across folds")
     
     # Optimized parameters for this window
     best_params: Dict[str, Any]
     
     # Degradation analysis
     sharpe_degradation: float = Field(
-        description="% degradation from train to test Sharpe"
+        description="% degradation from train to test Sharpe (average across folds)"
     )
     win_rate_degradation: float = Field(
-        description="% degradation from train to test win rate"
+        description="% degradation from train to test win rate (average across folds)"
+    )
+    
+    # Fold consistency
+    valid_folds: int = Field(description="Number of folds that passed validation")
+    fold_consistency: float = Field(
+        description="% of folds that passed validation",
+        ge=0.0,
+        le=100.0
     )
     
     # Validation
     is_valid: bool = Field(
-        description="Whether window passes validation thresholds"
+        description="Whether window passes validation (based on min_valid_folds)"
     )
     
     # Performance
     optimization_time: float = Field(description="Time to optimize in seconds")
+    
+    def calculate_aggregates(self) -> None:
+        """Calculate aggregate metrics across all folds"""
+        if not self.folds:
+            return
+        
+        import statistics
+        
+        # Aggregate metrics
+        self.test_sharpe = statistics.mean([f.sharpe for f in self.folds])
+        self.test_win_rate = statistics.mean([f.win_rate for f in self.folds])
+        self.test_max_dd = min([f.max_dd for f in self.folds])  # Worst DD
+        self.test_total_return = statistics.mean([f.total_return for f in self.folds])
+        self.test_trades = sum([f.trades for f in self.folds])
+        self.test_candles = sum([f.candles for f in self.folds])
+        
+        # Fold validation
+        self.valid_folds = sum(1 for f in self.folds if f.is_valid)
+        self.fold_consistency = (self.valid_folds / len(self.folds)) * 100
     
     def calculate_degradation(self) -> None:
         """Calculate performance degradation from train to test"""

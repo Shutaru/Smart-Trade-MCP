@@ -79,13 +79,21 @@ class WalkForwardDashboard:
         info_text = Text()
         info_text.append(f"Window: {self.current_window}/{self.total_windows}\n", style="cyan")
         info_text.append(f"Train Sharpe: {self.current_train_sharpe:.2f}\n", style="green")
-        info_text.append(f"Test Sharpe: {self.current_test_sharpe:.2f}\n", style="yellow")
+        info_text.append(f"Test Sharpe: {self.current_test_sharpe:.2f} (avg across folds)\n", style="yellow")
         
         if self.current_train_sharpe > 0:
             degradation = ((self.current_test_sharpe - self.current_train_sharpe) / 
                           abs(self.current_train_sharpe) * 100)
-            color = "green" if abs(degradation) < 20 else "red"
-            info_text.append(f"Degradation: {degradation:+.1f}%", style=color)
+            color = "green" if abs(degradation) < 20 else "yellow" if abs(degradation) < 40 else "red"
+            info_text.append(f"Degradation: {degradation:+.1f}%\n", style=color)
+        
+        # Show fold stats if available
+        if hasattr(self, 'current_valid_folds') and hasattr(self, 'current_total_folds'):
+            fold_color = "green" if self.current_valid_folds == self.current_total_folds else "yellow"
+            info_text.append(
+                f"Valid Folds: {self.current_valid_folds}/{self.current_total_folds}",
+                style=fold_color
+            )
         
         return Panel(info_text, title="?? Current Window", style="bold blue")
     
@@ -142,12 +150,16 @@ class WalkForwardDashboard:
         train_sharpe: float,
         test_sharpe: float,
         is_valid: bool,
-        window_time: float
+        window_time: float,
+        valid_folds: int = 0,
+        total_folds: int = 1,
     ):
         """Update dashboard with window results"""
         self.current_window = window_id + 1
         self.current_train_sharpe = train_sharpe
         self.current_test_sharpe = test_sharpe
+        self.current_valid_folds = valid_folds
+        self.current_total_folds = total_folds
         
         if is_valid:
             self.valid_windows += 1

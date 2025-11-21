@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from .walk_forward_config import WalkForwardConfig
-from .walk_forward_results import WindowResult, WalkForwardResults
+from .walk_forward_results import WindowResult, WalkForwardResults, FoldResult
 from .genetic_optimizer import GeneticOptimizer
 from .parameter_space import ParameterSpace
 from .config import OptimizationConfig
@@ -66,10 +66,14 @@ class WalkForwardAnalyzer:
     
     def _calculate_windows(self) -> List[Dict[str, Any]]:
         """
-        Calculate all walk-forward windows.
+        Calculate all walk-forward windows with N-fold support.
+        
+        Each window has:
+        - 1 training period
+        - N test folds (with optional purging between train and each fold)
         
         Returns:
-            List of window definitions with start/end dates
+            List of window definitions with start/end dates and fold splits
         """
         windows = []
         
@@ -82,44 +86,80 @@ class WalkForwardAnalyzer:
         window_id = 0
         
         while True:
-            # Calculate dates
+            # Training period
             train_end = current_train_start + timedelta(days=self.config.train_days)
-            test_start = train_end
-            test_end = test_start + timedelta(days=self.config.test_days)
+            
+            # Calculate total test period needed (including purges)
+            total_test_days = (
+                self.config.test_days * self.config.n_folds +
+                self.config.purge_days * self.config.n_folds  # Purge before each fold
+            )
+            
+            test_end = train_end + timedelta(days=total_test_days)
             
             # Check if we have enough data
             if test_end > end_date:
                 break
             
-            # Get data for this window
+            # Get training data
             train_df = self.df[
                 (self.df['timestamp'] >= current_train_start) &
                 (self.df['timestamp'] < train_end)
             ]
             
-            test_df = self.df[
-                (self.df['timestamp'] >= test_start) &
-                (self.df['timestamp'] < test_end)
-            ]
-            
-            # Validate minimum candles
+            # Validate minimum training candles
             if len(train_df) < self.config.min_train_candles:
                 logger.warning(f"Window {window_id}: Insufficient training data ({len(train_df)} candles)")
                 break
             
-            if len(test_df) < self.config.min_test_candles:
-                logger.warning(f"Window {window_id}: Insufficient test data ({len(test_df)} candles)")
+            # Calculate N test folds with purging
+            folds = []
+            fold_start = train_end
+            
+            for fold_id in range(self.config.n_folds):
+                # Purge period (avoid data leakage)
+                purge_end = fold_start + timedelta(days=self.config.purge_days)
+                
+                # Test fold period
+                fold_test_start = purge_end
+                fold_test_end = fold_test_start + timedelta(days=self.config.test_days)
+                
+                # Get fold data
+                fold_df = self.df[
+                    (self.df['timestamp'] >= fold_test_start) &
+                    (self.df['timestamp'] < fold_test_end)
+                ]
+                
+                # Validate minimum test candles
+                if len(fold_df) < self.config.min_test_candles:
+                    logger.warning(
+                        f"Window {window_id}, Fold {fold_id}: Insufficient test data ({len(fold_df)} candles)"
+                    )
+                    break
+                
+                folds.append({
+                    'fold_id': fold_id,
+                    'start': fold_test_start,
+                    'end': fold_test_end,
+                    'df': fold_df,
+                })
+                
+                # Move to next fold
+                fold_start = fold_test_end
+            
+            # Skip window if we don't have all folds
+            if len(folds) < self.config.n_folds:
                 break
             
-            # Add window
+            # Add window with all folds
             windows.append({
                 'id': window_id,
                 'train_start': current_train_start,
                 'train_end': train_end,
-                'test_start': test_start,
-                'test_end': test_end,
                 'train_df': train_df,
-                'test_df': test_df,
+                'folds': folds,
+                'test_start': folds[0]['start'],
+                'test_end': folds[-1]['end'],
             })
             
             window_id += 1
@@ -200,25 +240,82 @@ class WalkForwardAnalyzer:
             'total_trades': results.get('total_trades', 0),
         }
     
-    def _process_window(self, window: Dict[str, Any]) -> WindowResult:
+    def _test_folds(
+        self,
+        window: Dict[str, Any],
+        optimized_params: Dict[str, Any]
+    ) -> List[FoldResult]:
         """
-        Process a single window (optimize + test).
+        Test optimized parameters on all out-of-sample folds.
         
         Args:
-            window: Window definition
+            window: Window definition with multiple folds
+            optimized_params: Parameters from training optimization
             
         Returns:
-            WindowResult with complete metrics
+            List of FoldResult for each test fold
+        """
+        fold_results = []
+        
+        for fold in window['folds']:
+            # Create strategy instance with optimized params
+            strategy = self.strategy_class(params=optimized_params)
+            
+            # Run backtest on this fold
+            engine = BacktestEngine(
+                df=fold['df'],
+                strategy=strategy,
+                initial_capital=10000.0,
+                commission=0.001,
+                slippage=0.0005,
+            )
+            
+            results = engine.run()
+            
+            # Validate against thresholds
+            is_valid = (
+                results.get('sharpe_ratio', 0.0) >= self.config.min_sharpe_ratio and
+                results.get('win_rate', 0.0) >= self.config.min_win_rate and
+                results.get('max_drawdown_pct', 0.0) >= self.config.max_drawdown_pct
+            )
+            
+            # Create fold result
+            fold_result = FoldResult(
+                fold_id=fold['fold_id'],
+                start=fold['start'],
+                end=fold['end'],
+                candles=len(fold['df']),
+                sharpe=results.get('sharpe_ratio', 0.0),
+                win_rate=results.get('win_rate', 0.0),
+                max_dd=results.get('max_drawdown_pct', 0.0),
+                total_return=results.get('total_return_pct', 0.0),
+                trades=results.get('total_trades', 0),
+                is_valid=is_valid,
+            )
+            
+            fold_results.append(fold_result)
+        
+        return fold_results
+    
+    def _process_window(self, window: Dict[str, Any]) -> WindowResult:
+        """
+        Process a single window (optimize + test on N folds).
+        
+        Args:
+            window: Window definition with multiple folds
+            
+        Returns:
+            WindowResult with complete metrics from all folds
         """
         window_start = time.time()
         
         # Optimize on training data
         opt_results = self._optimize_window(window)
         
-        # Test on out-of-sample data
-        test_metrics = self._test_window(window, opt_results['best_params'])
+        # Test on all out-of-sample folds
+        fold_results = self._test_folds(window, opt_results['best_params'])
         
-        # Create result
+        # Create window result
         result = WindowResult(
             window_id=window['id'],
             train_start=window['train_start'],
@@ -229,28 +326,30 @@ class WalkForwardAnalyzer:
             train_sharpe=opt_results['train_fitness']['sharpe_ratio'],
             train_win_rate=opt_results['train_fitness']['win_rate'],
             train_max_dd=opt_results['train_fitness']['max_drawdown_pct'],
-            test_candles=len(window['test_df']),
-            test_sharpe=test_metrics['sharpe_ratio'],
-            test_win_rate=test_metrics['win_rate'],
-            test_max_dd=test_metrics['max_drawdown'],
-            test_total_return=test_metrics['total_return'],
-            test_trades=test_metrics['total_trades'],
+            folds=fold_results,
+            test_candles=0,  # Will be calculated in calculate_aggregates
+            test_sharpe=0.0,
+            test_win_rate=0.0,
+            test_max_dd=0.0,
+            test_total_return=0.0,
+            test_trades=0,
             best_params=opt_results['best_params'],
-            sharpe_degradation=0.0,  # Will calculate below
+            sharpe_degradation=0.0,
             win_rate_degradation=0.0,
-            is_valid=False,  # Will validate below
+            valid_folds=0,
+            fold_consistency=0.0,
+            is_valid=False,
             optimization_time=time.time() - window_start,
         )
+        
+        # Calculate aggregates across folds
+        result.calculate_aggregates()
         
         # Calculate degradation
         result.calculate_degradation()
         
-        # Validate against thresholds
-        result.is_valid = (
-            result.test_sharpe >= self.config.min_sharpe_ratio and
-            result.test_win_rate >= self.config.min_win_rate and
-            result.test_max_dd >= self.config.max_drawdown_pct
-        )
+        # Validate window (must have min_valid_folds passing)
+        result.is_valid = result.valid_folds >= self.config.min_valid_folds
         
         return result
     
