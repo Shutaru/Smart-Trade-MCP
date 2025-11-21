@@ -1,12 +1,17 @@
 """Logging configuration using Loguru."""
 
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 
 from loguru import logger
 
 from .config import settings
+
+
+# Global flag to disable logging (set by test scripts)
+_LOGGING_DISABLED = os.environ.get('SMART_TRADE_DISABLE_LOGGING', '').lower() == 'true'
 
 
 def setup_logging(log_file: Optional[Path] = None) -> None:
@@ -16,6 +21,11 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
     Args:
         log_file: Optional path to log file. Defaults to logs/smart_trade.log
     """
+    # If logging is globally disabled, do nothing!
+    if _LOGGING_DISABLED:
+        logger.remove()  # Remove all handlers
+        return
+    
     # Remove default handler
     logger.remove()
 
@@ -45,7 +55,8 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
     logger.info(f"Logging initialized - Level: {settings.log_level}")
 
 
-# Initialize on import
-setup_logging()
+# Initialize on import (unless disabled)
+if not _LOGGING_DISABLED:
+    setup_logging()
 
 __all__ = ["logger", "setup_logging"]

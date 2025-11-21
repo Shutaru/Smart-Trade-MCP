@@ -27,22 +27,23 @@ if sys.platform == 'win32':
         pass
 
 # ==============================================================================
-# STEP 2: SILENCE ALL LOGGING (BEFORE IMPORTING PROJECT MODULES)
+# STEP 2: DISABLE ALL LOGGING GLOBALLY (BEFORE IMPORTING PROJECT MODULES)
 # ==============================================================================
-import logging
 
-# Disable standard logging
+# Set environment variable to disable logging in our project
+os.environ['SMART_TRADE_DISABLE_LOGGING'] = 'true'
+
+# Also disable standard library logging
+import logging
 logging.disable(logging.CRITICAL)
 logging.basicConfig(level=logging.CRITICAL + 100)
 
-# ALSO disable Loguru (our project uses loguru, not standard logging!)
+# Disable Loguru
 from loguru import logger as loguru_logger
-
-# Remove ALL loguru handlers (this prevents ANY logs from appearing)
 loguru_logger.remove()
 
 # ==============================================================================
-# NOW SAFE TO IMPORT PROJECT MODULES (no logs will appear)
+# NOW SAFE TO IMPORT PROJECT MODULES (logging completely disabled)
 # ==============================================================================
 import asyncio
 from pathlib import Path
@@ -61,6 +62,13 @@ from src.optimization import (
     CommonParameterSpaces,
 )
 from src.optimization.parameter_space import ParameterType
+
+# ==============================================================================
+# CRITICAL: RE-SILENCE LOGURU AFTER IMPORTS!
+# The modules above call setup_logging() which re-adds handlers!
+# ==============================================================================
+loguru_logger.remove()  # Remove ALL handlers again!
+logging.disable(logging.CRITICAL)  # Make SURE standard logging is dead too!
 
 print("="*80)
 print("GENETIC OPTIMIZER TEST")
