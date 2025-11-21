@@ -53,11 +53,11 @@ if sys.platform == 'win32':
     # Set environment variable
     os.environ['PYTHONIOENCODING'] = 'utf-8'
 
-# Rich console for live display with safe encoding AND legacy mode
+# Rich console for live display - beautiful Unicode (works now that logs are silent!)
 console = Console(
     force_terminal=True,
-    legacy_windows=True,  # Better PowerShell compatibility
-    emoji=False,
+    legacy_windows=False,  # Full Unicode beauty!
+    emoji=True,
     no_color=False,
 )
 

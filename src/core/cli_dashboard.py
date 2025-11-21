@@ -17,6 +17,7 @@ Features:
 from rich.console import Console
 from rich.progress import (
     Progress,
+    SpinnerColumn,
     BarColumn,
     TextColumn,
     TimeRemainingColumn,
@@ -32,11 +33,11 @@ from typing import Dict, List, Optional
 import time
 
 
-# Console with Windows-compatible settings (ASCII-only, no fancy Unicode)
+# Rich console with beautiful Unicode support (works perfectly in PowerShell now that logs are silent!)
 console = Console(
-    emoji=False,
-    legacy_windows=True,  # Enable legacy mode for better compatibility
     force_terminal=True,
+    legacy_windows=False,  # Enable full Unicode beauty!
+    emoji=True,            # Beautiful emojis!
 )
 
 
@@ -78,8 +79,9 @@ class OptimizationDashboard:
         # Rich components
         self.layout = Layout()
         self.progress = Progress(
+            SpinnerColumn(),  # Beautiful spinner back!
             TextColumn("[progress.description]{task.description}"),
-            BarColumn(bar_width=40),  # Fixed width, simple ASCII bar
+            BarColumn(bar_width=40),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeElapsedColumn(),
             TimeRemainingColumn(),
