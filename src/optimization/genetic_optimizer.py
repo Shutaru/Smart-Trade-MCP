@@ -34,12 +34,13 @@ from rich.console import Console
 from .config import OptimizationConfig
 from .parameter_space import ParameterSpace, ParameterType
 from .fitness_evaluator import FitnessEvaluator, FitnessMetrics
+from .logging_utils import silence_all_logging
 from ..core.cli_dashboard import OptimizationDashboard
 from ..core.logger import logger
 
-# Rich console for live display
-console = Console()
-
+# Rich console for live display (force UTF-8 encoding for Windows)
+import sys
+console = Console(force_terminal=True, legacy_windows=False)
 
 class GeneticOptimizer:
     """
@@ -243,26 +244,8 @@ class GeneticOptimizer:
         # Start dashboard
         self.dashboard.start()
         
-        # Temporarily reduce ALL logging to prevent interference with Rich dashboard
-        import logging
-        import structlog
-        
-        original_level = logging.getLogger().level
-        original_processors = None
-        
-        if self.config.verbose:
-            # Completely silence all logs during optimization
-            logging.getLogger().setLevel(logging.CRITICAL)
-            
-            # Also silence structlog
-            try:
-                original_processors = structlog.get_config()['processors']
-                structlog.configure(processors=[])
-            except:
-                pass
-        
-        try:
-            # Run optimization with live dashboard
+        # Run optimization with live dashboard and silenced logging
+        with silence_all_logging():
             with Live(self.dashboard.render(), console=console, refresh_per_second=10) as live:
                 
                 # Evolution loop
@@ -341,27 +324,25 @@ class GeneticOptimizer:
                     # Replace population
                     population[:] = offspring
         
-        finally:
-            # Restore original logging level
-            logging.getLogger().setLevel(original_level)
-            
-            # Restore structlog
-            if original_processors is not None:
-                try:
-                    structlog.configure(processors=original_processors)
-                except:
-                    pass
-        
-        # Final best
+        # Final best (logging restored here BUT we don't need to re-evaluate!)
         final_best = tools.selBest(population, 1)[0]
         self.best_individual = final_best
         self.best_params = self._individual_to_params(final_best)
         
-        # Re-evaluate best to get all metrics
-        self.best_fitness = self.evaluator.evaluate(self.best_params)
+        # Use the fitness from the final generation (already evaluated!)
+        # Re-evaluating would cause logs to appear
+        best_fit_tuple = final_best.fitness.values
+        self.best_fitness = FitnessMetrics(
+            sharpe_ratio=best_fit_tuple[0],
+            win_rate=best_fit_tuple[1],
+            max_drawdown_pct=best_fit_tuple[2],
+            total_return=0.0,  # We don't have this from tuple
+            total_trades=0,    # We don't have this from tuple
+            profit_factor=0.0, # We don't have this from tuple
+        )
         
-        # Complete dashboard
-        self.dashboard.complete(self.best_fitness.to_dict())
+        # Complete dashboard (use what we have)
+        self.dashboard.complete(self.history["best_fitness"][-1])
         
         total_time = time.time() - start_time
         
