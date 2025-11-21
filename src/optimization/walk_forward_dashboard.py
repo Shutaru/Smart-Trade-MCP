@@ -11,7 +11,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.layout import Layout
 from rich.text import Text
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 import time
 
 
