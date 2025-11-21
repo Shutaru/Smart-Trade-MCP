@@ -9,6 +9,9 @@ from ...core.data_manager import DataManager
 from ...core.indicators import calculate_all_indicators
 from ...core.backtest_engine import BacktestEngine
 
+# VERSION TRACKING - to verify server reloaded
+BACKTEST_TOOL_VERSION = "2.0.0-auto-fetch"  # Updated to auto-fetch 1 year
+
 
 async def backtest_strategy(
     strategy_name: str,
@@ -20,8 +23,10 @@ async def backtest_strategy(
 ) -> Dict[str, Any]:
     """
     Run backtest for a trading strategy.
-
-    **AUTO-FETCHES DATA** if insufficient data is available!
+    
+    **AUTO-FETCHES 1 YEAR OF DATA** if start_date not specified!
+    
+    Version: 2.0.0-auto-fetch (includes automatic data fetching)
 
     Args:
         strategy_name: Name of strategy to backtest
@@ -34,7 +39,7 @@ async def backtest_strategy(
     Returns:
         Backtest results with performance metrics
     """
-    logger.info(f"Backtesting {strategy_name} on {symbol} {timeframe}")
+    logger.info(f"Backtesting {strategy_name} on {symbol} {timeframe} (v{BACKTEST_TOOL_VERSION})")
 
     try:
         # Get strategy
@@ -45,11 +50,11 @@ async def backtest_strategy(
             end_dt = datetime.now()
         else:
             end_dt = datetime.fromisoformat(end_date)
-
+        
         if start_date is None:
             # DEFAULT: 1 year of data
             start_dt = end_dt - timedelta(days=365)
-            logger.info(f"No start_date specified, using 1 year default: {start_dt}")
+            logger.info(f"? AUTO-FETCH MODE: Fetching 1 year of data (from {start_dt.date()})")
         else:
             start_dt = datetime.fromisoformat(start_date)
 
@@ -71,10 +76,11 @@ async def backtest_strategy(
                 "timeframe": timeframe,
                 "start_date": str(start_dt),
                 "end_date": str(end_dt),
+                "tool_version": BACKTEST_TOOL_VERSION,
             }
-
-        actual_days = (df["timestamp"].iloc[-1] - df["timestamp"].iloc[0]).days
-        logger.info(f"Fetched {len(df)} candles ({actual_days} days)")
+        
+        actual_days = (df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).days
+        logger.info(f"? Fetched {len(df)} candles ({actual_days} days)")
 
         # Calculate indicators
         required_indicators = strategy.get_required_indicators()
@@ -93,16 +99,21 @@ async def backtest_strategy(
             "strategy": strategy_name,
             "symbol": symbol,
             "timeframe": timeframe,
-            "start_date": str(df["timestamp"].iloc[0]),
-            "end_date": str(df["timestamp"].iloc[-1]),
+            "start_date": str(df['timestamp'].iloc[0]),
+            "end_date": str(df['timestamp'].iloc[-1]),
             "days_tested": actual_days,
             "candles_tested": len(df),
+            "tool_version": BACKTEST_TOOL_VERSION,  # Track version!
             **results,
         }
 
     except Exception as e:
         logger.error(f"Backtest failed: {e}", exc_info=True)
-        return {"error": str(e), "strategy": strategy_name}
+        return {
+            "error": str(e),
+            "strategy": strategy_name,
+            "tool_version": BACKTEST_TOOL_VERSION,
+        }
 
 
 __all__ = ["backtest_strategy"]
