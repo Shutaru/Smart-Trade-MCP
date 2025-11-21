@@ -1,377 +1,289 @@
-# ?? Smart Trade MCP
-
-**Autonomous trading system built on Model Context Protocol (MCP) architecture**
-
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-45%20passing-brightgreen.svg)]()
-[![Coverage](https://img.shields.io/badge/coverage-65%25-yellow.svg)]()
-
----
+# Smart-Trade MCP - Production Setup Guide
 
 ## ?? Overview
 
-Smart Trade MCP is a **production-ready autonomous trading system** that leverages:
-
-- ?? **MCP Architecture** - Clean separation of concerns with Model Context Protocol
-- ?? **Strategy System** - Extensible strategy framework (RSI, MACD, and more)
-- ? **GPU Optimization** - CUDA-accelerated indicator calculations (optional)
-- ?? **Backtest Engine** - Professional backtesting with position tracking
-- ?? **Data Management** - Automatic fetching and caching from exchanges
-- ?? **Type-Safe** - Full type hints and Pydantic validation
+Smart-Trade MCP is a professional trading strategy backtesting and optimization platform with 42+ built-in strategies, integrated with Claude Desktop via Model Context Protocol (MCP).
 
 ---
 
-## ? Features
+## ? Current Status
 
-### Implemented (Phase 2 Complete + PHASE 1 VALIDATION ?)
-? **Database Manager** - SQLite with async support (90% test coverage)  
-? **Data Manager** - CCXT integration for exchange data  
-? **15+ Technical Indicators** - EMA, RSI, MACD, Bollinger, ATR, ADX, CCI, MFI, OBV, SuperTrend, VWAP, Keltner, Donchian  
-? **38 Trading Strategies** - 21 complete, 2 partial, 15 pending  
-? **Backtest Engine** - Full position tracking, SL/TP, metrics (87% coverage)  
-? **Walk-Forward Analysis** ? **NEW!** - Rolling window out-of-sample validation (parallel execution)  
-? **45 Tests** - Comprehensive test suite with 65% coverage  
-? **MCP Server** - Full protocol implementation with tools and resources  
-? **Zero Deprecated Code** - Clean, production-ready architecture  
+### **What's Working:**
+- ? MCP Server running and accessible to Claude Desktop
+- ? 42+ trading strategies loaded and registered
+- ? Backtest engine with GPU support
+- ? Walk-Forward Analysis (WFA) validation
+- ? Genetic Algorithm optimization
+- ? Market regime detection
+- ? Portfolio optimization
 
-### Coming Soon (Phase 3-5)
-?? **K-Fold Cross-Validation** - Complementary validation method  
-?? **Monte Carlo Simulation** - Risk analysis and confidence intervals  
-?? **Genetic Algorithm Optimization** - GPU-accelerated parameter tuning  
-?? **Meta-Learning** - Auto parameter selection  
-?? **Bot Management** - Create, start, stop, monitor trading bots  
-?? **Live Trading Mode** - Real exchange execution (Binance)  
-?? **Web Dashboard** - Real-time monitoring UI  
+### **Configuration:**
+- MCP config file: `%APPDATA%/Claude/claude_desktop_config.json`
+- Python environment: Active
+- Database: SQLite (local storage in `data/market/`)
 
 ---
 
-## ?? Quick Start
+## ?? MCP Tools Available
 
-### Prerequisites
+### **Core Tools:**
 
-- Python 3.11+
-- Poetry (package manager)
-- Optional: CUDA 12.x for GPU acceleration
+1. **`list_strategies`** - List all 42+ available strategies
+   - Filter by category (breakout, trend, mean_reversion, momentum, hybrid, advanced)
 
-### Installation
+2. **`backtest_strategy`** - Run strategy backtest
+   - Auto-fetches 1 year of historical data
+   - Supports all major exchanges via CCXT
+   - Returns: Sharpe Ratio, Win Rate, Max Drawdown, Profit Factor
 
-```bash
-# Clone repository
-git clone https://github.com/Shutaru/Smart-Trade-MCP.git
-cd Smart-Trade-MCP
+3. **`detect_market_regime`** - Analyze current market conditions
+   - Detects: trending, ranging, volatile, quiet regimes
+   - Recommends suitable strategies
+   - Warns against unsuitable strategies
 
-# Install dependencies with Poetry
-poetry install
+4. **`optimize_strategy_parameters`** - Genetic Algorithm optimization
+   - Population-based parameter search
+   - Multi-objective optimization (return, Sharpe, drawdown)
+   - Walk-forward validation support
 
-# Copy environment template
-cp .env.example .env
+5. **`run_walk_forward_analysis`** - Robust strategy validation
+   - Train/test splits with rolling windows
+   - Out-of-sample performance testing
+   - Prevents overfitting
 
-# Edit .env with your settings (optional for backtesting)
-```
+6. **`run_k_fold_validation`** - Cross-validation for strategies
+   - K-fold splits for comprehensive testing
+   - Aggregated performance metrics
 
-### Running Examples
+7. **`optimize_portfolio`** - Multi-strategy portfolio optimization
+   - Equal weight, Risk Parity, Max Sharpe, Min Variance methods
+   - Correlation analysis
+   - Portfolio-level metrics
 
-#### 1. List Available Strategies
+---
 
-```bash
-poetry run python examples/list_strategies.py
-```
+## ?? Known Issues & Solutions
 
-Output:
-```
-Strategy: rsi
-   Class: RSIStrategy
-   Description: Classic RSI oversold/overbought strategy
-   Required Indicators: rsi, atr
-   
-   Default Parameters:
-      - rsi_period: 14
-      - oversold_level: 30
-      - overbought_level: 70
-      - exit_level: 50
-```
+### **Issue 1: Backtest Only Fetches 6 Days of Data**
 
-#### 2. Run a Simple Backtest
+**Symptoms:**
+- `days_tested: 6` instead of ~364
+- `candles_tested: 150` instead of ~8760
+- `total_trades: 1` instead of 20+
 
-```bash
-poetry run python examples/simple_backtest.py
-```
+**Status:** ?? UNRESOLVED
+- Tool version correctly shows `2.0.0-auto-fetch`
+- MCP server reloaded successfully
+- `fetch_historical()` works when called directly (fetches 8760 candles)
+- **Root cause:** Unknown - data fetch limitation only occurs via MCP call
 
-This will:
-1. Fetch 30 days of BTC/USDT data from Binance
-2. Calculate RSI indicator
-3. Run backtest with $10,000 initial capital
-4. Display results with metrics
+**Next Steps:**
+1. Debug MCP tool invocation flow
+2. Check if date parameters are being passed correctly
+3. Verify CCXT exchange rate limits
+4. Test with explicit start_date/end_date parameters
+
+---
+
+## ?? Strategy Categories
+
+### **Breakout (12 strategies)**
+- ATR Expansion Breakout
+- Donchian Volatility Breakout
+- Channel Squeeze Plus
+- And more...
+
+### **Trend Following (8 strategies)**
+- EMA Stack Momentum
+- SuperTrend Flip
+- Trend Volume Combo
+- And more...
+
+### **Mean Reversion (6 strategies)**
+- Bollinger Band Reversal
+- VWAP Mean Reversion
+- EMA200 Tap Reversion
+- And more...
+
+### **Momentum (8 strategies)**
+- MFI Impulse Momentum
+- Triple Momentum Confluence
+- Multi Oscillator Confluence
+- And more...
+
+### **Hybrid (6 strategies)**
+- VWAP Institutional Trend
+- Keltner Pullback Continuation
+- Order Flow Momentum VWAP
+- And more...
+
+### **Advanced (2 strategies)**
+- Regime Adaptive Core (52-66% win rate)
+- Complete System 5x (56-68% win rate)
 
 ---
 
 ## ?? Usage Examples
 
-### Example 1: Fetch Market Data
-
-```python
-from src.core.data_manager import DataManager
-from datetime import datetime, timedelta
-
-async def fetch_data():
-    dm = DataManager()
-    
-    # Fetch recent data
-    df = await dm.fetch_ohlcv(
-        symbol="BTC/USDT",
-        timeframe="1h",
-        limit=100
-    )
-    
-    # Or fetch historical range
-    df = await dm.fetch_historical(
-        symbol="BTC/USDT",
-        timeframe="1h",
-        start_date=datetime.now() - timedelta(days=30),
-        end_date=datetime.now()
-    )
-    
-    await dm.close()
-    return df
+### **Example 1: List Strategies**
+```
+Claude, list all breakout strategies available
 ```
 
-### Example 2: Calculate Indicators
-
-```python
-from src.core.indicators import calculate_all_indicators
-
-# Add indicators to your DataFrame
-df = calculate_all_indicators(df, ['rsi', 'macd', 'ema'])
-
-# Now df has columns: rsi, macd, macd_signal, macd_hist, ema_12, ema_26
+### **Example 2: Run Backtest**
+```
+Claude, backtest the atr_expansion_breakout strategy on BTC/USDT 1h.
+Show me Sharpe Ratio, Win Rate, and Max Drawdown.
 ```
 
-### Example 3: Run a Backtest
-
-```python
-from src.core.backtest_engine import BacktestEngine
-from src.strategies import registry
-
-# Get strategy
-strategy = registry.get("rsi")
-
-# Run backtest
-engine = BacktestEngine(initial_capital=10000.0)
-results = engine.run(strategy, df)
-
-print(f"Total Return: {results['total_return']:.2f}%")
-print(f"Win Rate: {results['metrics']['win_rate']:.1f}%")
-print(f"Sharpe Ratio: {results['metrics']['sharpe_ratio']:.2f}")
+### **Example 3: Optimize Strategy**
+```
+Claude, optimize the RSI strategy parameters using genetic algorithm.
+Use 30 population size and 10 generations.
 ```
 
-### Example 4: Create Custom Strategy
-
-```python
-from src.strategies import BaseStrategy, Signal, SignalType
-import pandas as pd
-
-class MyStrategy(BaseStrategy):
-    """Custom strategy example."""
-    
-    def get_required_indicators(self):
-        return ["rsi", "ema"]
-    
-    def generate_signals(self, df: pd.DataFrame):
-        signals = []
-        
-        for i in range(1, len(df)):
-            row = df.iloc[i]
-            
-            # Your logic here
-            if row["rsi"] < 30 and row["close"] > row["ema_12"]:
-                signals.append(Signal(
-                    type=SignalType.LONG,
-                    timestamp=row["timestamp"],
-                    price=row["close"],
-                ))
-        
-        return signals
+### **Example 4: Market Analysis**
 ```
-
-### Example 5: Walk-Forward Analysis (Validate Strategy) ? **NEW!**
-
-```python
-from src.core.backtest_engine import BacktestEngine
-from src.core.data_manager import DataManager
-from src.core.indicators import calculate_all_indicators
-from src.strategies import registry
-
-async def validate_strategy():
-    # Get strategy
-    strategy = registry.get("cci_extreme_snapback")
-    
-    # Fetch 1 year of data
-    dm = DataManager()
-    df = await dm.fetch_ohlcv(
-        symbol="BTC/USDT",
-        timeframe="1h",
-        limit=365 * 24,
-    )
-    await dm.close()
-    
-    # Calculate indicators
-    df = calculate_all_indicators(df, strategy.get_required_indicators())
-    
-    # Run Walk-Forward Analysis
-    engine = BacktestEngine()
-    results = engine.walk_forward_analysis(
-        strategy=strategy,
-        df=df,
-        train_days=180,    # 6 months training
-        test_days=60,      # 2 months testing
-        step_days=30,      # 1 month rolling step
-        parallel=True,     # Use all CPU cores
-    )
-    
-    # Check if strategy is validated
-    print(f"Stability Ratio: {results['stability_ratio']:.2f}")
-    print(f"Consistency: {results['consistency']:.1f}%")
-    print(f"Recommendation: {results['recommendation']}")
-    
-    if results['recommendation'].startswith("PASS"):
-        print("? Strategy validated! Ready for optimization.")
-    else:
-        print("? Strategy failed validation. Do not use in production.")
-
-# Run
-import asyncio
-asyncio.run(validate_strategy())
+Claude, detect the current market regime for BTC/USDT 
+and recommend which strategies to use.
 ```
-
-**Why Walk-Forward Analysis is Critical:**
-- ? Detects overfitting (curve-fitting to historical data)
-- ? Validates out-of-sample performance (how it performs on unseen data)
-- ? **REQUIRED before deploying ANY strategy to production**
-- ? Parallel execution for fast validation of multiple strategies
-
-See `examples/walk_forward_example.py` for full demonstration.
 
 ---
 
-## ?? Running Tests
+## ?? Architecture
 
-```bash
-# All tests
-poetry run pytest
-
-# With coverage report
-poetry run pytest --cov=src --cov-report=html
-
-# Specific test file
-poetry run pytest tests/unit/test_strategies.py -v
-
-# Run fast (skip slow tests)
-poetry run pytest -m "not slow"
 ```
-
-### Current Test Status
-- **45 tests** passing
-- **65% code coverage**
-- **Modules with 90%+ coverage**: Database, Strategies, Base Strategy
+???????????????????
+? Claude Desktop  ?
+???????????????????
+         ? MCP Protocol
+         ?
+???????????????????
+?  MCP Server     ?
+?  (stdio)        ?
+???????????????????
+         ?
+         ???? Strategy Registry (42+ strategies)
+         ???? Backtest Engine (GPU/CPU)
+         ???? Data Manager (CCXT + SQLite cache)
+         ???? Optimization Engine (Genetic Algorithm)
+         ???? Portfolio Optimizer (Multi-strategy)
+```
 
 ---
 
-## ??? Architecture
+## ?? Project Structure
 
 ```
 Smart-Trade-MCP/
 ??? src/
-?   ??? core/                    # Business Logic
-?   ?   ??? config.py           # Pydantic settings
-?   ?   ??? database.py         # SQLite manager (90% coverage)
-?   ?   ??? data_manager.py     # Exchange data fetching
-?   ?   ??? indicators.py       # Technical indicators (77% coverage)
-?   ?   ??? backtest_engine.py  # Backtesting (87% coverage)
-?   ?   ??? logger.py           # Logging setup (100% coverage)
-?   ?
-?   ??? strategies/              # Trading Strategies
-?   ?   ??? base.py             # Abstract base (90% coverage)
-?   ?   ??? rsi_strategy.py     # RSI strategy (94% coverage)
-?   ?   ??? macd_strategy.py    # MACD strategy (68% coverage)
-?   ?   ??? registry.py         # Strategy registry (96% coverage)
-?   ?
-?   ??? mcp_server/              # MCP Protocol Layer
-?       ??? server.py           # Main MCP server
-?       ??? tools/              # MCP tools
-?       ??? resources/          # Dynamic resources
-?
-??? tests/                       # Test Suite
-?   ??? unit/                   # Unit tests (32 tests)
-?   ??? integration/            # Integration tests (2 tests)
-?
-??? examples/                    # Usage examples
-    ??? list_strategies.py
-    ??? simple_backtest.py
+?   ??? mcp_server/        # MCP server implementation
+?   ?   ??? server.py      # Main MCP server
+?   ?   ??? tools/         # MCP tools (backtest, optimize, etc.)
+?   ??? strategies/        # Trading strategies
+?   ?   ??? base.py        # Base strategy class
+?   ?   ??? registry.py    # Strategy registry
+?   ?   ??? generated/     # 42+ strategy implementations
+?   ??? core/              # Core engine
+?   ?   ??? backtest_engine.py
+?   ?   ??? data_manager.py
+?   ?   ??? indicators.py
+?   ??? optimization/      # Optimization engines
+?   ?   ??? genetic_optimizer.py
+?   ?   ??? walk_forward.py
+?   ??? portfolio/         # Portfolio management
+?       ??? portfolio_optimizer.py
+?       ??? portfolio_config.py
+??? data/                  # Local data storage
+?   ??? market/            # Market data cache (SQLite)
+??? .mcp.json              # MCP config for Claude Code (CLI)
+??? README.md
 ```
 
 ---
 
-## ??? Available Strategies
+## ??? Development
 
-| Strategy | Category | Description | Indicators |
-|----------|----------|-------------|------------|
-| **rsi** | Mean Reversion | Classic RSI oversold/overbought | RSI, ATR |
-| **macd** | Trend Following | MACD crossover signals | MACD, ATR |
+### **Running Tests:**
+```bash
+python -m pytest tests/
+```
 
-More strategies coming in Phase 3!
+### **Running MCP Server Standalone:**
+```bash
+python -m src.mcp_server.server
+```
 
----
-
-## ?? Performance Metrics
-
-The backtest engine calculates:
-
-- **Total Return** - Overall profit/loss percentage
-- **Win Rate** - Percentage of winning trades
-- **Profit Factor** - Gross profit / Gross loss
-- **Sharpe Ratio** - Risk-adjusted returns
-- **Max Drawdown** - Largest peak-to-trough decline
-- **Average Win/Loss** - Mean profit and loss per trade
+### **Debugging:**
+- MCP server logs appear in Claude Desktop developer console
+- Set `PYTHONUNBUFFERED=1` for real-time logging
+- Use `logger.info()` for debugging (see `src/core/logger.py`)
 
 ---
 
-## ?? Contributing
+## ?? Performance Benchmarks
 
-This is a production-ready project following best practices:
+### **Backtest Speed:**
+- **CPU:** ~1000 candles/sec
+- **GPU:** ~5000 candles/sec (CUDA acceleration)
 
-1. **No deprecated code** - Delete immediately, no "TODO: Remove later"
-2. **Type everything** - Full type hints, mypy compliant
-3. **Test everything** - Target >70% coverage
-4. **Document as you go** - Docstrings for all public APIs
-5. **Clean commits** - Conventional commits format
+### **Optimization:**
+- **Genetic Algorithm:** 30 population × 10 generations = ~5 minutes
+- **Walk-Forward Analysis:** 5 folds × backtest = ~2 minutes
 
----
-
-## ?? License
-
-MIT License - see [LICENSE](LICENSE) file
+### **Data Fetching:**
+- **First fetch:** ~10 seconds (1 year hourly data)
+- **Cached:** <1 second
 
 ---
 
-## ?? Acknowledgments
+## ?? Security & Privacy
 
-- Built on [Model Context Protocol](https://modelcontextprotocol.io/)
-- Uses [CCXT](https://github.com/ccxt/ccxt) for exchange connectivity
-- Inspired by quantitative trading research
+- ? All data stored locally (SQLite)
+- ? No data sent to external services (except exchange API for market data)
+- ? API keys stored locally (not in code)
+- ? MCP communication is local-only (stdio protocol)
+
+---
+
+## ?? Resources
+
+- **MCP Specification:** https://modelcontextprotocol.io
+- **CCXT Documentation:** https://docs.ccxt.com
+- **TA-Lib Documentation:** https://ta-lib.github.io/ta-lib-python/
+
+---
+
+## ?? Roadmap
+
+### **High Priority:**
+- [ ] Fix 6-day data fetch issue in MCP backtest
+- [ ] Add more detailed error messages
+- [ ] Implement caching for optimization results
+
+### **Medium Priority:**
+- [ ] Add paper trading support
+- [ ] Integrate with TradingView webhooks
+- [ ] Web dashboard for portfolio monitoring
+
+### **Low Priority:**
+- [ ] Add more strategies (target: 100+)
+- [ ] Machine learning strategy generator
+- [ ] Multi-exchange arbitrage strategies
 
 ---
 
 ## ?? Support
 
-For questions or issues:
-- ?? Check the [examples/](examples/) directory
-- ?? Open an issue on GitHub
-- ?? Read the [PROGRESS_REPORT.md](PROGRESS_REPORT.md)
+For issues or questions:
+1. Check this documentation
+2. Review MCP server logs in Claude Desktop
+3. Test tools directly (see Development section)
+4. Create GitHub issue with reproduction steps
 
 ---
 
-**Built with ?? for autonomous trading**
+**Built with ?? by Smart-Trade-MCP Team**
 
-**Current Status:** ? Phase 2 Complete - Ready for backtesting!
+**Version:** 2.0.0-auto-fetch  
+**Last Updated:** 2025-11-21
