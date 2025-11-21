@@ -31,11 +31,15 @@ if sys.platform == 'win32':
 # ==============================================================================
 import logging
 
-# Disable ALL logging immediately
+# Disable standard logging
 logging.disable(logging.CRITICAL)
-
-# Also configure root logger to highest level
 logging.basicConfig(level=logging.CRITICAL + 100)
+
+# ALSO disable Loguru (our project uses loguru, not standard logging!)
+from loguru import logger as loguru_logger
+
+# Remove ALL loguru handlers (this prevents ANY logs from appearing)
+loguru_logger.remove()
 
 # ==============================================================================
 # NOW SAFE TO IMPORT PROJECT MODULES (no logs will appear)
