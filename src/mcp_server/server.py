@@ -384,6 +384,121 @@ class SmartTradeMCPServer:
                         },
                     },
                 ),
+                # NEW OPTIMIZATION TOOLS
+                Tool(
+                    name="optimize_strategy_parameters",
+                    description="Optimize strategy parameters using Genetic Algorithm - Finds best parameter values for maximum performance",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to optimize",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "population_size": {
+                                "type": "integer",
+                                "description": "GA population size",
+                                "default": 50,
+                            },
+                            "n_generations": {
+                                "type": "integer",
+                                "description": "Number of generations",
+                                "default": 20,
+                            },
+                            "use_ray": {
+                                "type": "boolean",
+                                "description": "Use Ray for parallel processing",
+                                "default": False,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="optimize_portfolio",
+                    description="Optimize multi-strategy portfolio allocation - Finds optimal weights for strategy combination",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategies": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of strategy names to include",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "method": {
+                                "type": "string",
+                                "description": "Optimization method",
+                                "enum": ["equal_weight", "risk_parity", "max_sharpe", "min_variance"],
+                                "default": "max_sharpe",
+                            },
+                        },
+                        "required": ["strategies"],
+                    },
+                ),
+                Tool(
+                    name="run_nfold_walk_forward",
+                    description="Run N-Fold Walk-Forward Analysis - Advanced WFA with K-fold cross-validation per window",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to validate",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "n_folds": {
+                                "type": "integer",
+                                "description": "Number of test folds per window",
+                                "default": 3,
+                            },
+                            "train_days": {
+                                "type": "integer",
+                                "description": "Training window size in days",
+                                "default": 180,
+                            },
+                            "test_days": {
+                                "type": "integer",
+                                "description": "Test window size per fold in days",
+                                "default": 60,
+                            },
+                            "use_parallel": {
+                                "type": "boolean",
+                                "description": "Use Ray parallel processing",
+                                "default": True,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -408,6 +523,11 @@ class SmartTradeMCPServer:
             from .tools.regime import (
                 detect_market_regime,
                 detect_historical_regimes,
+            )
+            from .tools.optimization import (
+                optimize_strategy_parameters,
+                optimize_portfolio,
+                run_nfold_walk_forward,
             )
 
             try:
@@ -435,6 +555,13 @@ class SmartTradeMCPServer:
                     result = await get_portfolio_status()
                 elif name == "list_strategies":
                     result = await list_strategies(**arguments)
+                # NEW OPTIMIZATION TOOLS
+                elif name == "optimize_strategy_parameters":
+                    result = await optimize_strategy_parameters(**arguments)
+                elif name == "optimize_portfolio":
+                    result = await optimize_portfolio(**arguments)
+                elif name == "run_nfold_walk_forward":
+                    result = await run_nfold_walk_forward(**arguments)
                 else:
                     raise ValueError(f"Unknown tool: {name}")
 
