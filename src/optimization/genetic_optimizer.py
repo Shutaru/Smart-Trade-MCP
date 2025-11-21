@@ -281,6 +281,7 @@ class GeneticOptimizer:
             Dictionary with optimization results
         """
         from ..core.rich_utils import silent_logs
+        from rich.live import Live
         
         start_time = time.time()
         
@@ -296,8 +297,8 @@ class GeneticOptimizer:
                 n_generations=self.config.n_generations,
             )
             
-            # Start progress display
-            with dashboard.progress:
+            # Use Live to render dashboard
+            with Live(dashboard.render(), console=console, refresh_per_second=4) as live:
                 # Evaluate initial population
                 fitnesses = list(map(self.toolbox.evaluate, self.population))
                 for ind, fit in zip(self.population, fitnesses):
@@ -311,6 +312,7 @@ class GeneticOptimizer:
                 # Update dashboard (generation 0)
                 dashboard.update_generation(generation=0, evaluated=self.config.population_size)
                 dashboard.complete_generation(best_fitness=best_fitness, avg_fitness=avg_fitness)
+                live.update(dashboard.render())
                 
                 # Evolution
                 for gen in range(1, self.config.n_generations + 1):
@@ -359,6 +361,7 @@ class GeneticOptimizer:
                     # Update dashboard
                     dashboard.update_generation(generation=gen, evaluated=len(invalid_ind))
                     dashboard.complete_generation(best_fitness=best_fitness, avg_fitness=avg_fitness)
+                    live.update(dashboard.render())
             
             # Show final results
             dashboard.complete(final_best=best_fitness)
