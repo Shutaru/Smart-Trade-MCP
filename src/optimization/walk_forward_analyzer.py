@@ -255,17 +255,26 @@ class WalkForwardAnalyzer:
         Returns:
             List of FoldResult for each test fold
         """
+        # Import StrategyConfig
+        from ..strategies import StrategyConfig
+        
         fold_results = []
         
         for fold in window['folds']:
             # Create strategy instance with optimized params
-            # Check if strategy_class is already an instance or a class
+            # Get strategy class (handle both class and instance)
             if isinstance(self.strategy_class, type):
-                # It's a class - instantiate it
-                strategy = self.strategy_class(params=optimized_params)
+                # It's a class
+                strategy_cls = self.strategy_class
             else:
-                # It's already an instance - clone it with new params
-                strategy = self.strategy_class.__class__(params=optimized_params)
+                # It's an instance - get its class
+                strategy_cls = self.strategy_class.__class__
+            
+            # Create StrategyConfig with optimized parameters
+            config = StrategyConfig(params=optimized_params)
+            
+            # Create strategy instance with config
+            strategy = strategy_cls(config)
             
             # Run backtest on this fold
             engine = BacktestEngine(
