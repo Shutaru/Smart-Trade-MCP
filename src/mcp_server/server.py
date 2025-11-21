@@ -627,6 +627,7 @@ class SmartTradeMCPServer:
                 InitializationOptions(
                     server_name=settings.mcp_server_name,
                     server_version=settings.mcp_server_version,
+                    capabilities={},
                 ),
             )
 
