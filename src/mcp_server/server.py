@@ -48,7 +48,7 @@ class SmartTradeMCPServer:
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
             """List all available MCP tools."""
-            logger.info("?? list_tools() called - returning 15 tools")
+            logger.info("?? list_tools() called - returning 25 tools (15 existing + 10 new AI-driven)")
             return [
                 Tool(
                     name="get_market_data",
@@ -549,6 +549,217 @@ class SmartTradeMCPServer:
                         "required": ["strategies"],
                     },
                 ),
+                # ==== AGENT MANAGEMENT TOOLS (AI-DRIVEN) ====
+                Tool(
+                    name="launch_trading_agent",
+                    description="?? Launch dedicated autonomous trading agent - Spawns independent process for symbol/strategy with optimized parameters",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair (e.g., BTC/USDT)",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe (e.g., 1h, 5m, 4h)",
+                            },
+                            "strategy": {
+                                "type": "string",
+                                "description": "Strategy name (e.g., cci_extreme_snapback)",
+                            },
+                            "params": {
+                                "type": "object",
+                                "description": "Strategy parameters (optimized from GA)",
+                            },
+                            "risk_per_trade": {
+                                "type": "number",
+                                "description": "Risk per trade as fraction (default 0.02 = 2%)",
+                                "default": 0.02,
+                            },
+                            "scan_interval_minutes": {
+                                "type": "integer",
+                                "description": "Scan frequency in minutes",
+                                "default": 15,
+                            },
+                        },
+                        "required": ["symbol", "timeframe", "strategy"],
+                    },
+                ),
+                Tool(
+                    name="stop_trading_agent",
+                    description="?? Stop running trading agent - Gracefully terminates agent process and saves final stats",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {
+                                "type": "string",
+                                "description": "Agent ID to stop",
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "Reason for stopping (e.g., 'poor performance')",
+                            },
+                        },
+                        "required": ["agent_id"],
+                    },
+                ),
+                Tool(
+                    name="list_active_agents",
+                    description="?? List all active trading agents - Returns status and performance metrics for all running agents",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                    },
+                ),
+                Tool(
+                    name="get_agent_performance",
+                    description="?? Get detailed agent performance - Returns comprehensive metrics (Sharpe, win rate, PnL, trades)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {
+                                "type": "string",
+                                "description": "Agent ID",
+                            },
+                        },
+                        "required": ["agent_id"],
+                    },
+                ),
+                Tool(
+                    name="update_agent_params",
+                    description="?? Update agent parameters - Hot-reload parameters without restarting agent",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {
+                                "type": "string",
+                                "description": "Agent ID",
+                            },
+                            "params": {
+                                "type": "object",
+                                "description": "New parameters to update",
+                            },
+                        },
+                        "required": ["agent_id", "params"],
+                    },
+                ),
+                Tool(
+                    name="get_agent_summary",
+                    description="?? Get portfolio summary - High-level overview of all agents (total PnL, best/worst performers)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                    },
+                ),
+                # ==== CORRELATION & REBALANCING TOOLS (AI-DRIVEN) ====
+                Tool(
+                    name="detect_symbol_correlations",
+                    description="?? Detect symbol correlations - Analyzes correlations between trading pairs for diversification",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbols": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of trading pairs to analyze",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe for correlation analysis",
+                                "default": "1h",
+                            },
+                            "lookback_days": {
+                                "type": "integer",
+                                "description": "Days of history to analyze",
+                                "default": 30,
+                            },
+                        },
+                        "required": ["symbols"],
+                    },
+                ),
+                Tool(
+                    name="get_diversification_recommendations",
+                    description="?? Get diversification recommendations - Suggests which symbols add most diversification to portfolio",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "active_agents": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                                "description": "Currently active agents",
+                            },
+                            "candidate_symbols": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Candidate symbols to consider",
+                            },
+                        },
+                        "required": ["active_agents", "candidate_symbols"],
+                    },
+                ),
+                Tool(
+                    name="rebalance_agent_portfolio",
+                    description="?? Auto-rebalance portfolio - Automatically stops underperformers and optimizes agent allocation",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "target_sharpe": {
+                                "type": "number",
+                                "description": "Minimum Sharpe ratio to keep agent",
+                                "default": 1.5,
+                            },
+                            "max_risk_per_symbol": {
+                                "type": "number",
+                                "description": "Max allocation per symbol",
+                                "default": 0.1,
+                            },
+                            "min_agents": {
+                                "type": "integer",
+                                "description": "Minimum agents to maintain",
+                                "default": 3,
+                            },
+                            "max_agents": {
+                                "type": "integer",
+                                "description": "Maximum agents allowed",
+                                "default": 15,
+                            },
+                            "min_win_rate": {
+                                "type": "number",
+                                "description": "Minimum win rate (0-1)",
+                                "default": 0.50,
+                            },
+                            "correlation_threshold": {
+                                "type": "number",
+                                "description": "Stop duplicates above this correlation",
+                                "default": 0.8,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="suggest_new_agents",
+                    description="?? Suggest new agents - Smart recommendations for which agents to add based on diversification",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "current_portfolio": {
+                                "type": "object",
+                                "description": "Current portfolio state",
+                            },
+                            "candidate_symbols": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Symbols to consider",
+                            },
+                            "target_agent_count": {
+                                "type": "integer",
+                                "description": "Desired number of agents",
+                                "default": 10,
+                            },
+                        },
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -559,7 +770,7 @@ class SmartTradeMCPServer:
             # Import tool implementations
             from .tools.market_data import get_market_data, calculate_indicators
             from .tools.backtest import backtest_strategy
-            from .tools.batch_compare import compare_strategies  # NEW
+            from .tools.batch_compare import compare_strategies
             from .tools.portfolio import get_portfolio_status
             from .tools.strategies import list_strategies
             from .tools.validation import (
@@ -579,6 +790,23 @@ class SmartTradeMCPServer:
                 optimize_strategy_parameters,
                 optimize_portfolio,
                 run_nfold_walk_forward,
+            )
+            # NEW: AI-DRIVEN TOOLS
+            from .tools.agent_management import (
+                launch_trading_agent,
+                stop_trading_agent,
+                list_active_agents,
+                get_agent_performance,
+                update_agent_params,
+                get_agent_summary,
+            )
+            from .tools.correlation_analysis import (
+                detect_symbol_correlations,
+                get_diversification_recommendations,
+            )
+            from .tools.auto_rebalancing import (
+                rebalance_agent_portfolio,
+                suggest_new_agents,
             )
 
             try:
@@ -615,6 +843,28 @@ class SmartTradeMCPServer:
                     result = await optimize_portfolio(**arguments)
                 elif name == "run_nfold_walk_forward":
                     result = await run_nfold_walk_forward(**arguments)
+                # AGENT MANAGEMENT TOOLS (AI-DRIVEN)
+                elif name == "launch_trading_agent":
+                    result = await launch_trading_agent(**arguments)
+                elif name == "stop_trading_agent":
+                    result = await stop_trading_agent(**arguments)
+                elif name == "list_active_agents":
+                    result = await list_active_agents()
+                elif name == "get_agent_performance":
+                    result = await get_agent_performance(**arguments)
+                elif name == "update_agent_params":
+                    result = await update_agent_params(**arguments)
+                elif name == "get_agent_summary":
+                    result = await get_agent_summary()
+                # CORRELATION & REBALANCING TOOLS (AI-DRIVEN)
+                elif name == "detect_symbol_correlations":
+                    result = await detect_symbol_correlations(**arguments)
+                elif name == "get_diversification_recommendations":
+                    result = await get_diversification_recommendations(**arguments)
+                elif name == "rebalance_agent_portfolio":
+                    result = await rebalance_agent_portfolio(**arguments)
+                elif name == "suggest_new_agents":
+                    result = await suggest_new_agents(**arguments)
                 else:
                     raise ValueError(f"Unknown tool: {name}")
 
@@ -730,6 +980,20 @@ Avoid: Full equity curves, all trades, excessive decimals
 - `diagnose_strategy_failure` - Why strategy failed
 - `suggest_parameter_fixes` - Parameter recommendations
 
+**Category 6: Agent Management (AI-DRIVEN)**
+- `launch_trading_agent` - Launchs an autonomous trading agent
+- `stop_trading_agent` - Stops a running trading agent
+- `list_active_agents` - Lists all active trading agents
+- `get_agent_performance` - Gets performance of a specific agent
+- `update_agent_params` - Updates parameters of a running agent
+- `get_agent_summary` - Gets a summary of all agents' performance
+
+**Category 7: Correlation & Rebalancing (AI-DRIVEN)**
+- `detect_symbol_correlations` - Detects correlations between symbols
+- `get_diversification_recommendations` - Suggests symbols for diversification
+- `rebalance_agent_portfolio` - Auto-rebalances portfolio allocation
+- `suggest_new_agents` - Suggests new agents to add based on analysis
+
 ## ?? TYPICAL WORKFLOWS
 
 **Workflow 1: Find Best Strategy (~15 sec)**
@@ -747,12 +1011,24 @@ Avoid: Full equity curves, all trades, excessive decimals
 2. Filter recommended strategies
 3. compare_strategies(filtered)
 
+**Workflow 4: Agent Launch & Management**
+1. launch_trading_agent("BTC/USDT", "1h", "cci_extreme_snapback")
+2. Monitor with list_active_agents()
+3. Stop underperforming agents with stop_trading_agent()
+
+**Workflow 5: Correlation & Rebalancing**
+1. detect_symbol_correlations(["BTC/USDT", "ETH/USDT"])
+2. get_diversification_recommendations(active_agents, ["LINK/USDT", "XRP/USDT"])
+3. rebalance_agent_portfolio()
+
 ## ? PERFORMANCE EXPECTATIONS
 
 - Single backtest: 1-2 sec
 - Batch (41 strategies): ~15 sec ?
 - Parameter optimization: 2-5 min
 - Walk-forward analysis: 2-3 min
+- Agent launch: < 5 sec
+- Correlation analysis: < 10 sec
 
 ## ?? WHAT NOT TO DO
 
