@@ -1,0 +1,405 @@
+# -*- coding: utf-8 -*-
+"""
+Agent Management MCP Tools
+
+Tools for Claude Desktop to launch, stop, and monitor autonomous trading agents.
+Each agent is dedicated to one symbol + timeframe + strategy.
+"""
+
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+from pathlib import Path
+
+from ..core.logger import logger
+from ...agent.orchestrator import AgentOrchestrator
+
+
+# Global orchestrator instance
+_orchestrator = None
+
+
+def get_orchestrator() -> AgentOrchestrator:
+    """Get global agent orchestrator instance."""
+    global _orchestrator
+    if _orchestrator is None:
+        from ...agent.orchestrator import AgentOrchestrator
+        _orchestrator = AgentOrchestrator()
+    return _orchestrator
+
+
+async def launch_trading_agent(
+    symbol: str,
+    timeframe: str,
+    strategy: str,
+    params: Optional[Dict[str, Any]] = None,
+    risk_per_trade: float = 0.02,
+    scan_interval_minutes: int = 15
+) -> Dict[str, Any]:
+    """
+    ?? Launch a dedicated autonomous trading agent.
+    
+    **What it does:**
+    - Spawns an independent process for this symbol/strategy
+    - Agent scans continuously at specified interval
+    - Generates signals and executes trades (paper/live)
+    - Reports performance metrics
+    
+    **Use case:**
+    Claude analyzes a symbol, decides strategy is profitable,
+    then launches a dedicated agent to trade it autonomously.
+    
+    Args:
+        symbol: Trading pair (e.g., "BTC/USDT")
+        timeframe: Timeframe (e.g., "1h", "5m", "4h")
+        strategy: Strategy name (e.g., "cci_extreme_snapback")
+        params: Optimized strategy parameters (from GA)
+        risk_per_trade: Risk per trade as fraction (default 0.02 = 2%)
+        scan_interval_minutes: How often to scan (default 15)
+    
+    Returns:
+        Agent info including agent_id, PID, status
+    
+    Example:
+        ```python
+        # After Claude optimizes BTC strategy:
+        agent = await launch_trading_agent(
+            symbol="BTC/USDT",
+            timeframe="1h",
+            strategy="ema_cloud_trend",
+            params={
+                "ema_fast": 18,
+                "ema_slow": 52,
+                "rsi_threshold": 48
+            },
+            risk_per_trade=0.02
+        )
+        # Returns: {"agent_id": "agent_btc_1h_ema_abc123", "status": "launched"}
+        ```
+    """
+    try:
+        logger.info(f"MCP Tool: Launching agent for {symbol} {timeframe} with {strategy}")
+        
+        orchestrator = get_orchestrator()
+        
+        agent_id = await orchestrator.launch_agent(
+            symbol=symbol,
+            timeframe=timeframe,
+            strategy=strategy,
+            params=params or {},
+            risk_per_trade=risk_per_trade,
+            scan_interval_minutes=scan_interval_minutes
+        )
+        
+        # Get agent info
+        agent_info = orchestrator.get_agent_info(agent_id)
+        
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "strategy": strategy,
+            "status": "launched",
+            "pid": agent_info.get("pid"),
+            "started_at": agent_info.get("started_at"),
+            "message": f"Agent {agent_id} launched successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error launching agent: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to launch agent"
+        }
+
+
+async def stop_trading_agent(agent_id: str, reason: Optional[str] = None) -> Dict[str, Any]:
+    """
+    ?? Stop a running trading agent.
+    
+    **What it does:**
+    - Gracefully stops the agent process
+    - Closes any open positions (if configured)
+    - Updates agent status in database
+    
+    **Use case:**
+    Claude detects poor performance or regime change,
+    decides to stop the agent.
+    
+    Args:
+        agent_id: Agent ID to stop
+        reason: Optional reason for stopping (e.g., "poor performance")
+    
+    Returns:
+        Stop confirmation with final stats
+    
+    Example:
+        ```python
+        # Agent performing poorly
+        result = await stop_trading_agent(
+            agent_id="agent_btc_1h_ema_abc123",
+            reason="Win rate below 40%, switching strategy"
+        )
+        ```
+    """
+    try:
+        logger.info(f"MCP Tool: Stopping agent {agent_id}")
+        
+        orchestrator = get_orchestrator()
+        
+        # Get final stats before stopping
+        final_stats = orchestrator.get_agent_performance(agent_id)
+        
+        # Stop agent
+        orchestrator.stop_agent(agent_id, reason=reason)
+        
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "status": "stopped",
+            "reason": reason,
+            "final_stats": final_stats,
+            "message": f"Agent {agent_id} stopped successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error stopping agent: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to stop agent"
+        }
+
+
+async def list_active_agents() -> Dict[str, Any]:
+    """
+    ?? List all active trading agents and their status.
+    
+    **What it does:**
+    - Returns all currently running agents
+    - Includes performance metrics for each
+    - Shows which agents are profitable/unprofitable
+    
+    **Use case:**
+    Claude periodically checks agent performance to decide
+    which agents to keep, stop, or re-optimize.
+    
+    Returns:
+        List of all agents with status and performance
+    
+    Example:
+        ```python
+        agents = await list_active_agents()
+        # Returns:
+        # {
+        #   "total_agents": 8,
+        #   "active": 6,
+        #   "stopped": 2,
+        #   "agents": [
+        #     {
+        #       "agent_id": "agent_btc_1h_ema_abc123",
+        #       "symbol": "BTC/USDT",
+        #       "strategy": "ema_cloud_trend",
+        #       "status": "active",
+        #       "trades": 15,
+        #       "win_rate": 73.3,
+        #       "total_pnl": +523.45
+        #     }
+        #   ]
+        # }
+        ```
+    """
+    try:
+        orchestrator = get_orchestrator()
+        
+        agents = orchestrator.get_all_agents()
+        
+        # Categorize by status
+        active = [a for a in agents if a["status"] == "active"]
+        stopped = [a for a in agents if a["status"] == "stopped"]
+        
+        return {
+            "success": True,
+            "total_agents": len(agents),
+            "active": len(active),
+            "stopped": len(stopped),
+            "agents": agents,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing agents: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "agents": []
+        }
+
+
+async def get_agent_performance(agent_id: str) -> Dict[str, Any]:
+    """
+    ?? Get detailed performance metrics for a specific agent.
+    
+    **What it does:**
+    - Returns comprehensive performance data
+    - Includes all trades, win rate, Sharpe ratio, drawdown
+    - Shows current positions
+    
+    **Use case:**
+    Claude analyzes agent performance to decide if parameters
+    need re-optimization or if strategy should be changed.
+    
+    Args:
+        agent_id: Agent ID
+    
+    Returns:
+        Detailed performance metrics
+    
+    Example:
+        ```python
+        perf = await get_agent_performance("agent_btc_1h_ema_abc123")
+        # Returns:
+        # {
+        #   "agent_id": "...",
+        #   "total_trades": 25,
+        #   "winning_trades": 18,
+        #   "losing_trades": 7,
+        #   "win_rate": 72.0,
+        #   "total_pnl": 1245.30,
+        #   "sharpe_ratio": 2.1,
+        #   "max_drawdown": -123.45,
+        #   "avg_win": 102.34,
+        #   "avg_loss": -45.67,
+        #   "current_position": {...}
+        # }
+        ```
+    """
+    try:
+        orchestrator = get_orchestrator()
+        
+        performance = orchestrator.get_agent_performance(agent_id)
+        
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            **performance
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting agent performance: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+async def update_agent_params(
+    agent_id: str,
+    params: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    ?? Update agent parameters on-the-fly.
+    
+    **What it does:**
+    - Updates strategy parameters without restarting agent
+    - Useful for gradual optimization
+    - Changes take effect on next scan
+    
+    **Use case:**
+    Claude detects that slightly different parameters might
+    improve performance, updates them dynamically.
+    
+    Args:
+        agent_id: Agent ID
+        params: New parameters
+    
+    Returns:
+        Confirmation with new params
+    
+    Example:
+        ```python
+        result = await update_agent_params(
+            agent_id="agent_btc_1h_ema_abc123",
+            params={
+                "rsi_threshold": 52  # Was 48
+            }
+        )
+        ```
+    """
+    try:
+        orchestrator = get_orchestrator()
+        
+        orchestrator.update_agent_params(agent_id, params)
+        
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "updated_params": params,
+            "message": "Parameters updated successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating agent params: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+async def get_agent_summary() -> Dict[str, Any]:
+    """
+    ?? Get high-level summary of all agents.
+    
+    **What it does:**
+    - Overall portfolio performance
+    - Total PnL across all agents
+    - Best/worst performing agents
+    
+    **Use case:**
+    Claude gets a quick overview to make portfolio decisions.
+    
+    Returns:
+        Portfolio-level summary
+    
+    Example:
+        ```python
+        summary = await get_agent_summary()
+        # Returns:
+        # {
+        #   "total_agents": 10,
+        #   "total_pnl": 2345.67,
+        #   "total_trades": 150,
+        #   "overall_win_rate": 65.3,
+        #   "best_agent": {...},
+        #   "worst_agent": {...}
+        # }
+        ```
+    """
+    try:
+        orchestrator = get_orchestrator()
+        
+        summary = orchestrator.get_portfolio_summary()
+        
+        return {
+            "success": True,
+            **summary
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting summary: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# Register tools
+__all__ = [
+    "launch_trading_agent",
+    "stop_trading_agent",
+    "list_active_agents",
+    "get_agent_performance",
+    "update_agent_params",
+    "get_agent_summary",
+]
