@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pathlib import Path
 
-from ..core.logger import logger
+from ...core.logger import logger  # FIX: Changed from ..core to ...core
 from ...agent.orchestrator import AgentOrchestrator
 
 

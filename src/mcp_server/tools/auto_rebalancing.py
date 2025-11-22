@@ -9,7 +9,7 @@ and risk constraints. Maintains optimal agent allocation.
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from ..core.logger import logger
+from ...core.logger import logger  # FIX: Changed from ..core to ...core
 
 
 async def rebalance_agent_portfolio(
