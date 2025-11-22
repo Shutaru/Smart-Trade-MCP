@@ -95,32 +95,43 @@ class TradingAgentScheduler:
         logger.info("STARTING AUTONOMOUS TRADING AGENT")
         logger.info("=" * 80)
         
-        # Add scheduled job
-        self.scheduler.add_job(
-            self.run_scan_job,
-            trigger=IntervalTrigger(minutes=self.config.scanner.scan_interval_minutes),
-            id='scan_job',
-            name='Signal Scanning',
-            replace_existing=True
-        )
-        
         # Setup signal handlers for graceful shutdown
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, self._signal_handler)
         
-        # Start scheduler
-        self.scheduler.start()
-        self.is_running = True
+        # Create and run async main loop
+        async def async_main():
+            # Add scheduled job
+            self.scheduler.add_job(
+                self.run_scan_job,
+                trigger=IntervalTrigger(minutes=self.config.scanner.scan_interval_minutes),
+                id='scan_job',
+                name='Signal Scanning',
+                replace_existing=True
+            )
+            
+            # Start scheduler
+            self.scheduler.start()
+            self.is_running = True
+            
+            logger.info("? Agent started successfully!")
+            logger.info(f"Next scan: {datetime.now() + timedelta(minutes=self.config.scanner.scan_interval_minutes)}")
+            logger.info("Press Ctrl+C to stop")
+            logger.info("=" * 80)
+            
+            # Keep running forever
+            try:
+                while self.is_running:
+                    await asyncio.sleep(1)
+            except (KeyboardInterrupt, SystemExit):
+                pass
         
-        logger.info("? Agent started successfully!")
-        logger.info(f"Next scan: {datetime.now() + timedelta(minutes=self.config.scanner.scan_interval_minutes)}")
-        logger.info("Press Ctrl+C to stop")
-        logger.info("=" * 80)
-        
+        # Run the async main
         try:
-            # Keep running
-            asyncio.get_event_loop().run_forever()
+            asyncio.run(async_main())
         except (KeyboardInterrupt, SystemExit):
+            pass
+        finally:
             self.stop()
     
     def stop(self):
