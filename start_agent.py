@@ -1,0 +1,20 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Start Autonomous Trading Agent
+
+Standalone script to run the autonomous trading agent.
+Scans multiple pairs at configured intervals and generates signals.
+"""
+
+import sys
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+from src.agent.scheduler import main
+
+if __name__ == "__main__":
+    main()

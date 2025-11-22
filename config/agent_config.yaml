@@ -1,0 +1,95 @@
+# Smart-Trade Autonomous Trading Agent Configuration
+# 
+# This file configures which pairs to monitor, which strategies to use,
+# and how often to scan for signals.
+
+# Trading pairs to monitor
+pairs:
+  - symbol: "BTC/USDT"
+    timeframe: "1h"
+    enabled: true
+  
+  - symbol: "ETH/USDT"
+    timeframe: "1h"
+    enabled: true
+  
+  - symbol: "SOL/USDT"
+    timeframe: "1h"
+    enabled: true
+  
+  - symbol: "BNB/USDT"
+    timeframe: "1h"
+    enabled: false  # Disabled for now
+  
+  - symbol: "XRP/USDT"
+    timeframe: "1h"
+    enabled: false  # Disabled for now
+
+# Strategies to use for signal generation
+strategies:
+  # Best performer from backtests
+  - name: "cci_extreme_snapback"
+    enabled: true
+    min_confidence: 0.75
+  
+  # Second best
+  - name: "bollinger_mean_reversion"
+    enabled: true
+    min_confidence: 0.70
+  
+  # Third best
+  - name: "atr_expansion_breakout"
+    enabled: true
+    min_confidence: 0.70
+  
+  # Additional strategies (disabled by default)
+  - name: "ema_stack_momentum"
+    enabled: false
+    min_confidence: 0.70
+  
+  - name: "vwap_institutional_trend"
+    enabled: false
+    min_confidence: 0.70
+
+# Scanner configuration
+scanner:
+  # How often to scan (in minutes)
+  # Options: 1, 5, 15, 30, 60, 240, 1440
+  scan_interval_minutes: 15
+  
+  # Number of candles to analyze per scan
+  lookback_candles: 500
+  
+  # Scan pairs in parallel for speed
+  parallel_scanning: true
+  
+  # Number of parallel workers
+  max_workers: 4
+
+# Alert configuration (optional)
+alerts:
+  # Telegram notifications
+  telegram_enabled: false
+  telegram_bot_token: null
+  telegram_chat_id: null
+  
+  # Email notifications
+  email_enabled: false
+  email_to: null
+  
+  # Webhook callbacks
+  webhook_enabled: false
+  webhook_url: null
+
+# Trading parameters
+initial_capital: 10000.0
+
+# Risk per trade (fraction of capital)
+# 0.02 = 2% risk per trade
+risk_per_trade: 0.02
+
+# Database path
+database_path: "data/signals.db"
+
+# Logging level (DEBUG, INFO, WARNING, ERROR)
+log_level: "INFO"

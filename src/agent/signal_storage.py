@@ -1,0 +1,342 @@
+# -*- coding: utf-8 -*-
+"""
+Signal Storage
+
+Database management for trading signals.
+Supports SQLite for persistence and querying.
+"""
+
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+from contextlib import contextmanager
+
+from ..core.logger import logger
+from .signal_scanner import TradingSignal
+
+
+class SignalStorage:
+    """Storage and retrieval of trading signals."""
+    
+    def __init__(self, db_path: Path):
+        """
+        Initialize signal storage.
+        
+        Args:
+            db_path: Path to SQLite database
+        """
+        self.db_path = db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create tables
+        self._create_tables()
+        
+        logger.info(f"Signal storage initialized: {db_path}")
+    
+    @contextmanager
+    def _get_connection(self):
+        """Get database connection context manager."""
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+    
+    def _create_tables(self):
+        """Create database tables if they don't exist."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Signals table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    strategy TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    timestamp TIMESTAMP NOT NULL,
+                    entry_price REAL NOT NULL,
+                    stop_loss REAL NOT NULL,
+                    take_profit REAL NOT NULL,
+                    confidence REAL NOT NULL,
+                    risk_reward_ratio REAL NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    metadata TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT DEFAULT 'active',
+                    INDEX idx_symbol (symbol),
+                    INDEX idx_timestamp (timestamp),
+                    INDEX idx_status (status)
+                )
+            """)
+            
+            # Signal history table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS signal_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signal_id INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    price REAL,
+                    pnl REAL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    notes TEXT,
+                    FOREIGN KEY (signal_id) REFERENCES signals(id)
+                )
+            """)
+            
+            conn.commit()
+            logger.debug("Database tables created/verified")
+    
+    def save_signal(self, signal: TradingSignal) -> int:
+        """
+        Save a trading signal to database.
+        
+        Args:
+            signal: Trading signal to save
+            
+        Returns:
+            Signal ID
+        """
+        import json
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO signals (
+                    symbol, strategy, direction, timestamp,
+                    entry_price, stop_loss, take_profit, confidence,
+                    risk_reward_ratio, timeframe, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                signal.symbol,
+                signal.strategy,
+                signal.direction,
+                signal.timestamp,
+                signal.entry_price,
+                signal.stop_loss,
+                signal.take_profit,
+                signal.confidence,
+                signal.risk_reward_ratio,
+                signal.timeframe,
+                json.dumps(signal.metadata)
+            ))
+            
+            conn.commit()
+            signal_id = cursor.lastrowid
+            
+            logger.debug(f"Saved signal {signal_id}: {signal.symbol} {signal.direction}")
+            
+            return signal_id
+    
+    def get_active_signals(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get all active signals.
+        
+        Args:
+            symbol: Optional symbol filter
+            
+        Returns:
+            List of active signals
+        """
+        import json
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            if symbol:
+                cursor.execute("""
+                    SELECT * FROM signals
+                    WHERE status = 'active' AND symbol = ?
+                    ORDER BY timestamp DESC
+                """, (symbol,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM signals
+                    WHERE status = 'active'
+                    ORDER BY timestamp DESC
+                """)
+            
+            rows = cursor.fetchall()
+            
+            signals = []
+            for row in rows:
+                signal = dict(row)
+                if signal['metadata']:
+                    signal['metadata'] = json.loads(signal['metadata'])
+                signals.append(signal)
+            
+            return signals
+    
+    def get_signal_by_id(self, signal_id: int) -> Optional[Dict[str, Any]]:
+        """Get signal by ID."""
+        import json
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                signal = dict(row)
+                if signal['metadata']:
+                    signal['metadata'] = json.loads(signal['metadata'])
+                return signal
+            
+            return None
+    
+    def update_signal_status(self, signal_id: int, status: str, notes: Optional[str] = None):
+        """
+        Update signal status.
+        
+        Args:
+            signal_id: Signal ID
+            status: New status ('active', 'filled', 'closed', 'cancelled')
+            notes: Optional notes
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE signals SET status = ? WHERE id = ?
+            """, (status, signal_id))
+            
+            # Add to history
+            cursor.execute("""
+                INSERT INTO signal_history (signal_id, action, timestamp, notes)
+                VALUES (?, ?, ?, ?)
+            """, (signal_id, status, datetime.now(), notes))
+            
+            conn.commit()
+            
+            logger.info(f"Updated signal {signal_id} status to '{status}'")
+    
+    def get_signals_by_date_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        symbol: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get signals within a date range.
+        
+        Args:
+            start_date: Start date
+            end_date: End date
+            symbol: Optional symbol filter
+            
+        Returns:
+            List of signals
+        """
+        import json
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            if symbol:
+                cursor.execute("""
+                    SELECT * FROM signals
+                    WHERE timestamp BETWEEN ? AND ? AND symbol = ?
+                    ORDER BY timestamp DESC
+                """, (start_date, end_date, symbol))
+            else:
+                cursor.execute("""
+                    SELECT * FROM signals
+                    WHERE timestamp BETWEEN ? AND ?
+                    ORDER BY timestamp DESC
+                """, (start_date, end_date))
+            
+            rows = cursor.fetchall()
+            
+            signals = []
+            for row in rows:
+                signal = dict(row)
+                if signal['metadata']:
+                    signal['metadata'] = json.loads(signal['metadata'])
+                signals.append(signal)
+            
+            return signals
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get database statistics."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Total signals
+            cursor.execute("SELECT COUNT(*) FROM signals")
+            total_signals = cursor.fetchone()[0]
+            
+            # Active signals
+            cursor.execute("SELECT COUNT(*) FROM signals WHERE status = 'active'")
+            active_signals = cursor.fetchone()[0]
+            
+            # By symbol
+            cursor.execute("""
+                SELECT symbol, COUNT(*) as count
+                FROM signals
+                GROUP BY symbol
+                ORDER BY count DESC
+            """)
+            by_symbol = {row['symbol']: row['count'] for row in cursor.fetchall()}
+            
+            # By strategy
+            cursor.execute("""
+                SELECT strategy, COUNT(*) as count
+                FROM signals
+                GROUP BY strategy
+                ORDER BY count DESC
+            """)
+            by_strategy = {row['strategy']: row['count'] for row in cursor.fetchall()}
+            
+            return {
+                'total_signals': total_signals,
+                'active_signals': active_signals,
+                'by_symbol': by_symbol,
+                'by_strategy': by_strategy
+            }
+    
+    def cleanup_old_signals(self, days: int = 30):
+        """
+        Remove old inactive signals.
+        
+        Args:
+            days: Remove signals older than this many days
+        """
+        from datetime import timedelta
+        
+        cutoff_date = datetime.now() - timedelta(days=days)
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                DELETE FROM signals
+                WHERE status != 'active' AND timestamp < ?
+            """, (cutoff_date,))
+            
+            deleted = cursor.rowcount
+            conn.commit()
+            
+            logger.info(f"Cleaned up {deleted} old signals (older than {days} days)")
+
+
+# Example usage
+if __name__ == "__main__":
+    from pathlib import Path
+    
+    # Create storage
+    storage = SignalStorage(Path("data/signals.db"))
+    
+    # Get statistics
+    stats = storage.get_statistics()
+    print("\n" + "=" * 80)
+    print("SIGNAL DATABASE STATISTICS")
+    print("=" * 80)
+    print(f"Total signals: {stats['total_signals']}")
+    print(f"Active signals: {stats['active_signals']}")
+    print(f"By symbol: {stats['by_symbol']}")
+    print(f"By strategy: {stats['by_strategy']}")
+    print("=" * 80)
