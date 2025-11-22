@@ -6,7 +6,11 @@ Provides tools, resources, and prompts for autonomous trading operations.
 """
 
 import asyncio
+import os
 from typing import Any, Sequence
+
+# CRITICAL: Set MCP mode BEFORE any imports that use logger!
+os.environ['SMART_TRADE_MCP_MODE'] = 'true'
 
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
@@ -23,7 +27,7 @@ from ..core.config import settings
 from ..core.logger import logger
 
 # VERSION TRACKING
-MCP_SERVER_VERSION = "2.0.1-debug"  # Updated for debug logging
+MCP_SERVER_VERSION = "2.0.2-no-ansi"  # Fixed JSON output
 
 
 class SmartTradeMCPServer:

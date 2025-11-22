@@ -13,6 +13,9 @@ from .config import settings
 # Global flag to disable logging (set by test scripts)
 _LOGGING_DISABLED = os.environ.get('SMART_TRADE_DISABLE_LOGGING', '').lower() == 'true'
 
+# Flag to disable colors (for MCP Server - JSON output must be clean!)
+_IS_MCP_SERVER = os.environ.get('SMART_TRADE_MCP_MODE', '').lower() == 'true'
+
 
 def setup_logging(log_file: Optional[Path] = None) -> None:
     """
@@ -29,15 +32,25 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
     # Remove default handler
     logger.remove()
 
-    # Console handler with color
-    logger.add(
-        sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        level=settings.log_level,
-        colorize=True,
-    )
+    # Console handler - NO COLORS for MCP Server!
+    if _IS_MCP_SERVER:
+        # Plain format for MCP (no ANSI codes)
+        logger.add(
+            sys.stderr,
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+            level=settings.log_level,
+            colorize=False,  # CRITICAL: No colors for MCP!
+        )
+    else:
+        # Colored format for CLI
+        logger.add(
+            sys.stderr,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            level=settings.log_level,
+            colorize=True,
+        )
 
-    # File handler
+    # File handler (never colored)
     if log_file is None:
         log_file = Path("logs/smart_trade.log")
 
@@ -52,7 +65,7 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
         compression="zip",
     )
 
-    logger.info(f"Logging initialized - Level: {settings.log_level}")
+    logger.info(f"Logging initialized - Level: {settings.log_level}, MCP Mode: {_IS_MCP_SERVER}")
 
 
 # Initialize on import (unless disabled)
