@@ -126,40 +126,42 @@ class SignalScanner:
                 )
                 return None
             
-            # Calculate indicators
-            df = strategy.calculate_indicators(df)
+            # Calculate required indicators for the strategy
+            from ..core.indicators import calculate_all_indicators
+            required_indicators = strategy.get_required_indicators()
+            df = calculate_all_indicators(df, required_indicators)
             
-            # Generate signal
-            signal_df = strategy.generate_signals(df)
+            # Generate signal using strategy's backtest method
+            df_with_signals = strategy.backtest_signals(df)
             
             # Check latest signal
-            if len(signal_df) == 0:
+            if len(df_with_signals) == 0:
                 return None
             
-            latest_signal = signal_df.iloc[-1]
+            latest_row = df_with_signals.iloc[-1]
             
-            # Check if signal is active (not 0)
-            if latest_signal['signal'] == 0:
+            # Check if signal is active (not HOLD)
+            signal_value = latest_row.get('signal', 'HOLD')
+            if signal_value == 'HOLD' or pd.isna(signal_value):
                 return None
             
             # Get current price
-            current_price = df['close'].iloc[-1]
+            current_price = df_with_signals['close'].iloc[-1]
             
-            # Calculate entry, stop loss, take profit
-            # (This is simplified - real implementation would use strategy-specific logic)
-            direction = 'long' if latest_signal['signal'] == 1 else 'short'
-            
-            if direction == 'long':
-                entry_price = current_price
-                stop_loss = current_price * 0.98  # 2% stop loss
-                take_profit = current_price * 1.05  # 5% take profit
+            # Determine direction from signal
+            if signal_value in ['LONG', 'long']:
+                direction = 'long'
+            elif signal_value in ['SHORT', 'short']:
+                direction = 'short'
             else:
-                entry_price = current_price
-                stop_loss = current_price * 1.02
-                take_profit = current_price * 0.95
+                return None
+            
+            # Get stop loss and take profit if available
+            stop_loss = latest_row.get('stop_loss', current_price * 0.98 if direction == 'long' else current_price * 1.02)
+            take_profit = latest_row.get('take_profit', current_price * 1.05 if direction == 'long' else current_price * 0.95)
             
             # Calculate confidence (simplified - could use indicator strength)
-            confidence = 0.75  # Placeholder
+            confidence = latest_row.get('confidence', 0.75)
             
             # Check minimum confidence
             if confidence < strategy_config.min_confidence:
@@ -171,7 +173,7 @@ class SignalScanner:
                 strategy=strategy_config.name,
                 direction=direction,
                 timestamp=datetime.now(),
-                entry_price=entry_price,
+                entry_price=current_price,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 confidence=confidence,

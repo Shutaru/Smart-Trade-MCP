@@ -19,7 +19,7 @@ async def optimize_parameters(request: OptimizeParametersRequest) -> Dict[str, A
     """
     Optimize strategy parameters using Genetic Algorithm.
     
-    **Performance:** 2-5 minutes (depends on population_size × n_generations)
+    **Performance:** 2-5 minutes (depends on population_size x n_generations)
     """
     try:
         logger.info(f"API: Parameter optimization for {request.strategy_name}")

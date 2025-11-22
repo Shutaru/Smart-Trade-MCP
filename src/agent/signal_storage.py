@@ -65,12 +65,14 @@ class SignalStorage:
                     timeframe TEXT NOT NULL,
                     metadata TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    status TEXT DEFAULT 'active',
-                    INDEX idx_symbol (symbol),
-                    INDEX idx_timestamp (timestamp),
-                    INDEX idx_status (status)
+                    status TEXT DEFAULT 'active'
                 )
             """)
+            
+            # Create indexes separately
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbol ON signals(symbol)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON signals(timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_status ON signals(status)")
             
             # Signal history table
             cursor.execute("""
