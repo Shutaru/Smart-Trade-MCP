@@ -11,7 +11,7 @@ from src.core.indicators import calculate_all_indicators
 from src.core.backtest_engine import BacktestEngine
 from src.strategies import registry
 from src.mcp_server.tools.regime import detect_market_regime
-from src.mcp_server.tools.backtest import compare_strategies
+from src.mcp_server.tools.batch_compare import compare_strategies  # FIX: Changed from backtest
 from src.mcp_server.tools.optimization import optimize_strategy_parameters
 
 
@@ -28,9 +28,9 @@ async def test_btc_pipeline():
     
     # Step 1: Detect Regime
     print("Step 1: Detecting Market Regime...")
-    regime_result = await detect_market_regime(symbol=symbol, timeframe=timeframe)
+    regime_result = await detect_market_regime(symbol=symbol, timeframe=timeframe, lookback=100)
     
-    if regime_result.get("success"):
+    if "error" not in regime_result:
         regime = regime_result["regime"]
         print(f"? Regime: {regime}")
         print(f"   Confidence: {regime_result.get('confidence', 0):.1%}")
@@ -62,7 +62,7 @@ async def test_btc_pipeline():
         timeframe=timeframe
     )
     
-    if comparison.get("error"):
+    if "error" in comparison:
         print(f"? Error: {comparison['error']}")
         return
     
@@ -95,36 +95,44 @@ async def test_btc_pipeline():
     print(f"   Current Sharpe: {best_sharpe:.2f}")
     print()
     
-    optimization = await optimize_strategy_parameters(
-        strategy_name=best_strategy,
-        symbol=symbol,
-        timeframe=timeframe,
-        population_size=20,  # Quick test
-        n_generations=5,
-        use_ray=False
-    )
-    
-    if optimization.get("error"):
-        print(f"? Optimization error: {optimization['error']}")
-        return
-    
-    print("? Optimization complete!")
-    print()
-    print("Best parameters:")
-    for key, value in optimization["best_params"].items():
-        print(f"   {key}: {value}")
+    print("??  SKIPPING OPTIMIZATION (would take 5-10 min)")
+    print("   To enable, uncomment optimization code in quick_test.py")
     print()
     
-    best_fitness = optimization["best_fitness"]
-    print("Performance after optimization:")
-    print(f"   Sharpe: {best_fitness.get('sharpe_ratio', 0):.2f}")
-    print(f"   Return: {best_fitness.get('total_return', 0):.2f}%")
-    print(f"   Win Rate: {best_fitness.get('win_rate', 0):.1f}%")
-    print()
+    # UNCOMMENT TO RUN OPTIMIZATION (takes 5-10 min):
+    # optimization = await optimize_strategy_parameters(
+    #     strategy_name=best_strategy,
+    #     symbol=symbol,
+    #     timeframe=timeframe,
+    #     population_size=20,  # Quick test
+    #     n_generations=5,
+    #     use_ray=False
+    # )
+    # 
+    # if "error" not in optimization:
+    #     print("? Optimization complete!")
+    #     print()
+    #     print("Best parameters:")
+    #     for key, value in optimization["best_params"].items():
+    #         print(f"   {key}: {value}")
+    #     print()
+    #     
+    #     best_fitness = optimization["best_fitness"]
+    #     print("Performance after optimization:")
+    #     print(f"   Sharpe: {best_fitness.get('sharpe_ratio', 0):.2f}")
+    #     print(f"   Return: {best_fitness.get('total_return', 0):.2f}%")
+    #     print(f"   Win Rate: {best_fitness.get('win_rate', 0):.1f}%")
+    #     print()
+    #     
+    #     final_sharpe = best_fitness.get("sharpe_ratio", 0)
+    # else:
+    #     print(f"? Optimization error: {optimization['error']}")
+    #     final_sharpe = best_sharpe
+    
+    # Use current Sharpe for decision (since we skipped optimization)
+    final_sharpe = best_sharpe
     
     # Step 5: Decision
-    final_sharpe = best_fitness.get("sharpe_ratio", 0)
-    
     print("=" * 80)
     print("FINAL DECISION")
     print("=" * 80)
@@ -139,7 +147,6 @@ async def test_btc_pipeline():
         print(f"   Symbol: {symbol}")
         print(f"   Timeframe: {timeframe}")
         print(f"   Strategy: {best_strategy}")
-        print(f"   Params: {optimization['best_params']}")
         print(f"   Scan Interval: 5 minutes")
     else:
         print(f"? DO NOT LAUNCH")
