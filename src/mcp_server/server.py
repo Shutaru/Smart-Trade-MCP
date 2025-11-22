@@ -22,6 +22,9 @@ import mcp.server.stdio
 from ..core.config import settings
 from ..core.logger import logger
 
+# VERSION TRACKING
+MCP_SERVER_VERSION = "2.0.1-debug"  # Updated for debug logging
+
 
 class SmartTradeMCPServer:
     """Smart Trade MCP Server."""
@@ -30,7 +33,14 @@ class SmartTradeMCPServer:
         """Initialize the MCP server."""
         self.server = Server(settings.mcp_server_name)
         self._setup_handlers()
-        logger.info(f"MCP Server initialized: {settings.mcp_server_name} v{settings.mcp_server_version}")
+        logger.info("=" * 80)
+        logger.info("SMART TRADE MCP SERVER - STARTUP")
+        logger.info("=" * 80)
+        logger.info(f"Server Name: {settings.mcp_server_name}")
+        logger.info(f"Server Version: {MCP_SERVER_VERSION}")
+        logger.info(f"Config Version: {settings.mcp_server_version}")
+        logger.info(f"Python Path: {settings.mcp_server_name}")
+        logger.info("=" * 80)
 
     def _setup_handlers(self) -> None:
         """Setup MCP protocol handlers."""
@@ -38,6 +48,7 @@ class SmartTradeMCPServer:
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
             """List all available MCP tools."""
+            logger.info("?? list_tools() called - returning 15 tools")
             return [
                 Tool(
                     name="get_market_data",
@@ -499,6 +510,45 @@ class SmartTradeMCPServer:
                         "required": ["strategy_name"],
                     },
                 ),
+                # NEW BATCH COMPARISON TOOL
+                Tool(
+                    name="compare_strategies",
+                    description="Compare multiple strategies in ONE efficient batch operation - Fetches data once and backtests all strategies. Much faster than individual backtests!",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategies": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of strategy names to compare (e.g., ['atr_expansion_breakout', 'ema_stack_momentum'])",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": "Start date (YYYY-MM-DD)",
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "End date (YYYY-MM-DD)",
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                        },
+                        "required": ["strategies"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -509,6 +559,7 @@ class SmartTradeMCPServer:
             # Import tool implementations
             from .tools.market_data import get_market_data, calculate_indicators
             from .tools.backtest import backtest_strategy
+            from .tools.batch_compare import compare_strategies  # NEW
             from .tools.portfolio import get_portfolio_status
             from .tools.strategies import list_strategies
             from .tools.validation import (
@@ -537,6 +588,8 @@ class SmartTradeMCPServer:
                     result = await calculate_indicators(**arguments)
                 elif name == "backtest_strategy":
                     result = await backtest_strategy(**arguments)
+                elif name == "compare_strategies":  # NEW
+                    result = await compare_strategies(**arguments)
                 elif name == "run_walk_forward_analysis":
                     result = await run_walk_forward_analysis(**arguments)
                 elif name == "run_k_fold_validation":
@@ -555,7 +608,7 @@ class SmartTradeMCPServer:
                     result = await get_portfolio_status()
                 elif name == "list_strategies":
                     result = await list_strategies(**arguments)
-                # NEW OPTIMIZATION TOOLS
+                # OPTIMIZATION TOOLS
                 elif name == "optimize_strategy_parameters":
                     result = await optimize_strategy_parameters(**arguments)
                 elif name == "optimize_portfolio":
@@ -593,6 +646,13 @@ class SmartTradeMCPServer:
                     description="Latest trading performance statistics",
                     mimeType="application/json",
                 ),
+                # SYSTEM INSTRUCTIONS PROMPT
+                Resource(
+                    uri="prompt://system_instructions",
+                    name="Smart-Trade System Instructions",
+                    description="Core principles and usage guidelines for optimal interaction",
+                    mimeType="text/markdown",
+                ),
             ]
 
         @self.server.read_resource()
@@ -611,6 +671,123 @@ class SmartTradeMCPServer:
                     return await get_market_status()
                 elif uri == "performance://latest":
                     return await get_performance_metrics()
+                elif uri == "prompt://system_instructions":
+                    # Return system instructions for Claude Desktop
+                    return """# Smart-Trade MCP - System Instructions
+
+**Role:** Trading Strategy Analysis Assistant
+
+## ?? CORE PRINCIPLES
+
+### 1. Be Efficient - Save Tokens
+- ? Use `compare_strategies` for 2+ strategies (20-30x faster!)
+- ? Present results in concise tables
+- ? Focus on: Sharpe, Return%, Win Rate%, Max DD%
+- ? Don't call `backtest_strategy` 40+ times individually
+- ? Don't request full equity curves
+
+### 2. Batch Processing First
+**ALWAYS prefer batch when comparing multiple strategies:**
+
+```
+? BAD: backtest_strategy("s1"), backtest_strategy("s2"), ... (41 calls)
+? GOOD: compare_strategies(["s1", "s2", ..., "s41"]) (1 call)
+```
+
+### 3. Essential Metrics Only
+Present: Sharpe Ratio, Total Return%, Win Rate%, Max Drawdown%, Total Trades
+Avoid: Full equity curves, all trades, excessive decimals
+
+### 4. Clear Communication
+**Use tables:**
+| Strategy | Sharpe | Return % | Win Rate % | Max DD % |
+|----------|--------|----------|------------|----------|
+| Strategy1| 0.22   | 7.91     | 72.15      | -9.71    |
+
+**Not verbose paragraphs.**
+
+## ??? TOOL CATEGORIES
+
+**Category 1: Comparison (MOST COMMON)**
+- `compare_strategies` ? Use for 2+ strategies
+- `backtest_strategy` - Single strategy deep-dive only
+- `list_strategies` - Get available strategies
+
+**Category 2: Optimization**
+- `optimize_strategy_parameters` - Find best parameters (GA)
+- `optimize_portfolio` - Find best strategy weights
+
+**Category 3: Validation**
+- `run_walk_forward_analysis` - Time-series validation
+- `run_k_fold_validation` - Cross-validation
+- `run_monte_carlo_simulation` - Risk analysis
+
+**Category 4: Market Analysis**
+- `detect_market_regime` - Current market conditions
+- `detect_historical_regimes` - Historical regimes
+
+**Category 5: Diagnostics**
+- `diagnose_strategy_failure` - Why strategy failed
+- `suggest_parameter_fixes` - Parameter recommendations
+
+## ?? TYPICAL WORKFLOWS
+
+**Workflow 1: Find Best Strategy (~15 sec)**
+1. compare_strategies(all_strategies)
+2. Show top 10 by Sharpe Ratio
+3. Recommend top 3
+
+**Workflow 2: Build Portfolio**
+1. compare_strategies(all_strategies)
+2. Select top 5-10 by Sharpe
+3. optimize_portfolio(selected, "max_sharpe")
+
+**Workflow 3: Market-Aware Selection**
+1. detect_market_regime()
+2. Filter recommended strategies
+3. compare_strategies(filtered)
+
+## ? PERFORMANCE EXPECTATIONS
+
+- Single backtest: 1-2 sec
+- Batch (41 strategies): ~15 sec ?
+- Parameter optimization: 2-5 min
+- Walk-forward analysis: 2-3 min
+
+## ?? WHAT NOT TO DO
+
+1. DON'T call `backtest_strategy` 40+ times
+2. DON'T request full equity curves
+3. DON'T over-explain basic metrics
+4. DON'T use excessive decimal precision
+5. DON'T repeat data already shown
+
+## ?? RESPONSE TEMPLATE
+
+**Backtest Results - BTC/USDT 1h (364 days)**
+
+Top 5 Strategies by Sharpe Ratio:
+
+| Rank | Strategy | Sharpe | Return % | Win Rate % | Max DD % |
+|------|----------|--------|----------|------------|----------|
+| 1    | cci_extreme_snapback | 0.22 | 7.91 | 72.15 | -9.71 |
+| 2    | bollinger_mean_rev | 0.16 | 3.20 | 61.61 | -10.17 |
+
+**Recommendation:** cci_extreme_snapback shows best risk-adjusted returns.
+
+## ?? SUCCESS METRICS
+
+Optimal when:
+- ? Using batch tools for multi-strategy comparison
+- ? Responses under 500 tokens
+- ? Clear recommendations backed by metrics
+- ? Fast turnaround (<30 sec)
+
+**Remember: Efficiency > Verbosity. Batch > Individual. Metrics > Explanations.**
+
+---
+Version: 2.0.0 | Defaults: BTC/USDT 1h, 1 year, $10k capital
+"""
                 else:
                     raise ValueError(f"Unknown resource: {uri}")
             except Exception as e:
