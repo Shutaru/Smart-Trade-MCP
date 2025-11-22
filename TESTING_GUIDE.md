@@ -1,0 +1,283 @@
+# ?? GUIA DE TESTES RÁPIDOS
+
+**Para:** Testes iniciais com Claude Desktop  
+**Scan Interval:** 5 minutos (ajustado para testes)
+
+---
+
+## ?? **INPUT INICIAL PARA CLAUDE**
+
+### **Opção 1: Teste Simples (1 symbol)**
+
+```
+Claude, vou testar o sistema de trading AI-driven.
+
+Faz o seguinte:
+1. Analisa BTC/USDT no timeframe 1h
+2. Detecta o regime de mercado atual
+3. Escolhe as 3 melhores estratégias para esse regime
+4. Compara essas estratégias (backtest)
+5. Otimiza os parâmetros da melhor
+6. Se o Sharpe for > 1.5, lança um bot dedicado com scan a cada 5 minutos
+
+Quero ver todo o processo passo a passo.
+```
+
+### **Opção 2: Teste Médio (3 symbols)**
+
+```
+Claude, quero testar o sistema com 3 símbolos:
+- BTC/USDT
+- ETH/USDT  
+- MATIC/USDT
+
+Para cada um:
+1. Detecta regime
+2. Escolhe estratégias adequadas
+3. Faz backtest
+4. Otimiza a melhor
+
+Depois:
+5. Analisa correlações entre os 3
+6. Lança bots apenas se:
+   - Sharpe > 1.5
+   - Boa diversificação (evitar mesma estratégia em pares correlacionados)
+
+Scan interval: 5 minutos para todos.
+```
+
+### **Opção 3: Teste Completo (5 symbols)** ? **RECOMENDADO**
+
+```
+Claude, vou testar o sistema AI-driven completo.
+
+Analisa estes 5 símbolos e lança bots nos promissores:
+BTC/USDT, ETH/USDT, SOL/USDT, MATIC/USDT, LINK/USDT
+
+Workflow completo:
+1. Análise de correlações entre todos
+2. Para cada símbolo:
+   - Detecta regime (1h)
+   - Compara estratégias adequadas ao regime
+   - Backtest da melhor
+   - Otimização de parâmetros (população 30, gerações 10 para ser rápido)
+
+3. Decisão de lançamento:
+   - Sharpe > 1.5
+   - Evitar duplicate strategies em pares correlacionados (> 0.8)
+   - Scan interval: 5 minutos
+
+4. Mostra resumo:
+   - Quantos bots lançados
+   - Diversificação score
+   - Sharpe médio esperado
+   - Correlações identificadas
+
+Executa tudo e mostra os resultados!
+```
+
+---
+
+## ?? **O QUE ESPERAR**
+
+### **Claude vai executar (exemplo para BTC):**
+
+```python
+# 1. Detectar regime
+regime = detect_market_regime(symbol="BTC/USDT", timeframe="1h")
+# ? "TRENDING_UP" ou "RANGING" ou "VOLATILE"
+
+# 2. Comparar estratégias
+strategies = ["ema_cloud_trend", "macd_zero_trend", "adx_trend_filter_plus"]
+comparison = compare_strategies(strategies, "BTC/USDT", "1h")
+# ? Top strategy: "ema_cloud_trend" (Sharpe 1.8)
+
+# 3. Otimizar
+optimized = optimize_strategy_parameters("ema_cloud_trend", "BTC/USDT")
+# ? Best params: {ema_fast: 18, ema_slow: 52, ...}
+# ? Sharpe after optimization: 2.3
+
+# 4. Lançar bot
+agent = launch_trading_agent(
+    symbol="BTC/USDT",
+    timeframe="1h",
+    strategy="ema_cloud_trend",
+    params={...},
+    scan_interval_minutes=5
+)
+# ? agent_BTC_USDT_1h_ema_abc123 ? LAUNCHED
+```
+
+---
+
+## ?? **MONITORAMENTO DOS BOTS**
+
+### **Ver bots ativos:**
+
+```
+Claude, lista todos os bots ativos
+```
+
+**Claude executará:**
+```python
+agents = list_active_agents()
+```
+
+**Resposta esperada:**
+```
+?? Bots Ativos: 3
+
+1. agent_BTC_USDT_1h_ema_abc123
+   - Symbol: BTC/USDT 1h
+   - Strategy: ema_cloud_trend
+   - Status: ACTIVE (PID: 12345)
+   - Started: 2025-11-22 18:00:00
+   - Next scan: 18:05:00
+
+2. agent_ETH_USDT_1h_bb_def456
+   - Symbol: ETH/USDT 1h
+   - Strategy: bollinger_mean_reversion
+   - Status: ACTIVE (PID: 12346)
+   - Started: 2025-11-22 18:01:30
+   - Next scan: 18:06:30
+
+3. agent_MATIC_USDT_1h_cci_ghi789
+   - Symbol: MATIC/USDT 1h
+   - Strategy: cci_extreme_snapback
+   - Status: ACTIVE (PID: 12347)
+   - Started: 2025-11-22 18:02:15
+   - Next scan: 18:07:15
+```
+
+### **Ver performance de um bot:**
+
+```
+Claude, mostra performance do bot BTC
+```
+
+**Claude executará:**
+```python
+perf = get_agent_performance("agent_BTC_USDT_1h_ema_abc123")
+```
+
+**Resposta esperada:**
+```
+?? Performance: agent_BTC_USDT_1h_ema_abc123
+
+Trades: 5
+??? Winning: 3 (60%)
+??? Losing: 2 (40%)
+??? Win Rate: 60%
+
+PnL:
+??? Total: +$123.45
+??? Avg Win: +$52.30
+??? Avg Loss: -$15.20
+??? Profit Factor: 3.44
+
+Risk Metrics:
+??? Sharpe Ratio: 1.8
+??? Max Drawdown: -$25.30 (-2.53%)
+
+Status: ACTIVE ?
+```
+
+---
+
+## ?? **PARAR UM BOT (se necessário)**
+
+```
+Claude, para o bot do BTC, está a gerar muitos trades
+```
+
+**Claude executará:**
+```python
+stop_trading_agent("agent_BTC_USDT_1h_ema_abc123", "User requested stop")
+```
+
+---
+
+## ?? **REBALANCING MANUAL**
+
+```
+Claude, faz rebalancing do portfolio. 
+Para bots com Sharpe < 1.5 e win rate < 55%
+```
+
+**Claude executará:**
+```python
+result = rebalance_agent_portfolio(
+    target_sharpe=1.5,
+    min_win_rate=0.55
+)
+```
+
+---
+
+## ?? **LOGS PARA VERIFICAR**
+
+Os bots geram logs verbose agora:
+
+```
+?? Agent agent_BTC_USDT_1h_ema_abc123 - Starting main loop
+   Scan interval: 5 minutes
+   Strategy: ema_cloud_trend
+   Symbol: BTC/USDT / 1h
+
+============================================================
+?? Agent agent_BTC_USDT_1h_ema_abc123 - Scan #1
+   Time: 2025-11-22 18:00:00
+============================================================
+?? Fetching data for BTC/USDT 1h...
+? Fetched 500 candles
+?? Calculating indicators...
+?? Generating signals with ema_cloud_trend...
+?? Latest signal: HOLD
+?? No action - signal is HOLD
+? Next scan at: 18:05:00
+```
+
+---
+
+## ? **TESTE DE SUCESSO**
+
+**O teste é bem-sucedido se:**
+
+1. ? Claude executa todos os passos
+2. ? Bots são lançados (verifica com `list_active_agents`)
+3. ? Logs aparecem a cada 5 min
+4. ? Correlações são verificadas
+5. ? Diversificação é respeitada
+
+---
+
+## ?? **TROUBLESHOOTING**
+
+### **Bot não aparece na lista:**
+- Verificar logs do orchestrator
+- Verificar se processo foi criado (PID)
+
+### **Bot não gera sinais:**
+- Normal! Muitas vezes não há setup
+- Aguardar próximos scans (5 min cada)
+
+### **Erro ao lançar:**
+- Verificar se estratégia existe
+- Verificar se symbol é válido (formato: "BTC/USDT")
+
+---
+
+## ?? **PRÓXIMO PASSO**
+
+**Depois de testar:**
+
+1. Deixar bots rodar por 30-60 min
+2. Verificar performance: `get_agent_performance()`
+3. Ver se geraram algum trade
+4. Testar rebalancing: `rebalance_agent_portfolio()`
+
+---
+
+**PRONTO PARA COMEÇAR OS TESTES! ??**
+
+Use **Opção 3** (5 symbols) para teste completo do sistema!
