@@ -7,7 +7,7 @@ Modern implementation using DEAP with Rich CLI dashboard integration.
 Features:
 - DEAP genetic algorithm framework
 - Multi-objective optimization (Sharpe, Win Rate, Max DD)
-- Rich CLI progress dashboard
+- Rich CLI progress dashboard (DISABLED in MCP mode!)
 - Type-safe parameter handling
 - GPU acceleration support (optional)
 - Ray distributed computing (optional)
@@ -30,13 +30,18 @@ except ImportError:
     DEAP_AVAILABLE = False
     print("??  DEAP not available. Install with: pip install deap")
 
-from rich.console import Console
-from rich.live import Live
+# CHECK MCP MODE FIRST!
+MCP_MODE = os.environ.get('SMART_TRADE_MCP_MODE', 'false').lower() == 'true'
+
+if not MCP_MODE:
+    # Only import Rich if NOT in MCP mode
+    from rich.console import Console
+    from rich.live import Live
+    from ..core.cli_dashboard import OptimizationDashboard
 
 from .config import OptimizationConfig
 from .parameter_space import ParameterSpace, ParameterType
 from .fitness_evaluator import FitnessEvaluator, FitnessMetrics
-from ..core.cli_dashboard import OptimizationDashboard
 from ..core.logger import logger
 
 # Fix Windows encoding issues
@@ -280,91 +285,162 @@ class GeneticOptimizer:
         Returns:
             Dictionary with optimization results
         """
-        from ..core.rich_utils import silent_logs
-        from rich.live import Live
-        
         start_time = time.time()
         
-        # INITIALIZE POPULATION BEFORE SILENT MODE
+        # INITIALIZE POPULATION
         self.population = self.toolbox.population(n=self.config.population_size)
         
-        # Silence logs during dashboard
-        with silent_logs():
-            # Create dashboard
-            dashboard = OptimizationDashboard(
-                strategy_name=self.strategy_class.name if hasattr(self.strategy_class, 'name') else self.strategy_class.__class__.__name__,
-                population_size=self.config.population_size,
-                n_generations=self.config.n_generations,
-            )
+        # FIX: Check if MCP mode
+        if MCP_MODE:
+            # SIMPLE MODE - No Rich dashboard, just logging
+            logger.info(f"Starting optimization (MCP mode - no visual dashboard)")
+            logger.info(f"Population: {self.config.population_size}, Generations: {self.config.n_generations}")
             
-            # Use Live to render dashboard
-            with Live(dashboard.render(), console=console, refresh_per_second=4) as live:
-                # Evaluate initial population
-                fitnesses = list(map(self.toolbox.evaluate, self.population))
-                for ind, fit in zip(self.population, fitnesses):
+            # Evaluate initial population
+            fitnesses = list(map(self.toolbox.evaluate, self.population))
+            for ind, fit in zip(self.population, fitnesses):
+                ind.fitness.values = fit
+            
+            # Track best individual
+            best_ind = tools.selBest(self.population, 1)[0]
+            best_fitness = self._fitness_to_dict(best_ind.fitness.values)
+            avg_fitness = self._calculate_avg_fitness(self.population)
+            
+            logger.info(f"Generation 0: Best Sharpe={best_fitness['sharpe_ratio']:.2f}, Avg Sharpe={avg_fitness['sharpe_ratio']:.2f}")
+            
+            # Evolution
+            for gen in range(1, self.config.n_generations + 1):
+                gen_start = time.time()
+                
+                # Select next generation
+                offspring = self.toolbox.select(self.population, len(self.population))
+                offspring = list(map(self.toolbox.clone, offspring))
+                
+                # Apply crossover
+                for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                    if random.random() < self.config.crossover_prob:
+                        self.toolbox.mate(child1, child2)
+                        del child1.fitness.values
+                        del child2.fitness.values
+                
+                # Apply mutation
+                for mutant in offspring:
+                    if random.random() < self.config.mutation_prob:
+                        self.toolbox.mutate(mutant)
+                        del mutant.fitness.values
+                
+                # Evaluate offspring
+                invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+                fitnesses = list(map(self.toolbox.evaluate, invalid_ind))
+                for ind, fit in zip(invalid_ind, fitnesses):
                     ind.fitness.values = fit
                 
-                # Track best individual
-                best_ind = tools.selBest(self.population, 1)[0]
-                best_fitness = self._fitness_to_dict(best_ind.fitness.values)
+                # Elitism: keep best individuals
+                if self.config.elite_size > 0:
+                    elite = tools.selBest(self.population, self.config.elite_size)
+                    offspring.extend(elite)
+                    offspring = tools.selBest(offspring, len(self.population))
+                
+                # Replace population
+                self.population[:] = offspring
+                
+                # Update best
+                current_best = tools.selBest(self.population, 1)[0]
+                if current_best.fitness.values[0] > best_ind.fitness.values[0]:
+                    best_ind = current_best
+                    best_fitness = self._fitness_to_dict(best_ind.fitness.values)
+                
                 avg_fitness = self._calculate_avg_fitness(self.population)
                 
-                # Update dashboard (generation 0)
-                dashboard.update_generation(generation=0, evaluated=self.config.population_size)
-                dashboard.complete_generation(best_fitness=best_fitness, avg_fitness=avg_fitness)
-                live.update(dashboard.render())
+                # Log progress every 5 generations
+                if gen % 5 == 0 or gen == self.config.n_generations:
+                    logger.info(
+                        f"Generation {gen}/{self.config.n_generations}: "
+                        f"Best Sharpe={best_fitness['sharpe_ratio']:.2f}, "
+                        f"Avg Sharpe={avg_fitness['sharpe_ratio']:.2f}, "
+                        f"Time={time.time() - gen_start:.1f}s"
+                    )
+        else:
+            # RICH DASHBOARD MODE - Original code
+            from ..core.rich_utils import silent_logs
+            
+            # Silence logs during dashboard
+            with silent_logs():
+                # Create dashboard
+                dashboard = OptimizationDashboard(
+                    strategy_name=self.strategy_class.name if hasattr(self.strategy_class, 'name') else self.strategy_class.__class__.__name__,
+                    population_size=self.config.population_size,
+                    n_generations=self.config.n_generations,
+                )
                 
-                # Evolution
-                for gen in range(1, self.config.n_generations + 1):
-                    gen_start = time.time()
-                    
-                    # Select next generation
-                    offspring = self.toolbox.select(self.population, len(self.population))
-                    offspring = list(map(self.toolbox.clone, offspring))
-                    
-                    # Apply crossover
-                    for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                        if random.random() < self.config.crossover_prob:
-                            self.toolbox.mate(child1, child2)
-                            del child1.fitness.values
-                            del child2.fitness.values
-                    
-                    # Apply mutation
-                    for mutant in offspring:
-                        if random.random() < self.config.mutation_prob:
-                            self.toolbox.mutate(mutant)
-                            del mutant.fitness.values
-                    
-                    # Evaluate offspring
-                    invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-                    fitnesses = list(map(self.toolbox.evaluate, invalid_ind))
-                    for ind, fit in zip(invalid_ind, fitnesses):
+                # Use Live to render dashboard
+                with Live(dashboard.render(), console=console, refresh_per_second=4) as live:
+                    # Evaluate initial population
+                    fitnesses = list(map(self.toolbox.evaluate, self.population))
+                    for ind, fit in zip(self.population, fitnesses):
                         ind.fitness.values = fit
                     
-                    # Elitism: keep best individuals
-                    if self.config.elite_size > 0:
-                        elite = tools.selBest(self.population, self.config.elite_size)
-                        offspring.extend(elite)
-                        offspring = tools.selBest(offspring, len(self.population))
-                    
-                    # Replace population
-                    self.population[:] = offspring
-                    
-                    # Update best
-                    current_best = tools.selBest(self.population, 1)[0]
-                    if current_best.fitness.values[0] > best_ind.fitness.values[0]:
-                        best_ind = current_best
-                        best_fitness = self._fitness_to_dict(best_ind.fitness.values)
-                    
+                    # Track best individual
+                    best_ind = tools.selBest(self.population, 1)[0]
+                    best_fitness = self._fitness_to_dict(best_ind.fitness.values)
                     avg_fitness = self._calculate_avg_fitness(self.population)
                     
-                    # Update dashboard
-                    dashboard.update_generation(generation=gen, evaluated=len(invalid_ind))
+                    # Update dashboard (generation 0)
+                    dashboard.update_generation(generation=0, evaluated=self.config.population_size)
                     dashboard.complete_generation(best_fitness=best_fitness, avg_fitness=avg_fitness)
                     live.update(dashboard.render())
-            
-            # Show final results
-            dashboard.complete(final_best=best_fitness)
+                    
+                    # Evolution
+                    for gen in range(1, self.config.n_generations + 1):
+                        gen_start = time.time()
+                        
+                        # Select next generation
+                        offspring = self.toolbox.select(self.population, len(self.population))
+                        offspring = list(map(self.toolbox.clone, offspring))
+                        
+                        # Apply crossover
+                        for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                            if random.random() < self.config.crossover_prob:
+                                self.toolbox.mate(child1, child2)
+                                del child1.fitness.values
+                                del child2.fitness.values
+                        
+                        # Apply mutation
+                        for mutant in offspring:
+                            if random.random() < self.config.mutation_prob:
+                                self.toolbox.mutate(mutant)
+                                del mutant.fitness.values
+                        
+                        # Evaluate offspring
+                        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+                        fitnesses = list(map(self.toolbox.evaluate, invalid_ind))
+                        for ind, fit in zip(invalid_ind, fitnesses):
+                            ind.fitness.values = fit
+                        
+                        # Elitism: keep best individuals
+                        if self.config.elite_size > 0:
+                            elite = tools.selBest(self.population, self.config.elite_size)
+                            offspring.extend(elite)
+                            offspring = tools.selBest(offspring, len(self.population))
+                        
+                        # Replace population
+                        self.population[:] = offspring
+                        
+                        # Update best
+                        current_best = tools.selBest(self.population, 1)[0]
+                        if current_best.fitness.values[0] > best_ind.fitness.values[0]:
+                            best_ind = current_best
+                            best_fitness = self._fitness_to_dict(best_ind.fitness.values)
+                        
+                        avg_fitness = self._calculate_avg_fitness(self.population)
+                        
+                        # Update dashboard
+                        dashboard.update_generation(generation=gen, evaluated=len(invalid_ind))
+                        dashboard.complete_generation(best_fitness=best_fitness, avg_fitness=avg_fitness)
+                        live.update(dashboard.render())
+                
+                # Show final results
+                dashboard.complete(final_best=best_fitness)
         
         # Return results (logs re-enabled here)
         logger.info(
