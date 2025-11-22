@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 import time
 
 from .config import settings
-from .routers import strategies, backtest, optimization, portfolio, market
+from .routers import strategies, backtest, optimization, portfolio, market, pairs
 from ..core.logger import logger
 
 # Track startup time
@@ -163,6 +163,7 @@ async def root():
             "optimization": f"{settings.API_V1_PREFIX}/optimization/",
             "portfolio": f"{settings.API_V1_PREFIX}/portfolio/",
             "market": f"{settings.API_V1_PREFIX}/market/",
+            "pairs": f"{settings.API_V1_PREFIX}/pairs/",
         },
     }
 
@@ -196,6 +197,12 @@ app.include_router(
     market.router,
     prefix=f"{settings.API_V1_PREFIX}/market",
     tags=["Market"],
+)
+
+app.include_router(
+    pairs.router,
+    prefix=f"{settings.API_V1_PREFIX}/pairs",
+    tags=["Pair Management"],
 )
 
 

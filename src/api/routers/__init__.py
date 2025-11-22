@@ -1,6 +1,18 @@
 # -*- coding: utf-8 -*-
-"""API Routers Package."""
+"""API Routers - v3.0.0"""
 
-from . import strategies, backtest
+from . import strategies
+from . import backtest
+from . import optimization
+from . import portfolio
+from . import market
+from . import pairs
 
-__all__ = ["strategies", "backtest"]
+__all__ = [
+    "strategies",
+    "backtest",
+    "optimization",
+    "portfolio",
+    "market",
+    "pairs",
+]
