@@ -580,7 +580,7 @@ class SmartTradeMCPServer:
                             "scan_interval_minutes": {
                                 "type": "integer",
                                 "description": "Scan frequency in minutes",
-                                "default": 15,
+                                "default": 5,
                             },
                         },
                         "required": ["symbol", "timeframe", "strategy"],

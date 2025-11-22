@@ -101,24 +101,40 @@ class TradingAgent:
         """Async main loop."""
         scan_count = 0
         
+        logger.info(f"?? Agent {self.agent_id} - Starting main loop")
+        logger.info(f"   Scan interval: {self.scan_interval_minutes} minutes")
+        logger.info(f"   Strategy: {self.strategy_name}")
+        logger.info(f"   Symbol: {self.symbol} / {self.timeframe}")
+        
         while self.is_running:
             try:
                 scan_count += 1
-                logger.info(f"?? Scan #{scan_count} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                logger.info("=" * 60)
+                logger.info(f"?? Agent {self.agent_id} - Scan #{scan_count}")
+                logger.info(f"   Time: {current_time}")
+                logger.info("=" * 60)
                 
                 # Scan for signals
                 await self._scan_and_trade()
+                
+                # Log next scan time
+                next_scan = datetime.now().timestamp() + (self.scan_interval_minutes * 60)
+                next_scan_time = datetime.fromtimestamp(next_scan).strftime('%H:%M:%S')
+                logger.info(f"? Next scan at: {next_scan_time}")
                 
                 # Wait for next scan
                 await asyncio.sleep(self.scan_interval_minutes * 60)
                 
             except Exception as e:
-                logger.error(f"Agent {self.agent_id} error: {e}", exc_info=True)
+                logger.error(f"? Agent {self.agent_id} error: {e}", exc_info=True)
                 await asyncio.sleep(60)  # Wait 1 min before retry
     
     async def _scan_and_trade(self):
         """Scan for signals and execute trades."""
         try:
+            logger.info(f"?? Fetching data for {self.symbol} {self.timeframe}...")
+            
             # Fetch latest data
             df = await self.data_manager.fetch_ohlcv(
                 symbol=self.symbol,
@@ -127,22 +143,28 @@ class TradingAgent:
             )
             
             if df is None or len(df) < 50:
-                logger.warning(f"Insufficient data for {self.symbol}")
+                logger.warning(f"?? Insufficient data for {self.symbol} (got {len(df) if df is not None else 0} candles)")
                 return
             
+            logger.info(f"? Fetched {len(df)} candles")
+            
             # Calculate indicators
+            logger.info(f"?? Calculating indicators...")
             required_indicators = self.strategy.get_required_indicators()
             df = calculate_all_indicators(df, required_indicators)
             
             # Generate signals
+            logger.info(f"?? Generating signals with {self.strategy_name}...")
             df_with_signals = self.strategy.backtest_signals(df)
             
             # Check latest signal
             latest_row = df_with_signals.iloc[-1]
             signal_value = latest_row.get('signal', 'HOLD')
             
+            logger.info(f"?? Latest signal: {signal_value}")
+            
             if signal_value == 'HOLD' or signal_value == 0:
-                logger.debug(f"No signal - {self.symbol}")
+                logger.info(f"?? No action - signal is HOLD")
                 return
             
             # Determine direction

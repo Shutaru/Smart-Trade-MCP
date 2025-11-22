@@ -33,7 +33,7 @@ async def launch_trading_agent(
     strategy: str,
     params: Optional[Dict[str, Any]] = None,
     risk_per_trade: float = 0.02,
-    scan_interval_minutes: int = 15
+    scan_interval_minutes: int = 5  # Changed from 15 to 5 for testing
 ) -> Dict[str, Any]:
     """
     ?? Launch a dedicated autonomous trading agent.
