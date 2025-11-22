@@ -5,6 +5,7 @@ Exposes market regime detection via MCP for LLM access.
 """
 
 from typing import Dict, Any
+import asyncio
 
 from ...core.logger import logger
 from ...core.regime_detector import get_regime_detector, MarketRegime
@@ -46,35 +47,48 @@ async def detect_market_regime(
     logger.info(f"Detecting market regime: {symbol} {timeframe}")
     
     try:
-        # Fetch data
-        dm = DataManager()
-        df = await dm.fetch_ohlcv(
-            symbol=symbol,
-            timeframe=timeframe,
-            limit=lookback + 50,  # Extra for indicator calculation
-        )
-        await dm.close()
+        # FIX: Add timeout to prevent MCP timeout (60 sec limit)
+        async def _detect_with_timeout():
+            # Fetch data (REDUCED from 150 to 100 for speed)
+            dm = DataManager()
+            df = await dm.fetch_ohlcv(
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=lookback + 50,  # Extra for indicator calculation
+                use_cache=True,  # FIX: Use cache!
+            )
+            await dm.close()
+            
+            if df.empty:
+                return {"error": "No market data available"}
+            
+            # Calculate required indicators (SKIP GPU for speed)
+            indicators = ['adx', 'atr', 'bollinger', 'ema']
+            df = calculate_all_indicators(df, indicators, use_gpu=False)
+            
+            # Detect regime
+            detector = get_regime_detector()
+            analysis = detector.detect(df, lookback=lookback)
+            
+            result = analysis.to_dict()
+            
+            logger.info(
+                f"Regime detected: {result['regime']} "
+                f"(confidence: {result['confidence']:.2f})"
+            )
+            
+            return result
         
-        if df.empty:
-            return {"error": "No market data available"}
-        
-        # Calculate required indicators
-        indicators = ['adx', 'atr', 'bollinger', 'ema']
-        df = calculate_all_indicators(df, indicators, use_gpu=False)
-        
-        # Detect regime
-        detector = get_regime_detector()
-        analysis = detector.detect(df, lookback=lookback)
-        
-        result = analysis.to_dict()
-        
-        logger.info(
-            f"Regime detected: {result['regime']} "
-            f"(confidence: {result['confidence']:.2f})"
-        )
-        
+        # Run with 50 second timeout (MCP limit is 60 sec)
+        result = await asyncio.wait_for(_detect_with_timeout(), timeout=50.0)
         return result
         
+    except asyncio.TimeoutError:
+        logger.error("Regime detection timed out after 50 seconds")
+        return {
+            "error": "Timeout: Analysis took too long (>50 sec)",
+            "suggestion": "Try with smaller lookback or use cached data"
+        }
     except Exception as e:
         logger.error(f"Regime detection failed: {e}", exc_info=True)
         return {"error": str(e)}
@@ -115,61 +129,74 @@ async def detect_historical_regimes(
     logger.info(f"Detecting historical regimes: {symbol} {timeframe}")
     
     try:
-        # Fetch historical data
-        dm = DataManager()
-        df = await dm.fetch_ohlcv(
-            symbol=symbol,
-            timeframe=timeframe,
-            limit=limit,
-        )
-        await dm.close()
-        
-        if df.empty:
-            return {"error": "No market data available"}
-        
-        # Calculate indicators
-        indicators = ['adx', 'atr', 'bollinger', 'ema']
-        df = calculate_all_indicators(df, indicators, use_gpu=False)
-        
-        # Detect regimes
-        detector = get_regime_detector()
-        regime_periods = detector.detect_historical_regimes(df, window_size=window_size)
-        
-        # Format results
-        periods = []
-        regime_hours = {}
-        
-        for start, end, regime in regime_periods:
-            duration = (end - start).total_seconds() / 3600  # hours
+        # FIX: Add timeout for long-running operation
+        async def _detect_historical_with_timeout():
+            # Fetch historical data
+            dm = DataManager()
+            df = await dm.fetch_ohlcv(
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=limit,
+                use_cache=True,  # FIX: Use cache!
+            )
+            await dm.close()
             
-            periods.append({
-                'start': start.isoformat(),
-                'end': end.isoformat(),
-                'regime': regime.value,
-                'duration_hours': int(duration),
-            })
+            if df.empty:
+                return {"error": "No market data available"}
             
-            # Track time in each regime
-            regime_name = regime.value
-            regime_hours[regime_name] = regime_hours.get(regime_name, 0) + duration
+            # Calculate indicators (SKIP GPU)
+            indicators = ['adx', 'atr', 'bollinger', 'ema']
+            df = calculate_all_indicators(df, indicators, use_gpu=False)
+            
+            # Detect regimes
+            detector = get_regime_detector()
+            regime_periods = detector.detect_historical_regimes(df, window_size=window_size)
+            
+            # Format results
+            periods = []
+            regime_hours = {}
+            
+            for start, end, regime in regime_periods:
+                duration = (end - start).total_seconds() / 3600  # hours
+                
+                periods.append({
+                    'start': start.isoformat(),
+                    'end': end.isoformat(),
+                    'regime': regime.value,
+                    'duration_hours': int(duration),
+                })
+                
+                # Track time in each regime
+                regime_name = regime.value
+                regime_hours[regime_name] = regime_hours.get(regime_name, 0) + duration
+            
+            # Calculate distribution
+            total_hours = sum(regime_hours.values())
+            regime_distribution = {
+                regime: round((hours / total_hours) * 100, 1)
+                for regime, hours in regime_hours.items()
+            } if total_hours > 0 else {}
+            
+            logger.info(f"Detected {len(periods)} regime periods")
+            
+            return {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'total_periods': len(periods),
+                'periods': periods,
+                'regime_distribution': regime_distribution,
+            }
         
-        # Calculate distribution
-        total_hours = sum(regime_hours.values())
-        regime_distribution = {
-            regime: round((hours / total_hours) * 100, 1)
-            for regime, hours in regime_hours.items()
-        } if total_hours > 0 else {}
+        # Run with 55 second timeout
+        result = await asyncio.wait_for(_detect_historical_with_timeout(), timeout=55.0)
+        return result
         
-        logger.info(f"Detected {len(periods)} regime periods")
-        
+    except asyncio.TimeoutError:
+        logger.error("Historical regime detection timed out")
         return {
-            'symbol': symbol,
-            'timeframe': timeframe,
-            'total_periods': len(periods),
-            'periods': periods,
-            'regime_distribution': regime_distribution,
+            "error": "Timeout: Analysis took too long (>55 sec)",
+            "suggestion": "Try with smaller limit or window_size"
         }
-        
     except Exception as e:
         logger.error(f"Historical regime detection failed: {e}", exc_info=True)
         return {"error": str(e)}
