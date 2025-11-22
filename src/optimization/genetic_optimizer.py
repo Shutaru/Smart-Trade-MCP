@@ -107,13 +107,14 @@ class GeneticOptimizer:
             use_gpu=self.config.use_gpu,
         )
         
-        # Rich dashboard
-        self.dashboard = OptimizationDashboard(
-            population_size=self.config.population_size,
-            n_generations=self.config.n_generations,
-            n_gpus=self.config.n_workers if self.config.use_gpu else 0,
-            strategy_name=strategy_class.name if hasattr(strategy_class, 'name') else strategy_class.__class__.__name__
-        )
+        # Rich dashboard ONLY if not in MCP mode
+        if not MCP_MODE:
+            self.dashboard = OptimizationDashboard(
+                population_size=self.config.population_size,
+                n_generations=self.config.n_generations,
+                n_gpus=self.config.n_workers if self.config.use_gpu else 0,
+                strategy_name=strategy_class.name if hasattr(strategy_class, 'name') else strategy_class.__class__.__name__
+            )
         
         # History tracking
         self.history = {
