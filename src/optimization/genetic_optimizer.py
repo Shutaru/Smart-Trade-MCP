@@ -33,11 +33,19 @@ except ImportError:
 # CHECK MCP MODE FIRST!
 MCP_MODE = os.environ.get('SMART_TRADE_MCP_MODE', 'false').lower() == 'true'
 
+# Only import Rich if NOT in MCP mode
 if not MCP_MODE:
-    # Only import Rich if NOT in MCP mode
     from rich.console import Console
     from rich.live import Live
     from ..core.cli_dashboard import OptimizationDashboard
+    
+    # Rich console for live display
+    console = Console(
+        force_terminal=True,
+        legacy_windows=False,
+        emoji=True,
+        no_color=False,
+    )
 
 from .config import OptimizationConfig
 from .parameter_space import ParameterSpace, ParameterType
@@ -57,14 +65,6 @@ if sys.platform == 'win32':
     
     # Set environment variable
     os.environ['PYTHONIOENCODING'] = 'utf-8'
-
-# Rich console for live display - beautiful Unicode (works now that logs are silent!)
-console = Console(
-    force_terminal=True,
-    legacy_windows=False,  # Full Unicode beauty!
-    emoji=True,
-    no_color=False,
-)
 
 class GeneticOptimizer:
     """
