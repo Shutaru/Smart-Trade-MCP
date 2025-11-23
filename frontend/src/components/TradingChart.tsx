@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react'
-import createChart from 'lightweight-charts'
 import type { IChartApi, ISeriesApi } from 'lightweight-charts'
 
 interface Trade {
@@ -35,8 +34,20 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
 
   useEffect(() => {
     let mounted = true
+    let ro: ResizeObserver | null = null
+
     async function init() {
       if (!containerRef.current) return
+
+      // dynamic import with shim fallback
+      let createChart: any
+      try {
+        const mod = await import('lightweight-charts')
+        createChart = mod.default || mod.createChart || mod
+      } catch (e) {
+        const shim = await import('../libs/lightweight-charts-shim')
+        createChart = shim.default || shim.createChart || shim
+      }
 
       // create chart
       chartRef.current = createChart(containerRef.current, {
@@ -109,7 +120,7 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
       }
 
       // resize observer
-      const ro = new ResizeObserver(() => {
+      ro = new ResizeObserver(() => {
         if (containerRef.current && chartRef.current) {
           chartRef.current.applyOptions({ width: containerRef.current.clientWidth })
         }
@@ -118,13 +129,16 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
 
       return () => {
         mounted = false
-        ro.disconnect()
+        if (ro && containerRef.current) ro.disconnect()
         chartRef.current?.remove()
         chartRef.current = null
       }
     }
 
     init()
+    return () => {
+      mounted = false
+    }
   }, [symbol, timeframe])
 
   // update markers when trades change
