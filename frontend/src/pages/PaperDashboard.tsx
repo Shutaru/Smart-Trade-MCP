@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import BotsList from '../components/BotsList'
 import TradingChart from '../components/TradingChart'
 import MoneyFlowChart from '../components/MoneyFlowChart'
@@ -50,7 +50,6 @@ export default function PaperDashboard() {
   }
 
   useEffect(() => {
-    const id = selected
     return () => {
       if (wsRef.current) {
         wsRef.current.close()
@@ -76,6 +75,7 @@ export default function PaperDashboard() {
                   <div className="text-sm text-gray-400">PID: {details.agent?.pid || '-'}</div>
                 </div>
               </div>
+
 
               <div className="grid grid-cols-1 gap-6">
                 <TradingChart symbol={details.agent.symbol} timeframe={details.agent.timeframe} trades={details.trades || []} />

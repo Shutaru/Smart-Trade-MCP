@@ -1,5 +1,3 @@
-import React from 'react'
-
 interface AgentSummary {
   agent_id: string
   symbol: string
