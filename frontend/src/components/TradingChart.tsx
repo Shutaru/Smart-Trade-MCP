@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { IChartApi, ISeriesApi } from 'lightweight-charts'
+import { createChart, IChartApi, ISeriesApi } from 'lightweight-charts'
 
 interface Trade {
   id: number
@@ -14,8 +14,7 @@ interface Trade {
 export default function TradingChart({ symbol, timeframe, trades }: { symbol: string; timeframe: string; trades: Trade[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
-  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
-  const markersRef = useRef<any[]>([])
+  const candleSeriesRef = useRef<ISeriesApi | null>(null)
 
   // Fetch candles from API
   async function fetchCandles() {
@@ -24,7 +23,6 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
       const res = await fetch(`/api/v1/market/candles?${qs}`)
       if (!res.ok) return []
       const data = await res.json()
-      // Expect data.candles array of {time, open, high, low, close, volume}
       return data.candles || []
     } catch (e) {
       console.warn('Failed to fetch candles', e)
@@ -39,40 +37,32 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
     async function init() {
       if (!containerRef.current) return
 
-      // dynamic import with shim fallback
-      let createChart: any
-      try {
-        const mod = await import('lightweight-charts')
-        createChart = (mod && (mod.default || mod.createChart)) || mod
-      } catch (e) {
-        const shim = await import('../libs/lightweight-charts-shim')
-        createChart = (shim && (shim.default)) || shim
-      }
+      // derive colors from CSS variables
+      const cs = getComputedStyle(document.documentElement)
+      const textColor = (cs.getPropertyValue('--text') || '#333').trim()
+      const bg = (cs.getPropertyValue('--panel') || '#fff').trim()
+      const grid = 'rgba(0,0,0,0.06)'
 
-      // create chart
       chartRef.current = createChart(containerRef.current, {
         width: containerRef.current.clientWidth,
         height: 400,
-        layout: { background: { color: '#ffffff' }, textColor: '#333' },
-        grid: { vertLines: { color: '#f0f0f0' }, horzLines: { color: '#f0f0f0' } },
+        layout: { background: { color: bg }, textColor: textColor },
+        grid: { vertLines: { color: grid }, horzLines: { color: grid } },
         rightPriceScale: { borderColor: '#eee' },
         timeScale: { borderColor: '#eee' }
       })
 
-      if (chartRef.current) {
-        candleSeriesRef.current = chartRef.current.addCandlestickSeries({
-          upColor: '#26a69a',
-          downColor: '#ef5350',
-          borderVisible: false,
-          wickUpColor: '#26a69a',
-          wickDownColor: '#ef5350'
-        })
-      }
+      candleSeriesRef.current = chartRef.current.addCandlestickSeries({
+        upColor: '#16a34a',
+        downColor: '#ef4444',
+        borderVisible: false,
+        wickUpColor: '#16a34a',
+        wickDownColor: '#ef4444'
+      })
 
       const candles = await fetchCandles()
       if (!mounted) return
 
-      // convert times: if ISO strings convert to unix seconds
       const formatted = candles.map((c: any) => {
         let time: number | string = c.time
         if (typeof time === 'string' && isNaN(Number(time))) {
@@ -112,16 +102,12 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
                 text: `Exit ${t.exit_price} (${t.pnl ? t.pnl.toFixed(2) : ''})`
               })
             }
-          } catch (e) {
-            // ignore
-          }
+          } catch (e) {}
           return marks
         })
-        markersRef.current = markers
         if (candleSeriesRef.current) candleSeriesRef.current.setMarkers(markers)
       }
 
-      // resize observer
       ro = new ResizeObserver(() => {
         if (containerRef.current && chartRef.current) {
           chartRef.current.applyOptions({ width: containerRef.current.clientWidth })
@@ -138,12 +124,9 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
     }
 
     init()
-    return () => {
-      mounted = false
-    }
+    return () => { mounted = false }
   }, [symbol, timeframe])
 
-  // update markers when trades change
   useEffect(() => {
     if (!candleSeriesRef.current) return
     if (!trades) return
@@ -171,7 +154,6 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
       } catch (e) {}
       return marks
     })
-    markersRef.current = markers
     if (candleSeriesRef.current) candleSeriesRef.current.setMarkers(markers)
   }, [trades])
 
