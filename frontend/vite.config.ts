@@ -7,7 +7,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      'lightweight-charts': path.resolve(__dirname, 'src/libs/lightweight-charts-shim.ts')
+      // removed alias to shim so real `lightweight-charts` package is used
+      // 'lightweight-charts': path.resolve(__dirname, 'src/libs/lightweight-charts-shim.ts')
     }
   },
   server: {

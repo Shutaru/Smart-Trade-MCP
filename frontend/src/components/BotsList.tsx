@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import MoneyFlowChart from './MoneyFlowChart'
 
 interface AgentSummary {
   agent_id: string
@@ -33,10 +34,10 @@ export default function BotsList({ agents, onSelect }: { agents: AgentSummary[];
         </div>
 
         {loading ? (
-          <div className="space-y-2">
-            <div className="h-12 bg-gray-100 rounded animate-pulse" />
-            <div className="h-12 bg-gray-100 rounded animate-pulse" />
-            <div className="h-12 bg-gray-100 rounded animate-pulse" />
+          <div className="space-y-3">
+            <div className="h-16 bg-gray-100 rounded animate-pulse" />
+            <div className="h-16 bg-gray-100 rounded animate-pulse" />
+            <div className="h-16 bg-gray-100 rounded animate-pulse" />
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-sm small-muted">No active bots</div>
@@ -45,14 +46,24 @@ export default function BotsList({ agents, onSelect }: { agents: AgentSummary[];
             {filtered.map((a) => (
               <div
                 key={a.agent_id}
-                className="p-3 border rounded-lg hover:shadow-md transition cursor-pointer bg-gradient-to-tr from-white/2 to-transparent"
+                className="w-full p-3 border rounded-lg hover:shadow-md transition cursor-pointer flex items-center gap-4"
                 role="button"
                 tabIndex={0}
                 onClick={() => onSelect(a.agent_id)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(a.agent_id) }}
               >
-                <div className="font-semibold">{a.strategy} - <span className="text-primary">{a.symbol}</span> <span className="text-sm small-muted">({a.timeframe})</span></div>
-                <div className="text-sm small-muted">ID: {a.agent_id}</div>
+                <div style={{ width: 220, height: 60 }} className="rounded overflow-hidden bg-panel/30 p-1">
+                  <MoneyFlowChart series={[{ time: new Date().toISOString(), value: 0 }, { time: new Date().toISOString(), value: 1 }]} />
+                </div>
+
+                <div className="flex-1">
+                  <div className="font-semibold">{a.symbol} <span className="text-sm small-muted">| {a.strategy} ({a.timeframe})</span></div>
+                  <div className="text-sm small-muted">ID: {a.agent_id}</div>
+                </div>
+
+                <div className="text-right w-28 small-muted">
+                  <div className={`px-2 py-1 rounded ${a.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{a.status}</div>
+                </div>
               </div>
             ))}
           </div>
