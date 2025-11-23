@@ -207,31 +207,12 @@ export default function PaperDashboard() {
 
 
 
-      <div className="grid-3">
+      {/* Bots list occupies main content full-width */}
+      <main className="content">
 
-        <aside className="sidebar">
+        <BotsList agents={agents} onSelect={selectAgent} />
 
-          <BotsList agents={agents} onSelect={selectAgent} />
-
-        </aside>
-
-
-
-        <main className="content">
-
-          <div className="card-panel">
-
-            <div className="text-center small-muted">
-
-              Click a bot to view details
-
-            </div>
-
-          </div>
-
-        </main>
-
-      </div>
+      </main>
 
 
 

@@ -336,6 +336,27 @@ class AgentOrchestrator:
         drawdown = cumulative_pnl - running_max
         max_drawdown = np.min(drawdown) if len(drawdown) > 0 else 0
         
+        # Build a simple equity series (cumulative PnL over time)
+        equity_series = []
+        try:
+            # sort trades by exit_time or entry_time
+            sorted_trades = sorted(trades, key=lambda t: t.get('exit_time') or t.get('entry_time'))
+            cum = 0.0
+            # start point
+            equity_series.append({"time": datetime.now().isoformat(), "value": round(cum, 2)})
+            for t in sorted_trades:
+                pnl = float(t.get('pnl') or 0)
+                cum += pnl
+                ts = t.get('exit_time') or t.get('entry_time')
+                try:
+                    # normalize to ISO
+                    ts_iso = ts if isinstance(ts, str) else str(ts)
+                except Exception:
+                    ts_iso = datetime.now().isoformat()
+                equity_series.append({"time": ts_iso, "value": round(cum, 2)})
+        except Exception:
+            equity_series = [{"time": datetime.now().isoformat(), "value": 0}]
+        
         return {
             "total_trades": total_trades,
             "winning_trades": winning_trades,
@@ -346,58 +367,64 @@ class AgentOrchestrator:
             "avg_loss": round(avg_loss, 2),
             "sharpe_ratio": round(sharpe, 2),
             "max_drawdown": round(max_drawdown, 2),
-            "profit_factor": round(abs(sum(wins) / sum(losses)), 2) if losses else 0
+            "profit_factor": round(abs(sum(wins) / sum(losses)), 2) if losses else 0,
+            "equity_series": equity_series
         }
     
     def get_all_agents(self) -> List[Dict[str, Any]]:
         """Get status of all agents."""
-        agents = []
+        agents_map: Dict[str, Dict[str, Any]] = {}
         
-        # Get from memory
+        # Add in-memory agents first
         for agent_id, info in self.agents.items():
+            perf = self.get_agent_performance(agent_id)
             agent_data = {
                 "agent_id": agent_id,
                 **info["config"],
                 "status": info["status"],
                 "pid": info["process"].pid if info["process"].is_alive() else None,
                 "started_at": info["started_at"].isoformat(),
-                "is_alive": info["process"].is_alive()
+                "is_alive": info["process"].is_alive(),
+                "performance": perf
             }
-            
-            # Add performance
-            perf = self.get_agent_performance(agent_id)
-            agent_data.update(perf)
-            
-            agents.append(agent_data)
+            agents_map[agent_id] = agent_data
         
-        # Also get agents from database that are NOT in memory.
-        # Include both stopped and active agents recorded in storage so API can display them
+        # Merge DB active agents (if not already present)
         db_active = self.storage.get_active_agents()
         for agent in db_active:
-            if agent["agent_id"] not in self.agents:
-                # Mark as active but without in-memory process (PID unknown)
-                perf = self.get_agent_performance(agent["agent_id"])
-                agent_data = {
-                    "agent_id": agent["agent_id"],
-                    "symbol": agent.get("symbol"),
-                    "timeframe": agent.get("timeframe"),
-                    "strategy": agent.get("strategy"),
-                    "status": agent.get("status", "active"),
-                    "pid": None,
-                    "started_at": agent.get("started_at"),
-                    "is_alive": False
-                }
-                agent_data.update(perf)
-                agents.append(agent_data)
+            aid = agent.get("agent_id")
+            if not aid:
+                continue
+            if aid in agents_map:
+                continue
+            perf = self.get_agent_performance(aid)
+            agent_data = {
+                "agent_id": aid,
+                "symbol": agent.get("symbol"),
+                "timeframe": agent.get("timeframe"),
+                "strategy": agent.get("strategy"),
+                "status": agent.get("status", "active"),
+                "pid": None,
+                "started_at": agent.get("started_at"),
+                "is_alive": False,
+                "performance": perf
+            }
+            agents_map[aid] = agent_data
         
+        # Merge stopped agents that are only in DB
         stopped = self.storage.get_stopped_agents()
         for agent in stopped:
-            if agent["agent_id"] not in self.agents:
-                perf = self.get_agent_performance(agent["agent_id"])
-                agent.update(perf)
-                agents.append(agent)
+            aid = agent.get("agent_id")
+            if not aid or aid in agents_map:
+                continue
+            perf = self.get_agent_performance(aid)
+            agent_data = {
+                **agent,
+                "performance": perf
+            }
+            agents_map[aid] = agent_data
 
-        return agents
+        return list(agents_map.values())
     
     def update_agent_params(self, agent_id: str, params: Dict[str, Any]):
         """
