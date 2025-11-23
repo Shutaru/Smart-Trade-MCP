@@ -46,7 +46,7 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
         createChart = (mod && (mod.default || mod.createChart)) || mod
       } catch (e) {
         const shim = await import('../libs/lightweight-charts-shim')
-        createChart = (shim && (shim.default || shim.createChart)) || shim
+        createChart = (shim && (shim.default)) || shim
       }
 
       // create chart
