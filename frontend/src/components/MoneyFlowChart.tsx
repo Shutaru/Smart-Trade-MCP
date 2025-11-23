@@ -8,7 +8,6 @@ export default function MoneyFlowChart({ series }: { series: { time: string; val
 
   useEffect(() => {
     let ro: ResizeObserver | null = null
-    let mounted = true
 
     async function init() {
       if (!ref.current) return
@@ -32,7 +31,6 @@ export default function MoneyFlowChart({ series }: { series: { time: string; val
       ro.observe(ref.current)
 
       return () => {
-        mounted = false
         if (ro && ref.current) ro.disconnect()
         chartRef.current?.remove()
         chartRef.current = null
@@ -42,7 +40,6 @@ export default function MoneyFlowChart({ series }: { series: { time: string; val
     init()
 
     return () => {
-      mounted = false
       if (ro && ref.current) ro.disconnect()
     }
   }, [])
