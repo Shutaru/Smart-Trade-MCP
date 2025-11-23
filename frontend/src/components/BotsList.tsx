@@ -11,7 +11,7 @@ interface AgentSummary {
 export default function BotsList({ agents, onSelect }: { agents: AgentSummary[]; onSelect: (id: string) => void }) {
   return (
     <div className="bg-white rounded-2xl shadow-xl p-6">
-      <h3 className="text-2xl font-bold mb-4">?? Active Bots</h3>
+      <h3 className="text-2xl font-bold mb-4">Active Bots</h3>
       {agents.length === 0 ? (
         <div className="text-gray-500">No active bots</div>
       ) : (
@@ -19,7 +19,7 @@ export default function BotsList({ agents, onSelect }: { agents: AgentSummary[];
           {agents.map((a) => (
             <div key={a.agent_id} className="flex items-center justify-between border rounded-lg p-3 hover:shadow-lg transition">
               <div>
-                <div className="font-semibold">{a.strategy} — {a.symbol} ({a.timeframe})</div>
+                <div className="font-semibold">{a.strategy} - {a.symbol} ({a.timeframe})</div>
                 <div className="text-sm text-gray-500">ID: {a.agent_id}</div>
               </div>
               <div className="text-right">
