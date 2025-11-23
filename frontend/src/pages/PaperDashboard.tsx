@@ -1,18 +1,13 @@
 import { useEffect, useState, useRef } from 'react'
-
 import BotsList from '../components/BotsList'
-
-import TradingChart from '../components/TradingChart'
-
-import MoneyFlowChart from '../components/MoneyFlowChart'
-
+import BotModal from '../components/BotModal'
 import { useTheme } from '../contexts/ThemeContext'
 
 
 
 const API = '/api/v1/paper'
 
-const API_BACKEND = 'http://localhost:8000/api/v1/paper'
+const API_BACKEND = 'http://127.0.0.1:8000/api/v1/paper'
 
 
 
@@ -102,8 +97,6 @@ export default function PaperDashboard() {
 
   async function selectAgent(id: string) {
 
-    setSelected(id)
-
     try {
 
       let res = await fetchWithFallback(`${API}/bots/${id}`)
@@ -116,6 +109,8 @@ export default function PaperDashboard() {
 
       else setDetails({ agent: data, performance: {} })
 
+      setSelected(id)
+
     } catch (e: any) {
 
       console.warn('Failed to fetch agent details', e)
@@ -126,11 +121,13 @@ export default function PaperDashboard() {
 
 
 
+    // open WS
+
     if (wsRef.current) { wsRef.current.close() }
 
     try {
 
-      const host = window.location.hostname || 'localhost'
+      const host = window.location.hostname || '127.0.0.1'
 
       const wsUrl = `ws://${host}:8000/api/v1/paper/ws/paper/${id}`
 
@@ -142,14 +139,6 @@ export default function PaperDashboard() {
 
         if (payload.type === 'snapshot') setDetails({ agent: payload.agent, performance: payload.performance, trades: payload.trades })
 
-        else if (payload.type === 'event') {
-
-          const evt = payload.event
-
-          if (evt['event_type'] === 'trade_open' || evt['event_type'] === 'trade_close') fetchWithFallback(`${API}/bots/${id}`).then(r => r.json()).then(d => { if (d && d.agent) setDetails(d); else setDetails({ agent: d, performance: {} }) })
-
-        }
-
       }
 
       wsRef.current = ws
@@ -160,7 +149,15 @@ export default function PaperDashboard() {
 
 
 
-  useEffect(() => () => { if (wsRef.current) { wsRef.current.close(); wsRef.current = null } }, [selected])
+  function closeModal() {
+
+    setSelected(null)
+
+    setDetails(null)
+
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null }
+
+  }
 
 
 
@@ -196,147 +193,23 @@ export default function PaperDashboard() {
 
         <main className="content">
 
-          {selected && details ? (
+          <div className="card-panel">
 
-            <div className="card-panel">
+            <div className="text-center small-muted">
 
-              <div className="flex justify-between items-start mb-4">
-
-                <div>
-
-                  <h2 className="text-lg font-bold">{details.agent.symbol}  {details.agent.strategy}</h2>
-
-                  <div className="small-muted">{details.agent.agent_id}</div>
-
-                </div>
-
-                <div className="text-right">
-
-                  <div className="small-muted">Status: {details.agent.status}</div>
-
-                  <div className="small-muted">PID: {details.agent.pid || '-'}</div>
-
-                </div>
-
-              </div>
-
-
-
-              <div className="card-panel" style={{ height: 340 }}>
-
-                <TradingChart symbol={details.agent.symbol} timeframe={details.agent.timeframe} trades={details.trades || []} />
-
-              </div>
-
-
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-
-                <div className="card-panel">
-
-                  <h4 className="font-semibold mb-2">Equity / Money Flow</h4>
-
-                  <MoneyFlowChart series={(details.performance?.equity_series || [{ time: new Date().toISOString(), value: 0 }])} />
-
-                </div>
-
-                <div className="card-panel">
-
-                  <h4 className="font-semibold mb-2">Trades</h4>
-
-                  <div className="mt-2 max-h-48 overflow-auto">
-
-                    <table className="w-full text-sm">
-
-                      <thead>
-
-                        <tr className="text-left small-muted">
-
-                          <th>Time</th><th>Side</th><th>Entry</th><th>Exit</th><th>PnL</th>
-
-                        </tr>
-
-                      </thead>
-
-                      <tbody>
-
-                        {(details.trades || []).map((t: any) => (
-
-                          <tr key={t.id} className="border-b">
-
-                            <td className="py-2 small-muted">{t.entry_time}</td>
-
-                            <td>{t.direction}</td>
-
-                            <td>{t.entry_price}</td>
-
-                            <td>{t.exit_price || '-'}</td>
-
-                            <td className={`font-bold ${t.pnl > 0 ? 'text-green-500' : 'text-red-500'}`}>{t.pnl || '-'}</td>
-
-                          </tr>
-
-                        ))}
-
-                      </tbody>
-
-                    </table>
-
-                  </div>
-
-                </div>
-
-                <div className="card-panel">
-
-                  <h4 className="font-semibold mb-2">Summary</h4>
-
-                  <div className="grid grid-cols-3 gap-2">
-
-                    <div className="p-3 bg-gray-100 rounded text-center">
-
-                      <div className="small-muted">Total Trades</div>
-
-                      <div className="font-bold">{details.performance?.total_trades || 0}</div>
-
-                    </div>
-
-                    <div className="p-3 bg-gray-100 rounded text-center">
-
-                      <div className="small-muted">Win Rate</div>
-
-                      <div className="font-bold">{details.performance?.win_rate || 0}%</div>
-
-                    </div>
-
-                    <div className="p-3 bg-gray-100 rounded text-center">
-
-                      <div className="small-muted">Total PnL</div>
-
-                      <div className="font-bold">{details.performance?.total_pnl || 0}</div>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-              </div>
+              Click a bot to view details
 
             </div>
 
-          ) : (
-
-            <div className="card-panel">
-
-              <div className="small-muted">Select a bot to view details</div>
-
-            </div>
-
-          )}
+          </div>
 
         </main>
 
       </div>
+
+
+
+      <BotModal open={!!selected} onClose={closeModal} details={details} />
 
     </div>
 

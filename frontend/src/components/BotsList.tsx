@@ -45,13 +45,13 @@ export default function BotsList({ agents, onSelect }: { agents: AgentSummary[];
             {filtered.map((a) => (
               <div
                 key={a.agent_id}
-                className="p-3 border rounded-lg hover:shadow-md transition cursor-pointer"
+                className="p-3 border rounded-lg hover:shadow-md transition cursor-pointer bg-gradient-to-tr from-white/2 to-transparent"
                 role="button"
                 tabIndex={0}
                 onClick={() => onSelect(a.agent_id)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(a.agent_id) }}
               >
-                <div className="font-semibold">{a.strategy} - {a.symbol} <span className="text-sm small-muted">({a.timeframe})</span></div>
+                <div className="font-semibold">{a.strategy} - <span className="text-primary">{a.symbol}</span> <span className="text-sm small-muted">({a.timeframe})</span></div>
                 <div className="text-sm small-muted">ID: {a.agent_id}</div>
               </div>
             ))}
