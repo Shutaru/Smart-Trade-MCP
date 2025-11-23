@@ -4,11 +4,13 @@ import TradingChart from '../components/TradingChart'
 import MoneyFlowChart from '../components/MoneyFlowChart'
 
 const API = '/api/v1/paper'
+const API_BACKEND = 'http://localhost:8000/api/v1/paper'
 
 export default function PaperDashboard() {
   const [agents, setAgents] = useState<any[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [details, setDetails] = useState<any | null>(null)
+  const [lastError, setLastError] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -17,15 +19,35 @@ export default function PaperDashboard() {
     return () => clearInterval(interval)
   }, [])
 
+  async function fetchWithFallback(path: string) {
+    // Try backend absolute first (works even if dev server/proxy not running), then relative (proxy)
+    const backendPath = path.replace('/api/v1/paper', API_BACKEND)
+    try {
+      const r1 = await fetch(backendPath)
+      if (r1.ok) return r1
+    } catch (e) {
+      // ignore
+    }
+    try {
+      const r2 = await fetch(path)
+      if (r2.ok) return r2
+      return r2
+    } catch (e) {
+      throw e
+    }
+  }
+
   async function fetchAgents() {
     try {
       // Prefer active-only endpoint if available
-      let res = await fetch(`${API}/bots/active`)
-      if (!res.ok) {
-        res = await fetch(`${API}/bots`)
+      let res = await fetchWithFallback(`${API}/bots/active`)
+      if (!res || !res.ok) {
+        res = await fetchWithFallback(`${API}/bots`)
       }
+      if (!res) throw new Error('No response from API')
       const data = await res.json()
       console.debug('Fetched agents:', data)
+      setLastError(null)
       // Support different shapes: { agents: [...] } or direct array
       if (Array.isArray(data)) {
         setAgents(data)
@@ -36,38 +58,62 @@ export default function PaperDashboard() {
       } else {
         setAgents([])
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to fetch agents', e)
+      setLastError(String(e?.message || e))
       setAgents([])
     }
   }
 
   async function selectAgent(id: string) {
     setSelected(id)
-    const res = await fetch(`${API}/bots/${id}`)
-    const data = await res.json()
-    setDetails(data)
+    try {
+      let res = await fetchWithFallback(`${API}/bots/${id}`)
+      if (!res || !res.ok) throw new Error('Failed to fetch agent details')
+      const data = await res.json()
+      // Normalize response: API may return { success, agent, performance } or just { agent, performance }
+      if (data && data.agent) {
+        setDetails(data)
+      } else {
+        // assume response is the agent object itself
+        setDetails({ agent: data, performance: {} })
+      }
+      setLastError(null)
+    } catch (e: any) {
+      console.error('Failed to load agent details', e)
+      setLastError(String(e?.message || e))
+      setDetails(null)
+    }
 
     // connect WS
     if (wsRef.current) {
       wsRef.current.close()
     }
-    const ws = new WebSocket(`ws://localhost:8000/api/v1/paper/ws/paper/${id}`)
-    ws.onopen = () => console.log('ws open')
-    ws.onmessage = (ev) => {
-      const payload = JSON.parse(ev.data)
-      if (payload.type === 'snapshot') {
-        setDetails({ agent: payload.agent, performance: payload.performance, trades: payload.trades })
-      } else if (payload.type === 'event') {
-        // append event or refresh
-        const evt = payload.event
-        if (evt['event_type'] === 'trade_open' || evt['event_type'] === 'trade_close') {
-          fetch(`${API}/bots/${id}`).then(r => r.json()).then(d => setDetails(d))
+    try {
+      const host = window.location.hostname || 'localhost'
+      const wsUrl = `ws://${host}:8000/api/v1/paper/ws/paper/${id}`
+      const ws = new WebSocket(wsUrl)
+      ws.onopen = () => console.log('ws open')
+      ws.onmessage = (ev) => {
+        const payload = JSON.parse(ev.data)
+        if (payload.type === 'snapshot') {
+          setDetails({ agent: payload.agent, performance: payload.performance, trades: payload.trades })
+        } else if (payload.type === 'event') {
+          // append event or refresh
+          const evt = payload.event
+          if (evt['event_type'] === 'trade_open' || evt['event_type'] === 'trade_close') {
+            fetchWithFallback(`${API}/bots/${id}`).then(r => r.json()).then(d => {
+              if (d && d.agent) setDetails(d)
+              else setDetails({ agent: d, performance: {} })
+            })
+          }
+          // heartbeat or other events can update status
         }
-        // heartbeat or other events can update status
       }
+      wsRef.current = ws
+    } catch (e) {
+      console.warn('WS connection failed', e)
     }
-    wsRef.current = ws
   }
 
   useEffect(() => {
@@ -83,6 +129,15 @@ export default function PaperDashboard() {
     <div className="min-h-screen p-8 bg-gray-50">
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="col-span-1">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">Active Bots</h2>
+            <div>
+              <button onClick={fetchAgents} className="bg-primary-500 text-white px-3 py-1 rounded">Refresh</button>
+            </div>
+          </div>
+          {lastError && (
+            <div className="mb-4 p-3 rounded bg-yellow-100 text-yellow-800">API error: {lastError}. Check backend or dev server.</div>
+          )}
           <BotsList agents={agents} onSelect={selectAgent} />
         </div>
 
