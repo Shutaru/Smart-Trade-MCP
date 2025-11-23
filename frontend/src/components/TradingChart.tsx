@@ -43,10 +43,10 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
       let createChart: any
       try {
         const mod = await import('lightweight-charts')
-        createChart = mod.default || mod.createChart || mod
+        createChart = (mod && (mod.default || mod.createChart)) || mod
       } catch (e) {
         const shim = await import('../libs/lightweight-charts-shim')
-        createChart = shim.default || shim.createChart || shim
+        createChart = (shim && (shim.default || shim.createChart)) || shim
       }
 
       // create chart
@@ -59,13 +59,15 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
         timeScale: { borderColor: '#eee' }
       })
 
-      candleSeriesRef.current = chartRef.current.addCandlestickSeries({
-        upColor: '#26a69a',
-        downColor: '#ef5350',
-        borderVisible: false,
-        wickUpColor: '#26a69a',
-        wickDownColor: '#ef5350'
-      })
+      if (chartRef.current) {
+        candleSeriesRef.current = chartRef.current.addCandlestickSeries({
+          upColor: '#26a69a',
+          downColor: '#ef5350',
+          borderVisible: false,
+          wickUpColor: '#26a69a',
+          wickDownColor: '#ef5350'
+        })
+      }
 
       const candles = await fetchCandles()
       if (!mounted) return
@@ -85,7 +87,7 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
         }
       })
 
-      candleSeriesRef.current?.setData(formatted)
+      if (candleSeriesRef.current) candleSeriesRef.current.setData(formatted)
 
       // markers from trades
       if (trades && trades.length > 0) {
