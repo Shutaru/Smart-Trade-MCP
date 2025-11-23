@@ -34,6 +34,7 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
   useEffect(() => {
     let mounted = true
     let ro: ResizeObserver | null = null
+    let drawTimeout: any = null
 
     async function init() {
       if (!containerRef.current) return
@@ -78,7 +79,14 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
         }
       })
 
-      if (candleSeriesRef.current) candleSeriesRef.current.setData(formatted)
+      // simple draw animation: set partial data then full
+      if (candleSeriesRef.current) {
+        const half = Math.max(1, Math.floor(formatted.length * 0.25))
+        candleSeriesRef.current.setData(formatted.slice(0, half))
+        drawTimeout = setTimeout(() => {
+          candleSeriesRef.current?.setData(formatted)
+        }, 300)
+      }
 
       // markers from trades
       if (trades && trades.length > 0) {
@@ -119,6 +127,7 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
       return () => {
         mounted = false
         if (ro && containerRef.current) ro.disconnect()
+        if (drawTimeout) clearTimeout(drawTimeout)
         chartRef.current?.remove()
         chartRef.current = null
       }

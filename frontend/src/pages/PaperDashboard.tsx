@@ -19,6 +19,8 @@ export default function PaperDashboard() {
 
   const [details, setDetails] = useState<any | null>(null)
 
+  const [lastFocusedEl, setLastFocusedEl] = useState<HTMLElement | null>(null)
+
   const wsRef = useRef<WebSocket | null>(null)
 
   const { theme, toggle } = useTheme()
@@ -97,6 +99,16 @@ export default function PaperDashboard() {
 
   async function selectAgent(id: string) {
 
+    // store current focus to return later
+
+    try {
+
+      setLastFocusedEl(document.activeElement as HTMLElement | null)
+
+    } catch {}
+
+    
+
     try {
 
       let res = await fetchWithFallback(`${API}/bots/${id}`)
@@ -156,6 +168,20 @@ export default function PaperDashboard() {
     setDetails(null)
 
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null }
+
+    // restore focus
+
+    try {
+
+      if (lastFocusedEl && typeof lastFocusedEl.focus === 'function') {
+
+        lastFocusedEl.focus()
+
+      }
+
+    } catch {}
+
+    setLastFocusedEl(null)
 
   }
 
