@@ -300,11 +300,16 @@ class GeneticOptimizer:
         return {name: value for name, value in zip(param_names, individual)}
     
     def _fitness_to_dict(self, fitness_tuple: Tuple[float, float, float]) -> Dict[str, float]:
-        """Convert fitness tuple to dictionary"""
+        """
+        Convert fitness tuple to dictionary.
+        
+        ? NEW: Returns FULL metrics dict (profit %, sharpe, drawdown, etc.)
+        """
+        # fitness_tuple = (total_return_pct, sharpe_ratio, max_drawdown_pct)
         return {
-            "sharpe_ratio": fitness_tuple[0],
-            "win_rate": fitness_tuple[1],
-            "max_drawdown_pct": fitness_tuple[2],
+            "total_return_pct": fitness_tuple[0],      # ? PROFIT!
+            "sharpe_ratio": fitness_tuple[1],          # ? CONSISTENCY!
+            "max_drawdown_pct": fitness_tuple[2],      # ? RISK!
         }
     
     def _calculate_avg_fitness(self, population: List) -> Dict[str, float]:
@@ -432,7 +437,11 @@ class GeneticOptimizer:
                 current_best = tools.selBest(self.population, 1)[0]
                 if current_best.fitness.values[0] > best_ind.fitness.values[0]:
                     best_ind = current_best
-                    best_fitness = self._fitness_to_dict(best_ind.fitness.values)
+                    
+                    # ? Re-evaluate to get FULL FitnessMetrics
+                    best_params = self._individual_to_params(best_ind)
+                    best_metrics_obj = self.evaluator.evaluate(best_params)
+                    best_fitness = best_metrics_obj.to_dict()
                 
                 avg_fitness = self._calculate_avg_fitness(self.population)
                 
@@ -455,8 +464,8 @@ class GeneticOptimizer:
                 if gen % 5 == 0 or gen == self.config.n_generations:
                     logger.info(
                         f"Generation {gen}/{self.config.n_generations}: "
-                        f"Best Sharpe={best_fitness['sharpe_ratio']:.2f}, "
-                        f"Avg Sharpe={avg_fitness['sharpe_ratio']:.2f}, "
+                        f"Best Profit={best_fitness.get('total_return_pct', 0):.2f}%, "
+                        f"Best Sharpe={best_fitness.get('sharpe_ratio', 0):.2f}, "
                         f"Time={time.time() - gen_start:.1f}s"
                     )
         else:
@@ -481,9 +490,16 @@ class GeneticOptimizer:
                     
                     # Track best individual
                     best_ind = tools.selBest(self.population, 1)[0]
-                    best_fitness = self._fitness_to_dict(best_ind.fitness.values)
+                    
+                    # ? Get FULL FitnessMetrics object (not just tuple!)
+                    best_params = self._individual_to_params(best_ind)
+                    best_metrics_obj = self.evaluator.evaluate(best_params)  # Full FitnessMetrics
+                 
+                    best_fitness = best_metrics_obj.to_dict()  # Full dict with all fields!
                     avg_fitness = self._calculate_avg_fitness(self.population)
                     
+                    logger.info(f"Generation 0: Best Profit={best_metrics_obj.total_return:.2f}%, Best Sharpe={best_metrics_obj.sharpe_ratio:.2f}")
+
                     # Update dashboard (generation 0)
                     dashboard.update_generation(generation=0, evaluated=self.config.population_size)
                     dashboard.complete_generation(best_fitness=best_fitness, avg_fitness=avg_fitness)

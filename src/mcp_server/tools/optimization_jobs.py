@@ -145,12 +145,25 @@ async def start_optimization_job(
         
         results = optimizer.optimize()
         
+        # ? Convert best_fitness to dict with FULL metrics
+        if isinstance(results.get("best_fitness"), dict):
+            # Already a dict (from to_dict())
+            best_fitness = results["best_fitness"]
+        else:
+            # It's a FitnessMetrics object or other - convert
+            fitness_obj = results.get("best_fitness")
+            if hasattr(fitness_obj, "to_dict"):
+                best_fitness = fitness_obj.to_dict()
+            else:
+                # Fallback - construct from available data
+                best_fitness = fitness_obj if isinstance(fitness_obj, dict) else {}
+        
         return {
             "strategy": strategy_name,
             "symbol": symbol,
             "timeframe": timeframe,
             "best_params": results["best_params"],
-            "best_fitness": results["best_fitness"],
+            "best_fitness": best_fitness,  # ? Full metrics with profit %!
             "total_time": results["total_time"],
             "total_evaluations": results["total_evaluations"],
             "config": {

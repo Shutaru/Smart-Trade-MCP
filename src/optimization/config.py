@@ -74,8 +74,21 @@ class OptimizationConfig(BaseModel):
     
     # Fitness evaluation
     fitness_weights: tuple[float, float, float] = Field(
-        default=(1.0, 1.0, -1.0),
-        description="Weights for (Sharpe, Win Rate, Max DD) - positive to maximize, negative to minimize"
+        default=(0.70, 0.20, -0.10),  # PROFIT-FIRST AGGRESSIVE!
+        description="""
+        Weights for multi-objective fitness (Total Return %, Sharpe Ratio, Max Drawdown %).
+        
+        DEFAULT: Profit-First Aggressive (70/20/10)
+        - 70% weight on Total Return % (maximize profit!)
+        - 20% weight on Sharpe Ratio (consistency & quality)
+        - 10% weight on Max Drawdown % (risk control, negative to minimize)
+        
+        Positive weights = maximize, negative weights = minimize.
+        
+        Alternative presets:
+        - Conservative: (0.50, 0.30, -0.20) - Balanced profit/risk
+        - Ultra-Aggressive: (0.90, 0.05, -0.05) - Maximum profit focus
+        """
     )
     
     # Data settings

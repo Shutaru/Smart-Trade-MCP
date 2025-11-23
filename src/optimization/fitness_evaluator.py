@@ -25,16 +25,26 @@ class FitnessMetrics:
     profit_factor: float
     
     def to_tuple(self) -> Tuple[float, float, float]:
-        """Convert to tuple for DEAP (Sharpe, WinRate, MaxDD)"""
-        return (self.sharpe_ratio, self.win_rate, self.max_drawdown_pct)
+        """
+        Convert to tuple for DEAP (3 objectives for multi-objective optimization).
+        
+        ? NEW FITNESS FUNCTION (Profit-First Aggressive):
+        - 70% Weight: Total Return % (maximize profit!)
+        - 20% Weight: Sharpe Ratio (consistency)
+        - 10% Weight: Max Drawdown % (risk control, negative weight)
+        
+        Returns:
+            Tuple of (total_return, sharpe_ratio, max_drawdown_pct)
+        """
+        return (self.total_return, self.sharpe_ratio, self.max_drawdown_pct)
     
     def to_dict(self) -> Dict[str, float]:
-        """Convert to dictionary"""
+        """Convert to dictionary (complete metrics)"""
         return {
+            "total_return_pct": self.total_return,  # ? Renamed for clarity
             "sharpe_ratio": self.sharpe_ratio,
             "win_rate": self.win_rate,
             "max_drawdown_pct": self.max_drawdown_pct,
-            "total_return": self.total_return,
             "total_trades": self.total_trades,
             "profit_factor": self.profit_factor,
         }
