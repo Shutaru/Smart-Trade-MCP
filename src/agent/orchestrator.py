@@ -16,6 +16,7 @@ from typing import Dict, Any, List, Optional
 from uuid import uuid4
 import signal
 import sys
+import os
 
 from ..core.logger import logger
 from .trading_agent import TradingAgent
@@ -438,6 +439,68 @@ class AgentOrchestrator:
             agents_map[aid] = agent_data
 
         return list(agents_map.values())
+    
+    class ExternalProcessProxy:
+        """Lightweight proxy representing an external process started earlier.
+
+        Provides minimal .pid and .is_alive() for orchestrator to treat the process as running.
+        """
+        def __init__(self, pid: int):
+            self.pid = int(pid)
+
+        def is_alive(self):
+            try:
+                # signal 0 check
+                os.kill(self.pid, 0)
+                return True
+            except Exception:
+                return False
+
+    def reconcile_db_agents(self) -> List[str]:
+        """Attach active agents found in DB (by pid) into the orchestrator.agents map
+
+        For agents that were started in previous process runs and still exist, this will
+        create an ExternalProcessProxy so they become visible to the API without
+        respawning new processes.
+
+        Returns list of agent_ids attached.
+        """
+        attached = []
+        with self._lock:
+            db_active = self.storage.get_active_agents()
+            for a in db_active:
+                aid = a.get('agent_id')
+                if not aid or aid in self.agents:
+                    continue
+                pid = a.get('pid')
+                if not pid:
+                    continue
+                try:
+                    pid = int(pid)
+                except Exception:
+                    continue
+                # check if process exists
+                proxy = AgentOrchestrator.ExternalProcessProxy(pid)
+                if proxy.is_alive():
+                    cfg = {
+                        'agent_id': aid,
+                        'symbol': a.get('symbol'),
+                        'timeframe': a.get('timeframe'),
+                        'strategy': a.get('strategy'),
+                        'params': a.get('params') or {},
+                        'risk_per_trade': a.get('risk_per_trade', 0.02),
+                        'scan_interval_minutes': a.get('scan_interval_minutes', 15)
+                    }
+                    self.agents[aid] = {
+                        'agent': None,
+                        'process': proxy,
+                        'config': cfg,
+                        'started_at': a.get('started_at') or datetime.now(),
+                        'status': a.get('status', 'active')
+                    }
+                    attached.append(aid)
+                    logger.info(f"Attached external agent {aid} (PID: {pid}) to orchestrator")
+        return attached
     
     def update_agent_params(self, agent_id: str, params: Dict[str, Any]):
         """
