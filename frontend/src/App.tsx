@@ -257,9 +257,10 @@ function App() {
 if (window.location.pathname.startsWith('/paper')) {
   const root = document.getElementById('root')
   if (root) {
-    // render PaperDashboard instead
-    import('react-dom').then((ReactDOM) => {
-      ReactDOM.render(<PaperDashboard />, root)
+    // render PaperDashboard instead using createRoot
+    import('react-dom/client').then(({ createRoot }) => {
+      const r = createRoot(root)
+      r.render(<PaperDashboard />)
     })
   }
 }
