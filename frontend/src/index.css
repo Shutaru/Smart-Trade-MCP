@@ -95,3 +95,10 @@ pre {
     grid-template-columns: 1fr;
   }
 }
+
+@keyframes modal-pop {
+  0% { transform: translateY(10px) scale(.98); opacity: 0 }
+  60% { transform: translateY(-6px) scale(1.02); opacity: 1 }
+  100% { transform: translateY(0) scale(1); opacity: 1 }
+}
+.animate-modal { animation: modal-pop 280ms cubic-bezier(.2,.8,.2,1); }
