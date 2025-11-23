@@ -396,8 +396,8 @@ class AgentOrchestrator:
                 perf = self.get_agent_performance(agent["agent_id"])
                 agent.update(perf)
                 agents.append(agent)
-         
-         return agents
+
+        return agents
     
     def update_agent_params(self, agent_id: str, params: Dict[str, Any]):
         """

@@ -13,12 +13,24 @@ export default function PaperDashboard() {
 
   useEffect(() => {
     fetchAgents()
+    const interval = setInterval(fetchAgents, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   async function fetchAgents() {
-    const res = await fetch(`${API}/bots`)
-    const data = await res.json()
-    setAgents(data.agents || [])
+    try {
+      // Prefer active-only endpoint if available
+      let res = await fetch(`${API}/bots/active`)
+      if (!res.ok) {
+        res = await fetch(`${API}/bots`)
+      }
+      const data = await res.json()
+      console.debug('Fetched agents:', data)
+      setAgents(data.agents || [])
+    } catch (e) {
+      console.error('Failed to fetch agents', e)
+      setAgents([])
+    }
   }
 
   async function selectAgent(id: string) {
