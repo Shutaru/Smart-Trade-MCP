@@ -370,15 +370,34 @@ class AgentOrchestrator:
             
             agents.append(agent_data)
         
-        # Also get stopped agents from database
+        # Also get agents from database that are NOT in memory.
+        # Include both stopped and active agents recorded in storage so API can display them
+        db_active = self.storage.get_active_agents()
+        for agent in db_active:
+            if agent["agent_id"] not in self.agents:
+                # Mark as active but without in-memory process (PID unknown)
+                perf = self.get_agent_performance(agent["agent_id"])
+                agent_data = {
+                    "agent_id": agent["agent_id"],
+                    "symbol": agent.get("symbol"),
+                    "timeframe": agent.get("timeframe"),
+                    "strategy": agent.get("strategy"),
+                    "status": agent.get("status", "active"),
+                    "pid": None,
+                    "started_at": agent.get("started_at"),
+                    "is_alive": False
+                }
+                agent_data.update(perf)
+                agents.append(agent_data)
+        
         stopped = self.storage.get_stopped_agents()
         for agent in stopped:
             if agent["agent_id"] not in self.agents:
                 perf = self.get_agent_performance(agent["agent_id"])
                 agent.update(perf)
                 agents.append(agent)
-        
-        return agents
+         
+         return agents
     
     def update_agent_params(self, agent_id: str, params: Dict[str, Any]):
         """

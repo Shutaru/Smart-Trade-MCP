@@ -16,14 +16,23 @@ from ..core.logger import logger
 
 
 class AgentStorage:
-    """Storage for agent management and performance tracking."""
-    
-    def __init__(self, db_path: Path = Path("data/agents.db")):
+    """Storage for agent management and performance tracking.
+
+    Default DB path is set relative to the repository root so that all
+    processes (API / orchestrator / agents) use the same file.
+    """
+
+    def __init__(self, db_path: Optional[Path] = None):
         """Initialize agent storage."""
+        if db_path is None:
+            # Resolve repo root from this file: src/agent/agent_storage.py -> repo root = parents[2]
+            repo_root = Path(__file__).resolve().parents[2]
+            db_path = repo_root / "data" / "agents.db"
+
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._create_tables()
-        logger.info(f"Agent storage initialized: {db_path}")
+        logger.info(f"Agent storage initialized: {self.db_path}")
     
     @contextmanager
     def _get_connection(self):
