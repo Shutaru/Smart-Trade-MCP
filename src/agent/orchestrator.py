@@ -97,6 +97,11 @@ class AgentOrchestrator:
                                             self.storage.update_status(agent_id, "active")
                                         except Exception:
                                             pass
+                                        # persist pid
+                                        try:
+                                            self.storage.update_pid(agent_id, new_proc.pid)
+                                        except Exception:
+                                            pass
                                     except Exception as e:
                                         logger.error(f"Failed to restart agent {agent_id}: {e}")
                 
@@ -141,6 +146,11 @@ class AgentOrchestrator:
                 }
                 restored += 1
                 logger.info(f"Restored agent {agent_id} (PID: {process.pid})")
+                # persist pid
+                try:
+                    self.storage.update_pid(agent_id, process.pid)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.error(f"Failed to restore agent {agent_id}: {e}")
         if restored:
@@ -226,7 +236,10 @@ class AgentOrchestrator:
                 "started_at": datetime.now(),
                 "status": "active"
             }
-        
+        try:
+            self.storage.update_pid(agent_id, process.pid)
+        except Exception:
+            pass
         logger.info(f"? Agent {agent_id} launched (PID: {process.pid})")
         
         return agent_id

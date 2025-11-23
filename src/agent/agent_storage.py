@@ -67,6 +67,12 @@ class AgentStorage:
                     last_heartbeat TIMESTAMP
                 )
             """)
+            # Ensure pid column exists for compatibility with older DBs
+            try:
+                cursor.execute("ALTER TABLE agents ADD COLUMN pid INTEGER")
+            except Exception:
+                # column probably exists
+                pass
             
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_agent_status ON agents(status)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_agent_symbol ON agents(symbol)")
@@ -191,6 +197,19 @@ class AgentStorage:
                     self.add_event(agent_id, "params_updated", {"params": params})
                 except Exception:
                     pass
+    
+    def update_pid(self, agent_id: str, pid: int):
+        """Store the OS PID for a running agent in the DB."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT agent_id FROM agents WHERE agent_id = ?", (agent_id,))
+                row = cursor.fetchone()
+                if row:
+                    cursor.execute("UPDATE agents SET pid = ? WHERE agent_id = ?", (int(pid), agent_id))
+                    conn.commit()
+            except Exception:
+                pass
     
     def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
         """Get agent configuration."""

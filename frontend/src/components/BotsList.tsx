@@ -59,7 +59,7 @@ export default function BotsList({ agents, onSelect }: { agents: AgentSummary[];
                     <span className={`px-3 py-1 rounded-full text-sm font-medium ${a.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{a.status}</span>
                   </div>
                 </div>
-                <div className="text-sm small-muted break-words mt-1">{a.timeframe} — ID: <span className="font-mono text-xs break-all">{a.agent_id}</span></div>
+                <div className="text-sm small-muted break-words mt-1">{a.timeframe} - ID: <span className="font-mono text-xs break-all">{a.agent_id}</span></div>
               </div>
             </div>
           ))}
