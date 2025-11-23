@@ -51,7 +51,7 @@ export default function BotsList({ agents, onSelect }: { agents: AgentSummary[];
                 onClick={() => onSelect(a.agent_id)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(a.agent_id) }}
               >
-                <div className="font-semibold">{a.strategy} — {a.symbol} <span className="text-sm small-muted">({a.timeframe})</span></div>
+                <div className="font-semibold">{a.strategy} - {a.symbol} <span className="text-sm small-muted">({a.timeframe})</span></div>
                 <div className="text-sm small-muted">ID: {a.agent_id}</div>
               </div>
             ))}

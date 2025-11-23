@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { createChart, IChartApi, ISeriesApi } from 'lightweight-charts'
+import { createChart } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi } from 'lightweight-charts'
 
 interface Trade {
   id: number
@@ -14,7 +15,7 @@ interface Trade {
 export default function TradingChart({ symbol, timeframe, trades }: { symbol: string; timeframe: string; trades: Trade[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
-  const candleSeriesRef = useRef<ISeriesApi | null>(null)
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
 
   // Fetch candles from API
   async function fetchCandles() {
@@ -50,7 +51,7 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
         grid: { vertLines: { color: grid }, horzLines: { color: grid } },
         rightPriceScale: { borderColor: '#eee' },
         timeScale: { borderColor: '#eee' }
-      })
+      }) as IChartApi
 
       candleSeriesRef.current = chartRef.current.addCandlestickSeries({
         upColor: '#16a34a',
@@ -58,7 +59,7 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
         borderVisible: false,
         wickUpColor: '#16a34a',
         wickDownColor: '#ef4444'
-      })
+      }) as ISeriesApi<'Candlestick'>
 
       const candles = await fetchCandles()
       if (!mounted) return
