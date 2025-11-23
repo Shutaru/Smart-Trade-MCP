@@ -1,0 +1,34 @@
+import React, { useEffect, useRef } from 'react'
+import { createChart, IChartApi, ISeriesApi } from 'lightweight-charts'
+
+export default function MoneyFlowChart({ series }: { series: { time: string; value: number }[] }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+  const lineRef = useRef<ISeriesApi<'Line'> | null>(null)
+
+  useEffect(() => {
+    if (!ref.current) return
+    chartRef.current = createChart(ref.current, { width: ref.current.clientWidth, height: 200, layout: { background: { color: '#fff' }, textColor: '#333' }, timeScale: { borderColor: '#eee' }, rightPriceScale: { borderColor: '#eee' } })
+    lineRef.current = chartRef.current.addLineSeries({ color: '#2b8efc', lineWidth: 2 })
+
+    const data = series.map(s => ({ time: Math.floor(new Date(s.time).getTime() / 1000), value: s.value }))
+    lineRef.current.setData(data)
+
+    const ro = new ResizeObserver(() => chartRef.current && chartRef.current.applyOptions({ width: ref.current!.clientWidth }))
+    ro.observe(ref.current)
+
+    return () => {
+      ro.disconnect()
+      chartRef.current?.remove()
+      chartRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!lineRef.current) return
+    const data = series.map(s => ({ time: Math.floor(new Date(s.time).getTime() / 1000), value: s.value }))
+    lineRef.current.setData(data)
+  }, [series])
+
+  return <div ref={ref} style={{ width: '100%' }} />
+}
