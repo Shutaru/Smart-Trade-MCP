@@ -11,6 +11,7 @@ export default function PaperDashboard() {
   const [selected, setSelected] = useState<string | null>(null)
   const [details, setDetails] = useState<any | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
+  const [lastRaw, setLastRaw] = useState<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function PaperDashboard() {
       if (!res) throw new Error('No response from API')
       const data = await res.json()
       console.debug('Fetched agents:', data)
+      setLastRaw(data)
       setLastError(null)
       // Support different shapes: { agents: [...] } or direct array
       if (Array.isArray(data)) {
@@ -138,6 +140,12 @@ export default function PaperDashboard() {
           {lastError && (
             <div className="mb-4 p-3 rounded bg-yellow-100 text-yellow-800">API error: {lastError}. Check backend or dev server.</div>
           )}
+          <div className="mb-4 p-3 rounded bg-gray-50 text-sm text-gray-700">
+            <div className="font-semibold mb-2">Debug: last fetched response</div>
+            <pre className="whitespace-pre-wrap max-h-40 overflow-auto">{JSON.stringify(lastRaw, null, 2)}</pre>
+            <div className="font-semibold mt-2">Agents array passed to BotsList</div>
+            <pre className="whitespace-pre-wrap max-h-40 overflow-auto">{JSON.stringify(agents, null, 2)}</pre>
+          </div>
           <BotsList agents={agents} onSelect={selectAgent} />
         </div>
 
