@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import MoneyFlowChart from './MoneyFlowChart'
 
 interface AgentSummary {
@@ -9,11 +9,11 @@ interface AgentSummary {
   status: string
   total_trades?: number
   total_pnl?: number
+  performance?: { equity_series?: { time: string; value: number }[] }
 }
 
 export default function BotsList({ agents, onSelect }: { agents: AgentSummary[]; onSelect: (id: string) => void }) {
   const [query, setQuery] = useState('')
-  const [seriesMap, setSeriesMap] = useState<Record<string, { time: string; value: number }[]>>({})
   const filtered = useMemo(() => {
     if (!query) return agents
     const q = query.toLowerCase()
@@ -21,38 +21,6 @@ export default function BotsList({ agents, onSelect }: { agents: AgentSummary[];
   }, [agents, query])
 
   const loading = agents === null || agents === undefined
-
-  useEffect(() => {
-    let mounted = true
-    const controllers: Record<string, AbortController> = {}
-
-    async function fetchSeries(agentId: string) {
-      if (seriesMap[agentId]) return
-      const ctrl = new AbortController()
-      controllers[agentId] = ctrl
-      try {
-        const res = await fetch(`/api/v1/paper/bots/${encodeURIComponent(agentId)}`, { signal: ctrl.signal })
-        if (!res.ok) return
-        const data = await res.json()
-        const series = data?.performance?.equity_series || []
-        if (!mounted) return
-        setSeriesMap(prev => ({ ...prev, [agentId]: series }))
-      } catch (e) {
-        // ignore aborts and errors
-      } finally {
-        delete controllers[agentId]
-      }
-    }
-
-    // fetch for first N visible agents to avoid too many requests
-    const toFetch = filtered.slice(0, 8).map(a => a.agent_id).filter(id => !!id && !seriesMap[id])
-    toFetch.forEach(id => fetchSeries(id))
-
-    return () => {
-      mounted = false
-      Object.values(controllers).forEach(c => c.abort())
-    }
-  }, [filtered, seriesMap])
 
   return (
     <div>
@@ -79,23 +47,19 @@ export default function BotsList({ agents, onSelect }: { agents: AgentSummary[];
             {filtered.map((a) => (
               <div
                 key={a.agent_id}
-                className="w-full p-3 border rounded-lg hover:shadow-md transition cursor-pointer flex items-center gap-4"
+                className="w-full p-4 border rounded-lg hover:shadow-md transition cursor-pointer flex items-center gap-4"
                 role="button"
                 tabIndex={0}
                 onClick={() => onSelect(a.agent_id)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(a.agent_id) }}
               >
-                <div style={{ width: 220, height: 60 }} className="rounded overflow-hidden bg-panel/30 p-1">
-                  {seriesMap[a.agent_id] && seriesMap[a.agent_id].length > 0 ? (
-                    <MoneyFlowChart series={seriesMap[a.agent_id]} />
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-xs small-muted">Loading chart...</div>
-                  )}
+                <div style={{ width: 260, height: 66 }} className="rounded overflow-hidden bg-panel/30 p-2 flex-shrink-0">
+                  <MoneyFlowChart series={(a.performance?.equity_series && a.performance.equity_series.length > 0) ? a.performance.equity_series : [{ time: new Date().toISOString(), value: 0 }]} />
                 </div>
 
-                <div className="flex-1">
-                  <div className="font-semibold">{a.symbol} <span className="text-sm small-muted">| {a.strategy} ({a.timeframe})</span></div>
-                  <div className="text-sm small-muted">ID: {a.agent_id}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">{a.symbol} <span className="text-sm small-muted">| {a.strategy} ({a.timeframe})</span></div>
+                  <div className="text-sm small-muted truncate">ID: {a.agent_id}</div>
                 </div>
 
                 <div className="text-right w-28 small-muted">
