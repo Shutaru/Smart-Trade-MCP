@@ -114,8 +114,8 @@ class AgentOrchestrator:
             # Skip if already in memory
             if agent_id in self.agents:
                 continue
-            # Enforce max agents
-            current_active = len([x for x in self.get_all_agents() if x.get("status") == "active"])
+            # Enforce max agents — count only in-memory active agents to avoid double-counting DB entries
+            current_active = len([x for x in self.agents.values() if x.get("status") == "active"])
             if current_active >= self.max_agents:
                 logger.warning(f"Max agents reached; skipping restore of {agent_id}")
                 continue
@@ -171,8 +171,8 @@ class AgentOrchestrator:
         Returns:
             agent_id
         """
-        # Enforce max agents
-        current_active = len([a for a in self.get_all_agents() if a.get("status") == "active"])
+        # Enforce max agents — count only in-memory active agents
+        current_active = len([a for a in self.agents.values() if a.get("status") == "active"]) if self.agents else 0
         if current_active >= self.max_agents:
             raise RuntimeError(f"Max agents limit reached ({self.max_agents})")
         
