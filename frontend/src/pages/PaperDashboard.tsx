@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import BotsList from '../components/BotsList'
 import TradingChart from '../components/TradingChart'
 import MoneyFlowChart from '../components/MoneyFlowChart'
+import { useTheme } from '../contexts/ThemeContext'
 
 const API = '/api/v1/paper'
 const API_BACKEND = 'http://localhost:8000/api/v1/paper'
@@ -13,6 +14,7 @@ export default function PaperDashboard() {
   const [lastError, setLastError] = useState<string | null>(null)
   const [lastRaw, setLastRaw] = useState<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const { theme, toggle } = useTheme()
 
   useEffect(() => {
     fetchAgents()
@@ -21,47 +23,31 @@ export default function PaperDashboard() {
   }, [])
 
   async function fetchWithFallback(path: string) {
-    // Try backend absolute first (works even if dev server/proxy not running), then relative (proxy)
     const backendPath = path.replace('/api/v1/paper', API_BACKEND)
     try {
       const r1 = await fetch(backendPath)
       if (r1.ok) return r1
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
     try {
       const r2 = await fetch(path)
       if (r2.ok) return r2
       return r2
-    } catch (e) {
-      throw e
-    }
+    } catch (e) { throw e }
   }
 
   async function fetchAgents() {
     try {
-      // Prefer active-only endpoint if available
       let res = await fetchWithFallback(`${API}/bots/active`)
-      if (!res || !res.ok) {
-        res = await fetchWithFallback(`${API}/bots`)
-      }
+      if (!res || !res.ok) res = await fetchWithFallback(`${API}/bots`)
       if (!res) throw new Error('No response from API')
       const data = await res.json()
-      console.debug('Fetched agents:', data)
       setLastRaw(data)
       setLastError(null)
-      // Support different shapes: { agents: [...] } or direct array
-      if (Array.isArray(data)) {
-        setAgents(data)
-      } else if (data && Array.isArray(data.agents)) {
-        setAgents(data.agents)
-      } else if (data && Array.isArray(data.items)) {
-        setAgents(data.items)
-      } else {
-        setAgents([])
-      }
+      if (Array.isArray(data)) setAgents(data)
+      else if (data && Array.isArray(data.agents)) setAgents(data.agents)
+      else if (data && Array.isArray(data.items)) setAgents(data.items)
+      else setAgents([])
     } catch (e: any) {
-      console.error('Failed to fetch agents', e)
       setLastError(String(e?.message || e))
       setAgents([])
     }
@@ -73,156 +59,119 @@ export default function PaperDashboard() {
       let res = await fetchWithFallback(`${API}/bots/${id}`)
       if (!res || !res.ok) throw new Error('Failed to fetch agent details')
       const data = await res.json()
-      // Normalize response: API may return { success, agent, performance } or just { agent, performance }
-      if (data && data.agent) {
-        setDetails(data)
-      } else {
-        // assume response is the agent object itself
-        setDetails({ agent: data, performance: {} })
-      }
+      if (data && data.agent) setDetails(data)
+      else setDetails({ agent: data, performance: {} })
       setLastError(null)
     } catch (e: any) {
-      console.error('Failed to load agent details', e)
       setLastError(String(e?.message || e))
       setDetails(null)
     }
 
-    // connect WS
-    if (wsRef.current) {
-      wsRef.current.close()
-    }
+    if (wsRef.current) { wsRef.current.close() }
     try {
       const host = window.location.hostname || 'localhost'
       const wsUrl = `ws://${host}:8000/api/v1/paper/ws/paper/${id}`
       const ws = new WebSocket(wsUrl)
-      ws.onopen = () => console.log('ws open')
       ws.onmessage = (ev) => {
         const payload = JSON.parse(ev.data)
-        if (payload.type === 'snapshot') {
-          setDetails({ agent: payload.agent, performance: payload.performance, trades: payload.trades })
-        } else if (payload.type === 'event') {
-          // append event or refresh
+        if (payload.type === 'snapshot') setDetails({ agent: payload.agent, performance: payload.performance, trades: payload.trades })
+        else if (payload.type === 'event') {
           const evt = payload.event
-          if (evt['event_type'] === 'trade_open' || evt['event_type'] === 'trade_close') {
-            fetchWithFallback(`${API}/bots/${id}`).then(r => r.json()).then(d => {
-              if (d && d.agent) setDetails(d)
-              else setDetails({ agent: d, performance: {} })
-            })
-          }
-          // heartbeat or other events can update status
+          if (evt['event_type'] === 'trade_open' || evt['event_type'] === 'trade_close') fetchWithFallback(`${API}/bots/${id}`).then(r => r.json()).then(d => { if (d && d.agent) setDetails(d); else setDetails({ agent: d, performance: {} }) })
         }
       }
       wsRef.current = ws
-    } catch (e) {
-      console.warn('WS connection failed', e)
-    }
+    } catch (e) { console.warn('WS failed', e) }
   }
 
-  useEffect(() => {
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-        wsRef.current = null
-      }
-    }
-  }, [selected])
+  useEffect(() => () => { if (wsRef.current) { wsRef.current.close(); wsRef.current = null } }, [selected])
 
   return (
-    <div className="min-h-screen p-8 bg-gray-50">
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="col-span-1">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">Active Bots</h2>
-            <div>
-              <button onClick={fetchAgents} className="bg-primary-500 text-white px-3 py-1 rounded">Refresh</button>
-            </div>
-          </div>
-          {lastError && (
-            <div className="mb-4 p-3 rounded bg-yellow-100 text-yellow-800">API error: {lastError}. Check backend or dev server.</div>
-          )}
-          <div className="mb-4 p-3 rounded bg-gray-50 text-sm text-gray-700">
-            <div className="font-semibold mb-2">Debug: last fetched response</div>
-            <pre className="whitespace-pre-wrap max-h-40 overflow-auto">{JSON.stringify(lastRaw, null, 2)}</pre>
-            <div className="font-semibold mt-2">Agents array passed to BotsList</div>
-            <pre className="whitespace-pre-wrap max-h-40 overflow-auto">{JSON.stringify(agents, null, 2)}</pre>
-          </div>
-          <BotsList agents={agents} onSelect={selectAgent} />
+    <div className="container-wide">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">SmartTrade - Paper Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <div className="text-sm small-muted">Theme: {theme}</div>
+          <button onClick={toggle} className="btn-theme">Toggle Theme</button>
         </div>
+      </div>
 
-        <div className="col-span-2">
+      <div className="grid-3">
+        <aside className="sidebar">
+          <BotsList agents={agents} onSelect={selectAgent} />
+        </aside>
+
+        <main className="content">
           {selected && details ? (
-            <div className="bg-white rounded-2xl shadow-xl p-6">
-              <div className="flex items-start justify-between">
-                <h2 className="text-2xl font-bold mb-4">Bot Details - {selected}</h2>
+            <div className="card-panel">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h2 className="text-lg font-bold">{details.agent.symbol} — {details.agent.strategy}</h2>
+                  <div className="small-muted">{details.agent.agent_id}</div>
+                </div>
                 <div className="text-right">
-                  <div className="text-sm text-gray-500">Status: {details.agent?.status || 'unknown'}</div>
-                  <div className="text-sm text-gray-400">PID: {details.agent?.pid || '-'}</div>
+                  <div className="small-muted">Status: {details.agent.status}</div>
+                  <div className="small-muted">PID: {details.agent.pid || '-'}</div>
                 </div>
               </div>
 
-
-              <div className="grid grid-cols-1 gap-6">
+              <div className="card-panel" style={{ height: 340 }}>
                 <TradingChart symbol={details.agent.symbol} timeframe={details.agent.timeframe} trades={details.trades || []} />
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 border rounded">
-                    <h3 className="font-semibold mb-2">Equity / Money Flow</h3>
-                    <MoneyFlowChart series={(details.performance?.equity_series || [{ time: new Date().toISOString(), value: 0 }])} />
-                  </div>
-
-                  <div className="p-4 border rounded">
-                    <h3 className="font-semibold mb-2">Trades</h3>
-                    <div className="mt-2 max-h-64 overflow-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-gray-600">
-                            <th>Time</th>
-                            <th>Side</th>
-                            <th>Entry</th>
-                            <th>Exit</th>
-                            <th>PnL</th>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                <div className="card-panel">
+                  <h4 className="font-semibold mb-2">Equity / Money Flow</h4>
+                  <MoneyFlowChart series={(details.performance?.equity_series || [{ time: new Date().toISOString(), value: 0 }])} />
+                </div>
+                <div className="card-panel">
+                  <h4 className="font-semibold mb-2">Trades</h4>
+                  <div className="mt-2 max-h-48 overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left small-muted">
+                          <th>Time</th><th>Side</th><th>Entry</th><th>Exit</th><th>PnL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(details.trades || []).map((t: any) => (
+                          <tr key={t.id} className="border-b">
+                            <td className="py-2 small-muted">{t.entry_time}</td>
+                            <td>{t.direction}</td>
+                            <td>{t.entry_price}</td>
+                            <td>{t.exit_price || '-'}</td>
+                            <td className={`font-bold ${t.pnl > 0 ? 'text-green-500' : 'text-red-500'}`}>{t.pnl || '-'}</td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {(details.trades || []).map((t: any) => (
-                            <tr key={t.id} className="border-b">
-                              <td className="py-2">{t.entry_time}</td>
-                              <td>{t.direction}</td>
-                              <td>{t.entry_price}</td>
-                              <td>{t.exit_price || '-'}</td>
-                              <td className={`font-bold ${t.pnl > 0 ? 'text-green-600' : 'text-red-600'}`}>{t.pnl || '-'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="card-panel">
+                  <h4 className="font-semibold mb-2">Summary</h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-3 bg-gray-100 rounded text-center">
+                      <div className="small-muted">Total Trades</div>
+                      <div className="font-bold">{details.performance?.total_trades || 0}</div>
+                    </div>
+                    <div className="p-3 bg-gray-100 rounded text-center">
+                      <div className="small-muted">Win Rate</div>
+                      <div className="font-bold">{details.performance?.win_rate || 0}%</div>
+                    </div>
+                    <div className="p-3 bg-gray-100 rounded text-center">
+                      <div className="small-muted">Total PnL</div>
+                      <div className="font-bold">{details.performance?.total_pnl || 0}</div>
                     </div>
                   </div>
                 </div>
-
-                <div className="p-4 border rounded">
-                  <h3 className="font-semibold mb-2">Summary</h3>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="p-3 bg-gray-50 rounded">
-                      <div className="text-sm text-gray-500">Total Trades</div>
-                      <div className="text-lg font-bold">{details.performance?.total_trades || 0}</div>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded">
-                      <div className="text-sm text-gray-500">Win Rate</div>
-                      <div className="text-lg font-bold">{details.performance?.win_rate || 0}%</div>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded">
-                      <div className="text-sm text-gray-500">Total PnL</div>
-                      <div className="text-lg font-bold">{details.performance?.total_pnl || 0}</div>
-                    </div>
-                  </div>
-                </div>
-
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-2xl shadow-xl p-6">Select a bot to view details</div>
+            <div className="card-panel">
+              <div className="small-muted">Select a bot to view details</div>
+            </div>
           )}
-        </div>
+        </main>
       </div>
     </div>
   )

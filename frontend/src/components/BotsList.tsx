@@ -1,3 +1,5 @@
+import { useState, useMemo } from 'react'
+
 interface AgentSummary {
   agent_id: string
   symbol: string
@@ -9,40 +11,53 @@ interface AgentSummary {
 }
 
 export default function BotsList({ agents, onSelect }: { agents: AgentSummary[]; onSelect: (id: string) => void }) {
+  const [query, setQuery] = useState('')
+  const filtered = useMemo(() => {
+    if (!query) return agents
+    const q = query.toLowerCase()
+    return agents.filter(a => `${a.strategy} ${a.symbol} ${a.timeframe}`.toLowerCase().includes(q))
+  }, [agents, query])
+
+  const loading = agents === null || agents === undefined
+
   return (
-    <div className="bg-white rounded-2xl shadow-xl p-6">
-      <h3 className="text-2xl font-bold mb-4">Active Bots</h3>
-      {agents.length === 0 ? (
-        <div className="text-gray-500">No active bots</div>
-      ) : (
-        <div className="space-y-3">
-          {agents.map((a) => (
-            <div
-              key={a.agent_id}
-              className="flex items-center justify-between border rounded-lg p-3 hover:shadow-lg transition cursor-pointer"
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelect(a.agent_id)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(a.agent_id) }}
-            >
-              <div>
-                <div className="font-semibold">{a.strategy} - {a.symbol} ({a.timeframe})</div>
-                <div className="text-sm text-gray-500">ID: {a.agent_id}</div>
-              </div>
-              <div className="text-right">
-                <div className={`px-3 py-1 rounded-full text-sm ${a.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{a.status}</div>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onSelect(a.agent_id) }}
-                  className="mt-2 ml-3 bg-primary-500 text-white px-4 py-2 rounded-lg hover:opacity-90"
-                >
-                  View
-                </button>
-              </div>
-            </div>
-          ))}
+    <div>
+      <div className="card-panel">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold">Active Bots</h3>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search bots..."
+            className="px-3 py-1 rounded-md border" />
         </div>
-      )}
+
+        {loading ? (
+          <div className="space-y-2">
+            <div className="h-12 bg-gray-100 rounded animate-pulse" />
+            <div className="h-12 bg-gray-100 rounded animate-pulse" />
+            <div className="h-12 bg-gray-100 rounded animate-pulse" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-sm small-muted">No active bots</div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((a) => (
+              <div
+                key={a.agent_id}
+                className="p-3 border rounded-lg hover:shadow-md transition cursor-pointer"
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelect(a.agent_id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(a.agent_id) }}
+              >
+                <div className="font-semibold">{a.strategy} — {a.symbol} <span className="text-sm small-muted">({a.timeframe})</span></div>
+                <div className="text-sm small-muted">ID: {a.agent_id}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
