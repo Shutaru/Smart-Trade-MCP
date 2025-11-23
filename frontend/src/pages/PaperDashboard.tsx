@@ -21,6 +21,8 @@ export default function PaperDashboard() {
 
   const [lastFocusedEl, setLastFocusedEl] = useState<HTMLElement | null>(null)
 
+  const [lastRaw, setLastRaw] = useState<any>(null)
+
   const wsRef = useRef<WebSocket | null>(null)
 
   const { theme, toggle } = useTheme()
@@ -77,6 +79,10 @@ export default function PaperDashboard() {
 
       const data = await res.json()
 
+      console.debug('Fetched agents raw:', data)
+
+      setLastRaw(data)
+
       if (Array.isArray(data)) setAgents(data)
 
       else if (data && Array.isArray(data.agents)) setAgents(data.agents)
@@ -84,6 +90,8 @@ export default function PaperDashboard() {
       else if (data && Array.isArray(data.items)) setAgents(data.items)
 
       else setAgents([])
+
+      console.debug('Normalized agents count:', Array.isArray(data) ? data.length : (data?.agents?.length || 0))
 
     } catch (e: any) {
 
@@ -204,6 +212,31 @@ export default function PaperDashboard() {
         </div>
 
       </div>
+
+
+
+      <div className="mb-4 flex items-center justify-between">
+
+        <div className="text-sm small-muted">Active bots: <strong>{agents.length}</strong></div>
+
+        <div>
+
+          <button onClick={fetchAgents} className="px-3 py-1 rounded bg-primary-500 text-white">Refresh</button>
+
+        </div>
+
+      </div>
+
+
+
+      {/* Debug: raw response (toggleable) */}
+      <details className="mb-4 text-sm">
+
+        <summary className="text-muted cursor-pointer">Debug: last raw response</summary>
+
+        <pre className="max-h-48 overflow-auto text-xs p-2 bg-[#0b0f16] rounded mt-2">{JSON.stringify(lastRaw, null, 2)}</pre>
+
+      </details>
 
 
 
