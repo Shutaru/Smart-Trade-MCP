@@ -18,80 +18,62 @@ async def detect_market_regime(
     timeframe: str = "1h",
     lookback: int = 100,
 ) -> Dict[str, Any]:
-    """
-    Detect current market regime.
-    
-    Analyzes recent market data to classify regime and recommend strategies.
-    
-    Args:
-        symbol: Trading pair
-        timeframe: Candle timeframe
-        lookback: Number of candles to analyze
-        
-    Returns:
-        Dictionary with regime analysis:
-        {
-            "regime": str,  # TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE, CONSOLIDATING
-            "confidence": float,  # 0-1
-            "timestamp": str,
-            "metrics": Dict[str, float],
-            "recommended_strategies": List[str],
-            "avoid_strategies": List[str],
-        }
-        
-    Example (via MCP):
-        >>> result = await detect_market_regime(symbol="BTC/USDT")
-        >>> print(f"Regime: {result['regime']}")
-        >>> print(f"Use strategies: {result['recommended_strategies']}")
-    """
+    """Detect current market regime - OPTIMIZED for MCP speed"""
     logger.info(f"Detecting market regime: {symbol} {timeframe}")
     
     try:
-        # FIX: Add timeout to prevent MCP timeout (60 sec limit)
         async def _detect_with_timeout():
-            # Fetch data (REDUCED from 150 to 100 for speed)
             dm = DataManager()
+            # ? REDUCED limit for speed (100 + 30 = 130 instead of 150)
             df = await dm.fetch_ohlcv(
                 symbol=symbol,
                 timeframe=timeframe,
-                limit=lookback + 50,  # Extra for indicator calculation
-                use_cache=True,  # FIX: Use cache!
+                limit=min(lookback + 30, 130),  # ? Max 130 candles
+                use_cache=True,
             )
             await dm.close()
             
             if df.empty:
                 return {"error": "No market data available"}
             
-            # Calculate required indicators (SKIP GPU for speed)
-            indicators = ['adx', 'atr', 'bollinger', 'ema']
+            # ? Calculate ONLY essential indicators (skip bollinger for speed)
+            indicators = ['adx', 'atr', 'ema']  # ? Removed 'bollinger'
             df = calculate_all_indicators(df, indicators, use_gpu=False)
             
             # Detect regime
             detector = get_regime_detector()
-            analysis = detector.detect(df, lookback=lookback)
+            # ? Use smaller lookback if needed
+            actual_lookback = min(lookback, len(df) - 20)
+            analysis = detector.detect(df, lookback=actual_lookback)
             
             result = analysis.to_dict()
             
             logger.info(
-                f"Regime detected: {result['regime']} "
+                f"? Regime detected: {result['regime']} "
                 f"(confidence: {result['confidence']:.2f})"
             )
             
             return result
         
-        # Run with 50 second timeout (MCP limit is 60 sec)
-        result = await asyncio.wait_for(_detect_with_timeout(), timeout=50.0)
+        # ? REDUCED timeout to 30 seconds (from 50)
+        result = await asyncio.wait_for(_detect_with_timeout(), timeout=30.0)
         return result
         
     except asyncio.TimeoutError:
-        logger.error("Regime detection timed out after 50 seconds")
+        logger.error("? Regime detection timed out after 30 seconds")
         return {
-            "error": "Timeout: Analysis took too long (>50 sec)",
-            "suggestion": "Try with smaller lookback or use cached data"
+            "error": "Timeout: Analysis took >30 sec",
+            "suggestion": "Try with smaller lookback (e.g., 50 instead of 100)",
+            "regime": "UNKNOWN",  # ? Return default so Claude can continue
+            "confidence": 0.0,
         }
     except Exception as e:
-        logger.error(f"Regime detection failed: {e}", exc_info=True)
-        return {"error": str(e)}
+        logger.error(f"? Regime detection failed: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "regime": "UNKNOWN",
+            "confidence": 0.0,
+        }
 
 
 async def detect_historical_regimes(

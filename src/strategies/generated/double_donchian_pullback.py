@@ -11,21 +11,96 @@ from ...core.logger import logger
 
 class DoubleDonchianPullback(BaseStrategy):
     def __init__(self, config: StrategyConfig = None):
+        """Initialize DoubleDonchianPullback strategy."""
         super().__init__(config)
         
+        # OPTIMIZABLE PARAMETERS
+        self.donchian_fast = self.config.get("donchian_fast", 10)
+        self.donchian_slow = self.config.get("donchian_slow", 20)
+        self.ema_period = self.config.get("ema_period", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         return ["donchian", "atr"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         signals, pos = [], None
-        for i in range(1, len(df)):
+        
+        for i in range(max(self.donchian_slow, self.ema_period), len(df)):
             r = df.iloc[i]
             close = r["close"]
-            don_m, atr = r.get("donchian_middle", close), r.get("atr", close*0.02)
-            if pos is None and abs(close - don_m) < atr * 0.5 and close > don_m:
-                sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
-                pos = "LONG"
+            
+            # Get Donchian middle (average of upper and lower)
+            don_m = r.get("donchian_middle", close)
+            don_u = r.get("donchian_upper", close)
+            don_l = r.get("donchian_lower", close)
+            
+            # ? USE ema_period parameter for trend confirmation
+            ema_trend = r.get(f"ema_{self.ema_period}", close)
+            atr = r.get("atr", close*0.02)
+            
+            # Pullback to Donchian middle (mean reversion within trend)
+            near_middle = abs(close - don_m) < atr * 0.5
+            
+            if pos is None and near_middle:
+                # LONG: Price at Donchian middle + uptrend
+                if close > don_m and close > ema_trend:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        0.7, 
+                        sl, 
+                        tp, 
+                        {
+                            "donchian_fast": self.donchian_fast,
+                            "donchian_slow": self.donchian_slow,
+                            "ema_period": self.ema_period,
+                            "reason": "Pullback to Donchian middle in uptrend"
+                        }
+                    ))
+                    pos = "LONG"
+                
+                # SHORT: Price at Donchian middle + downtrend
+                elif close < don_m and close < ema_trend:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        0.7, 
+                        sl, 
+                        tp, 
+                        {
+                            "donchian_fast": self.donchian_fast,
+                            "donchian_slow": self.donchian_slow,
+                            "ema_period": self.ema_period,
+                            "reason": "Pullback to Donchian middle in downtrend"
+                        }
+                    ))
+                    pos = "SHORT"
+            
+            # Exit when breaks opposite Donchian extreme (trend reversed)
+            elif pos == "LONG" and close < don_l:
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Broke Donchian lower (trend reversed)"}
+                ))
+                pos = None
+            
+            elif pos == "SHORT" and close > don_u:
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Broke Donchian upper (trend reversed)"}
+                ))
+                pos = None
+                
         logger.info(f"DoubleDonchianPullback: {len(signals)} signals")
         return signals
 

@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Auto-register all 38 generated strategies"""
+"""Auto-register all 37 generated strategies (1 was removed: ema_cloud_trend)"""
 
 from ...core.logger import logger
+from ..base import StrategyConfig  # ? Import StrategyConfig
+import importlib
 
 
 def register_all_generated_strategies(registry_instance):
-    """Register all 38 generated strategies automatically."""
+    """Register all 37 generated strategies automatically (1 was removed: ema_cloud_trend)."""
     
-    # Define all 38 strategies with their metadata
+    # Define all 37 strategies with their metadata (was 38, removed ema_cloud_trend)
     strategies_to_register = [
         # Mean Reversion (5)
         ("bollinger_mean_reversion", "BollingerMeanReversion", "mean_reversion", "BB mean reversion 60-70% win rate"),
@@ -16,8 +18,7 @@ def register_all_generated_strategies(registry_instance):
         ("mfi_divergence_reversion", "MfiDivergenceReversion", "mean_reversion", "MFI divergence 52-62% win rate"),
         ("stoch_signal_reversal", "StochSignalReversal", "mean_reversion", "Stochastic crossover reversal"),
         
-        # Trend Following (5)
-        ("ema_cloud_trend", "EmaCloudTrend", "trend_following", "EMA cloud pullback 50-60% win rate"),
+        # Trend Following (4) - ema_cloud_trend removed
         ("donchian_continuation", "DonchianContinuation", "trend_following", "Donchian breakout continuation"),
         ("macd_zero_trend", "MacdZeroTrend", "trend_following", "MACD zero line trend"),
         ("adx_trend_filter_plus", "AdxTrendFilterPlus", "trend_following", "ADX trend filter 48-58% win rate"),
@@ -63,21 +64,37 @@ def register_all_generated_strategies(registry_instance):
     registered = 0
     for strategy_name, class_name, category, description in strategies_to_register:
         try:
-            # Dynamic import
-            module = __import__(f"src.strategies.generated.{strategy_name}", fromlist=[class_name])
+            # ? FIX: Use importlib for proper imports
+            module = importlib.import_module(f'.{strategy_name}', package='src.strategies.generated')
             strategy_class = getattr(module, class_name)
             
-            # Register
+            # ? FIX: Extract default params from strategy instance
+            # Create temp instance to read default values from __init__
+            temp_config = StrategyConfig()
+            temp_instance = strategy_class(temp_config)
+            
+            # Extract all params that were set (NOT sl_atr_mult/tp_rr_mult, those are universal)
+            default_params = {}
+            for attr_name in dir(temp_instance):
+                if not attr_name.startswith('_') and attr_name not in ['config', 'calculate_exit_levels', 'backtest_signals', 'get_required_indicators', 'generate_signals']:
+                    attr_value = getattr(temp_instance, attr_name, None)
+                    # Only include simple types (int, float, str, bool)
+                    if isinstance(attr_value, (int, float, str, bool)):
+                        # Skip sl/tp as they're universal
+                        if attr_name not in ['sl_atr_mult', 'tp_rr_mult']:
+                            default_params[attr_name] = attr_value
+            
+            # Register with extracted defaults
             registry_instance.register(
                 name=strategy_name,
                 strategy_class=strategy_class,
                 category=category,
                 description=description,
-                default_params={},
+                default_params=default_params,  # ? Now has real defaults!
             )
             registered += 1
             
         except (ImportError, AttributeError) as e:
-            logger.warning(f"Could not register {strategy_name}: {e}")
+            logger.debug(f"Skipping {strategy_name}: {e}")
     
-    logger.info(f"Auto-registered {registered}/38 generated strategies")
+    logger.info(f"? Auto-registered {registered}/37 generated strategies")

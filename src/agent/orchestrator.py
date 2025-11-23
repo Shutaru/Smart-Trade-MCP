@@ -8,6 +8,8 @@ Each agent is a dedicated process for one symbol + timeframe + strategy.
 
 import asyncio
 import multiprocessing
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -31,10 +33,15 @@ class AgentOrchestrator:
     - Persist agent state to database
     """
     
-    def __init__(self, db_path: Path = Path("data/agents.db")):
+    def __init__(self, db_path: Path = Path("data/agents.db"), max_agents: int = 20, auto_restart: bool = True):
         """Initialize orchestrator."""
         self.agents: Dict[str, Dict[str, Any]] = {}
         self.storage = AgentStorage(db_path)
+        self.max_agents = max_agents
+        self.auto_restart = auto_restart
+        self._lock = threading.Lock()
+        self._monitor_thread = None
+        self._stop_monitor = threading.Event()
         
         # Setup signal handlers
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -42,7 +49,102 @@ class AgentOrchestrator:
         
         logger.info("=" * 80)
         logger.info("AGENT ORCHESTRATOR - INITIALIZED")
+        logger.info(f"Max agents: {self.max_agents} | Auto-restart: {self.auto_restart}")
         logger.info("=" * 80)
+        
+        # Restore any active agents from storage (auto-restart behaviour)
+        try:
+            self._restore_active_agents()
+        except Exception as e:
+            logger.warning(f"Failed to restore agents on init: {e}")
+        
+        # Start monitor thread
+        self._start_monitor()
+    
+    def _start_monitor(self):
+        """Start background monitor thread to supervise agents."""
+        if self._monitor_thread is None:
+            self._monitor_thread = threading.Thread(target=self._monitor_agents_loop, daemon=True)
+            self._monitor_thread.start()
+            logger.info("Agent monitor thread started")
+    
+    def _monitor_agents_loop(self):
+        """Loop that monitors agent processes and restarts if needed."""
+        while not self._stop_monitor.is_set():
+            try:
+                with self._lock:
+                    for agent_id, info in list(self.agents.items()):
+                        proc = info.get("process")
+                        status = info.get("status")
+                        # If process died but agent is marked active, restart
+                        if status == "active":
+                            if proc is None or not proc.is_alive():
+                                logger.warning(f"Agent {agent_id} process not alive. Auto-restart enabled={self.auto_restart}")
+                                if self.auto_restart:
+                                    # Restart the agent process
+                                    try:
+                                        cfg = info.get("config")
+                                        logger.info(f"Restarting agent {agent_id}...")
+                                        new_agent = TradingAgent(**cfg)
+                                        new_proc = multiprocessing.Process(target=new_agent.run, name=f"Agent-{agent_id}")
+                                        new_proc.start()
+                                        info["agent"] = new_agent
+                                        info["process"] = new_proc
+                                        info["started_at"] = datetime.now()
+                                        logger.info(f"Agent {agent_id} restarted (PID: {new_proc.pid})")
+                                        # update storage started_at
+                                        try:
+                                            self.storage.update_status(agent_id, "active")
+                                        except Exception:
+                                            pass
+                                    except Exception as e:
+                                        logger.error(f"Failed to restart agent {agent_id}: {e}")
+                
+            except Exception as e:
+                logger.error(f"Error in monitor loop: {e}", exc_info=True)
+            # Sleep before next check
+            time.sleep(5)
+    
+    def _restore_active_agents(self):
+        """Restore agents with status 'active' from storage at startup."""
+        active_agents = self.storage.get_active_agents()
+        restored = 0
+        for a in active_agents:
+            agent_id = a.get("agent_id")
+            # Skip if already in memory
+            if agent_id in self.agents:
+                continue
+            # Enforce max agents
+            current_active = len([x for x in self.get_all_agents() if x.get("status") == "active"])
+            if current_active >= self.max_agents:
+                logger.warning(f"Max agents reached; skipping restore of {agent_id}")
+                continue
+            try:
+                cfg = {
+                    "agent_id": agent_id,
+                    "symbol": a.get("symbol"),
+                    "timeframe": a.get("timeframe"),
+                    "strategy": a.get("strategy"),
+                    "params": a.get("params") or {},
+                    "risk_per_trade": a.get("risk_per_trade", 0.02),
+                    "scan_interval_minutes": a.get("scan_interval_minutes", 15)
+                }
+                agent = TradingAgent(**cfg)
+                process = multiprocessing.Process(target=agent.run, name=f"Agent-{agent_id}")
+                process.start()
+                self.agents[agent_id] = {
+                    "agent": agent,
+                    "process": process,
+                    "config": cfg,
+                    "started_at": datetime.now(),
+                    "status": "active"
+                }
+                restored += 1
+                logger.info(f"Restored agent {agent_id} (PID: {process.pid})")
+            except Exception as e:
+                logger.error(f"Failed to restore agent {agent_id}: {e}")
+        if restored:
+            logger.info(f"Restored {restored} active agents from storage")
     
     async def launch_agent(
         self,
@@ -51,7 +153,8 @@ class AgentOrchestrator:
         strategy: str,
         params: Dict[str, Any],
         risk_per_trade: float = 0.02,
-        scan_interval_minutes: int = 15
+        scan_interval_minutes: int = 15,
+        agent_id: Optional[str] = None
     ) -> str:
         """
         Launch a new dedicated trading agent.
@@ -63,12 +166,18 @@ class AgentOrchestrator:
             params: Strategy parameters (optimized)
             risk_per_trade: Risk per trade
             scan_interval_minutes: Scan frequency
+            agent_id: Optional existing agent id (used for restarts)
         
         Returns:
             agent_id
         """
-        # Generate unique agent ID
-        agent_id = self._generate_agent_id(symbol, timeframe, strategy)
+        # Enforce max agents
+        current_active = len([a for a in self.get_all_agents() if a.get("status") == "active"])
+        if current_active >= self.max_agents:
+            raise RuntimeError(f"Max agents limit reached ({self.max_agents})")
+        
+        # Use provided agent_id or generate new
+        agent_id = agent_id or self._generate_agent_id(symbol, timeframe, strategy)
         
         logger.info(f"?? Launching agent: {agent_id}")
         logger.info(f"   Symbol: {symbol}")
@@ -87,8 +196,16 @@ class AgentOrchestrator:
             "scan_interval_minutes": scan_interval_minutes
         }
         
-        # Save to database
-        self.storage.add_agent(agent_config)
+        # Save to database (if new)
+        try:
+            existing = self.storage.get_agent(agent_id)
+            if not existing:
+                self.storage.add_agent(agent_config)
+            else:
+                # Make sure status active
+                self.storage.update_status(agent_id, "active")
+        except Exception as e:
+            logger.warning(f"Failed to persist agent {agent_id}: {e}")
         
         # Create agent instance
         agent = TradingAgent(**agent_config)
@@ -101,13 +218,14 @@ class AgentOrchestrator:
         process.start()
         
         # Store agent info
-        self.agents[agent_id] = {
-            "agent": agent,
-            "process": process,
-            "config": agent_config,
-            "started_at": datetime.now(),
-            "status": "active"
-        }
+        with self._lock:
+            self.agents[agent_id] = {
+                "agent": agent,
+                "process": process,
+                "config": agent_config,
+                "started_at": datetime.now(),
+                "status": "active"
+            }
         
         logger.info(f"? Agent {agent_id} launched (PID: {process.pid})")
         
@@ -122,6 +240,11 @@ class AgentOrchestrator:
             reason: Reason for stopping
         """
         if agent_id not in self.agents:
+            # If not in memory, still update DB
+            try:
+                self.storage.update_status(agent_id, "stopped", reason)
+            except Exception:
+                pass
             raise ValueError(f"Agent {agent_id} not found")
         
         logger.info(f"?? Stopping agent: {agent_id}")
@@ -131,13 +254,15 @@ class AgentOrchestrator:
         agent_info = self.agents[agent_id]
         
         # Terminate process
-        if agent_info["process"].is_alive():
-            agent_info["process"].terminate()
-            agent_info["process"].join(timeout=5)
-            
-            # Force kill if still alive
-            if agent_info["process"].is_alive():
-                agent_info["process"].kill()
+        proc = agent_info.get("process")
+        if proc and proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=5)
+            if proc.is_alive():
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
         
         # Update status
         agent_info["status"] = "stopped"
@@ -145,7 +270,10 @@ class AgentOrchestrator:
         agent_info["stop_reason"] = reason
         
         # Update database
-        self.storage.update_status(agent_id, "stopped", reason)
+        try:
+            self.storage.update_status(agent_id, "stopped", reason)
+        except Exception:
+            pass
         
         logger.info(f"? Agent {agent_id} stopped")
     
@@ -185,21 +313,21 @@ class AgentOrchestrator:
         
         # Calculate metrics
         total_trades = len(trades)
-        winning_trades = sum(1 for t in trades if t["pnl"] > 0)
-        losing_trades = sum(1 for t in trades if t["pnl"] < 0)
+        winning_trades = sum(1 for t in trades if t.get("pnl") and t["pnl"] > 0)
+        losing_trades = sum(1 for t in trades if t.get("pnl") and t["pnl"] < 0)
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
-        total_pnl = sum(t["pnl"] for t in trades)
+        total_pnl = sum((t.get("pnl") or 0) for t in trades)
         
-        wins = [t["pnl"] for t in trades if t["pnl"] > 0]
-        losses = [t["pnl"] for t in trades if t["pnl"] < 0]
+        wins = [t.get("pnl") for t in trades if t.get("pnl") and t["pnl"] > 0]
+        losses = [t.get("pnl") for t in trades if t.get("pnl") and t["pnl"] < 0]
         
         avg_win = sum(wins) / len(wins) if wins else 0
         avg_loss = sum(losses) / len(losses) if losses else 0
         
         # Calculate Sharpe ratio (simplified)
         import numpy as np
-        returns = [t["pnl"] for t in trades]
+        returns = [t.get("pnl") or 0 for t in trades]
         sharpe = (np.mean(returns) / np.std(returns)) if len(returns) > 1 else 0
         
         # Max drawdown

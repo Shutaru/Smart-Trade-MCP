@@ -21,9 +21,14 @@ class MfiImpulseMomentum(BaseStrategy):
         """Initialize MfiImpulseMomentum strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+        # OPTIMIZABLE PARAMETERS
+        self.mfi_period = self.config.get("mfi_period", 14)
+        self.mfi_threshold_high = self.config.get("mfi_threshold_high", 80)
+        self.mfi_threshold_low = self.config.get("mfi_threshold_low", 20)
+        self.ema_period = self.config.get("ema_period", 20)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ["mfi", "ema", "atr"]
@@ -39,44 +44,100 @@ class MfiImpulseMomentum(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
-        for i in range(5, len(df)):  # Need history for MFI surge detection
+        
+        for i in range(max(5, self.mfi_period), len(df)):
             r = df.iloc[i]
-            close, mfi = r["close"], r.get("mfi", 50)
+            close = r["close"]
+            mfi = r.get("mfi", 50)
+            # ? USE ema_period parameter
+            ema_val = r.get(f"ema_{self.ema_period}", close)
             atr = r.get("atr", close*0.02)
             
-            # FIX: Detect MFI impulse (sharp rise/fall)
+            # MFI impulse detection (5-bar surge)
             mfi_5ago = df.iloc[i-5].get("mfi", 50)
             mfi_surge = mfi - mfi_5ago
             
+            # Trend confirmation
+            bullish_trend = close > ema_val
+            bearish_trend = close < ema_val
+            
             if pos is None:
-                # FIX: Removed EMA filter, focus on MFI impulse
-                # LONG: MFI surge > 15 points in 5 bars
-                if mfi_surge > 10 and mfi < 75:  # Relaxed from 15, avoid extreme overbought
+                # ? USE mfi_threshold_low and mfi_threshold_high parameters
+                # LONG: MFI surge from oversold + bullish trend
+                mfi_oversold_bounce = (
+                    mfi_surge > 10 and  # Strong surge
+                    mfi < self.mfi_threshold_high and  # Not overbought yet
+                    bullish_trend  # Price above EMA
+                )
+                
+                if mfi_oversold_bounce:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, 
-                                        {"mfi": mfi, "mfi_surge": mfi_surge}))
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        min(1.0, abs(mfi_surge) / 20),  # Confidence based on surge strength
+                        sl, 
+                        tp, 
+                        {
+                            "mfi": mfi,
+                            "mfi_surge": mfi_surge,
+                            "mfi_threshold_high": self.mfi_threshold_high,
+                            "ema_period": self.ema_period
+                        }
+                    ))
                     pos = "LONG"
-                # SHORT: MFI drop > 15 points in 5 bars
-                elif mfi_surge < -10 and mfi > 25:  # Avoid extreme oversold
+                
+                # SHORT: MFI drop from overbought + bearish trend
+                mfi_overbought_drop = (
+                    mfi_surge < -10 and  # Strong drop
+                    mfi > self.mfi_threshold_low and  # Not oversold yet
+                    bearish_trend  # Price below EMA
+                )
+                
+                if mfi_overbought_drop:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, 
-                                        {"mfi": mfi, "mfi_surge": mfi_surge}))
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        min(1.0, abs(mfi_surge) / 20),
+                        sl, 
+                        tp, 
+                        {
+                            "mfi": mfi,
+                            "mfi_surge": mfi_surge,
+                            "mfi_threshold_low": self.mfi_threshold_low,
+                            "ema_period": self.ema_period
+                        }
+                    ))
                     pos = "SHORT"
             
-            # FIX: ADD EXIT LOGIC - exit when MFI surge reverses
+            # Exit when MFI momentum reverses or hits opposite extreme
             elif pos == "LONG":
                 current_surge = mfi - df.iloc[i-5].get("mfi", 50)
-                if current_surge < -5:  # MFI dropped significantly
-                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
-                                        metadata={"reason": "MFI momentum reversed"}))
+                # ? Exit if surge reverses or MFI overbought
+                if current_surge < -5 or mfi > self.mfi_threshold_high:
+                    signals.append(Signal(
+                        SignalType.CLOSE_LONG, 
+                        r["timestamp"], 
+                        close,
+                        metadata={"reason": "MFI momentum reversed or overbought", "mfi": mfi}
+                    ))
                     pos = None
             
             elif pos == "SHORT":
                 current_surge = mfi - df.iloc[i-5].get("mfi", 50)
-                if current_surge > 5:  # MFI rose significantly
-                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
-                                        metadata={"reason": "MFI momentum reversed"}))
+                # ? Exit if surge reverses or MFI oversold
+                if current_surge > 5 or mfi < self.mfi_threshold_low:
+                    signals.append(Signal(
+                        SignalType.CLOSE_SHORT, 
+                        r["timestamp"], 
+                        close,
+                        metadata={"reason": "MFI momentum reversed or oversold", "mfi": mfi}
+                    ))
                     pos = None
+                    
         logger.info(f"MfiImpulseMomentum: {len(signals)} signals")
         return signals
 

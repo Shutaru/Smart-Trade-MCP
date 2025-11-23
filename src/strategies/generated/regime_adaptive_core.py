@@ -17,9 +17,15 @@ class RegimeAdaptiveCore(BaseStrategy):
         """Initialize RegimeAdaptiveCore strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+        # OPTIMIZABLE PARAMETERS
+        self.adx_period = self.config.get("adx_period", 14)
+        self.adx_threshold_trending = self.config.get("adx_threshold_trending", 25)
+        self.adx_threshold_ranging = self.config.get("adx_threshold_ranging", 20)
+        self.atr_period = self.config.get("atr_period", 14)
+        self.regime_lookback = self.config.get("regime_lookback", 100)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ["adx", "ema", "rsi", "atr"]
@@ -35,51 +41,131 @@ class RegimeAdaptiveCore(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
-        for i in range(1, len(df)):
+        
+        for i in range(max(self.adx_period, self.regime_lookback), len(df)):
             r = df.iloc[i]
             close = r["close"]
-            adx, ema200, rsi, atr = r.get("adx", 0), r.get("ema_200", close), r.get("rsi", 50), r.get("atr", close*0.02)
-            trending = adx > 25
-            ranging = adx <= 25
+            adx = r.get("adx", 0)
+            ema_200 = r.get("ema_200", close)
+            rsi = r.get("rsi", 50)
+            atr = r.get("atr", close*0.02)
+            
+            # ? USE adx_threshold parameters for regime detection
+            trending = adx > self.adx_threshold_trending
+            ranging = adx <= self.adx_threshold_ranging
             
             if pos is None:
-                # TRENDING regime - follow trend
-                if trending and close > ema200 and rsi > 50:
-                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, 
-                                        {"regime": "trending"}))
-                    pos = "LONG"
-                elif trending and close < ema200 and rsi < 50:
-                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp,
-                                        {"regime": "trending"}))
-                    pos = "SHORT"
-                # RANGING regime - mean reversion
-                elif ranging and rsi < 30:
-                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp,
-                                        {"regime": "ranging"}))
-                    pos = "LONG"
-                elif ranging and rsi > 70:
-                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp,
-                                        {"regime": "ranging"}))
-                    pos = "SHORT"
+                # TRENDING regime - follow trend (trend following strategy)
+                if trending:
+                    # LONG: Uptrend + momentum
+                    if close > ema_200 and rsi > 50:
+                        sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                        signals.append(Signal(
+                            SignalType.LONG, 
+                            r["timestamp"], 
+                            close, 
+                            min(1.0, adx / 40),  # Confidence based on trend strength
+                            sl, 
+                            tp, 
+                            {
+                                "regime": "trending",
+                                "adx": adx,
+                                "adx_threshold_trending": self.adx_threshold_trending
+                            }
+                        ))
+                        pos = "LONG"
+                    
+                    # SHORT: Downtrend + momentum
+                    elif close < ema_200 and rsi < 50:
+                        sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                        signals.append(Signal(
+                            SignalType.SHORT, 
+                            r["timestamp"], 
+                            close, 
+                            min(1.0, adx / 40),
+                            sl, 
+                            tp,
+                            {
+                                "regime": "trending",
+                                "adx": adx,
+                                "adx_threshold_trending": self.adx_threshold_trending
+                            }
+                        ))
+                        pos = "SHORT"
+                
+                # RANGING regime - mean reversion strategy
+                elif ranging:
+                    # LONG: RSI oversold (mean reversion)
+                    if rsi < 30:
+                        sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                        signals.append(Signal(
+                            SignalType.LONG, 
+                            r["timestamp"], 
+                            close, 
+                            0.7, 
+                            sl, 
+                            tp,
+                            {
+                                "regime": "ranging",
+                                "adx": adx,
+                                "adx_threshold_ranging": self.adx_threshold_ranging,
+                                "rsi": rsi
+                            }
+                        ))
+                        pos = "LONG"
+                    
+                    # SHORT: RSI overbought (mean reversion)
+                    elif rsi > 70:
+                        sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                        signals.append(Signal(
+                            SignalType.SHORT, 
+                            r["timestamp"], 
+                            close, 
+                            0.7, 
+                            sl, 
+                            tp,
+                            {
+                                "regime": "ranging",
+                                "adx": adx,
+                                "adx_threshold_ranging": self.adx_threshold_ranging,
+                                "rsi": rsi
+                            }
+                        ))
+                        pos = "SHORT"
             
-            # ADD EXIT LOGIC - exit when regime changes
+            # Exit when regime changes or conditions invalidate
             elif pos == "LONG":
-                regime_changed = (trending and close < ema200) or (ranging and rsi > 70)
+                # Exit if trend reversed (in trending) or RSI extreme (in ranging)
+                regime_changed = (trending and close < ema_200) or (ranging and rsi > 70)
+                
                 if regime_changed:
-                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
-                                        metadata={"reason": "Regime changed"}))
+                    signals.append(Signal(
+                        SignalType.CLOSE_LONG, 
+                        r["timestamp"], 
+                        close,
+                        metadata={
+                            "reason": "Regime conditions changed",
+                            "current_regime": "trending" if trending else "ranging"
+                        }
+                    ))
                     pos = None
             
             elif pos == "SHORT":
-                regime_changed = (trending and close > ema200) or (ranging and rsi < 30)
+                # Exit if trend reversed (in trending) or RSI extreme (in ranging)
+                regime_changed = (trending and close > ema_200) or (ranging and rsi < 30)
+                
                 if regime_changed:
-                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
-                                        metadata={"reason": "Regime changed"}))
+                    signals.append(Signal(
+                        SignalType.CLOSE_SHORT, 
+                        r["timestamp"], 
+                        close,
+                        metadata={
+                            "reason": "Regime conditions changed",
+                            "current_regime": "trending" if trending else "ranging"
+                        }
+                    ))
                     pos = None
+                    
         logger.info(f"RegimeAdaptiveCore: {len(signals)} signals")
         return signals
 

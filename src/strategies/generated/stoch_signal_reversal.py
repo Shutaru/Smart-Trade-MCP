@@ -13,10 +13,18 @@ class StochSignalReversal(BaseStrategy):
     """Stochastic %K crosses %D in extreme zones with EMA + RSI confirmation"""
     
     def __init__(self, config: StrategyConfig = None):
+        """Initialize StochSignalReversal strategy."""
         super().__init__(config)
-        self.config.stop_loss_atr_mult = 1.6
-        self.config.take_profit_rr_ratio = 1.6
         
+        # OPTIMIZABLE PARAMETERS
+        self.stoch_k = self.config.get("stoch_k", 14)
+        self.stoch_d = self.config.get("stoch_d", 3)
+        self.stoch_oversold = self.config.get("stoch_oversold", 20)
+        self.stoch_overbought = self.config.get("stoch_overbought", 80)
+        self.rsi_confirm = self.config.get("rsi_confirm", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         return ["stochastic", "ema", "rsi", "atr"]
     
@@ -34,7 +42,7 @@ class StochSignalReversal(BaseStrategy):
             if pos is None:
                 # FIX: More restrictive - need trend confirmation
                 k_cross_above = stoch_k_prev <= stoch_d_prev and stoch_k > stoch_d
-                deep_oversold = stoch_k < 20 and stoch_d < 20  # Very oversold
+                deep_oversold = stoch_k < self.stoch_oversold and stoch_d < self.stoch_oversold  # Very oversold
                 uptrend = close > ema_50  # Trend confirmation
                 rsi_ok = 30 < rsi < 60  # Neutral to slightly bullish
                 
@@ -46,7 +54,7 @@ class StochSignalReversal(BaseStrategy):
                 
                 # FIX: More restrictive
                 k_cross_below = stoch_k_prev >= stoch_d_prev and stoch_k < stoch_d
-                deep_overbought = stoch_k > 80 and stoch_d > 80  # Very overbought
+                deep_overbought = stoch_k > self.stoch_overbought and stoch_d > self.stoch_overbought  # Very overbought
                 downtrend = close < ema_50  # Trend confirmation
                 rsi_ok_short = 40 < rsi < 70  # Neutral to slightly bearish
                 
@@ -57,11 +65,11 @@ class StochSignalReversal(BaseStrategy):
                     pos = "SHORT"
             
             # Exit when stochastic exits extreme zone
-            elif pos == "LONG" and stoch_k > 80:  # Reached overbought
+            elif pos == "LONG" and stoch_k > self.stoch_overbought:  # Reached overbought
                 signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, 
                                     metadata={"reason": "Stoch overbought"}))
                 pos = None
-            elif pos == "SHORT" and stoch_k < 20:  # Reached oversold
+            elif pos == "SHORT" and stoch_k < self.stoch_oversold:  # Reached oversold
                 signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, 
                                     metadata={"reason": "Stoch oversold"}))
                 pos = None

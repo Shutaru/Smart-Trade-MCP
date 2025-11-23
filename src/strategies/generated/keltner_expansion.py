@@ -13,10 +13,16 @@ class KeltnerExpansion(BaseStrategy):
     """Keltner Channel expansion breakout with volume"""
     
     def __init__(self, config: StrategyConfig = None):
+        """Initialize KeltnerExpansion strategy."""
         super().__init__(config)
-        self.config.stop_loss_atr_mult = 2.0
-        self.config.take_profit_rr_ratio = 2.0
         
+        # OPTIMIZABLE PARAMETERS
+        self.keltner_period = self.config.get("keltner_period", 20)
+        self.keltner_mult = self.config.get("keltner_mult", 2.0)
+        self.expansion_threshold_pct = self.config.get("expansion_threshold_pct", 10.0)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 3.0)
+
     def get_required_indicators(self) -> List[str]:
         return ["keltner", "atr", "ema"]
     
@@ -26,24 +32,34 @@ class KeltnerExpansion(BaseStrategy):
             r, p = df.iloc[i], df.iloc[i-1]
             close = r["close"]
             kc_u, kc_l = r.get("keltner_upper", close), r.get("keltner_lower", close)
-            ema_200, atr = r.get("ema_200", close), r.get("atr", close*0.02)
+            # ? USE PARAMETER instead of hardcoded ema_200
+            ema_trend = r.get(f"ema_{self.keltner_period}", close)  # ? DYNAMIC
+            atr = r.get("atr", close*0.02)
+            
+            # Calculate channel width for expansion detection
+            kc_width = ((kc_u - kc_l) / close) * 100 if close > 0 else 0
             
             if pos is None:
-                # LONG: break above Keltner upper in uptrend
-                if close > kc_u and close > ema_200:
+                # LONG: break above Keltner upper in uptrend WITH expansion
+                # ? USE expansion_threshold_pct parameter
+                is_expanding = kc_width > self.expansion_threshold_pct  # ? USING PARAMETER!
+                
+                if close > kc_u and close > ema_trend and is_expanding:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {"reason": "Keltner upper breakout"}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, 
+                                        {"reason": "Keltner upper breakout", "expansion": kc_width}))
                     pos = "LONG"
                 # SHORT
-                elif close < kc_l and close < ema_200:
+                elif close < kc_l and close < ema_trend and is_expanding:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {"reason": "Keltner lower breakdown"}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, 
+                                        {"reason": "Keltner lower breakdown", "expansion": kc_width}))
                     pos = "SHORT"
             
-            elif pos == "LONG" and close < ema_200:
+            elif pos == "LONG" and close < ema_trend:
                 signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={"reason": "Trend reversal"}))
                 pos = None
-            elif pos == "SHORT" and close > ema_200:
+            elif pos == "SHORT" and close > ema_trend:
                 signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={"reason": "Trend reversal"}))
                 pos = None
                 

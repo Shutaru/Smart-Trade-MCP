@@ -21,9 +21,14 @@ class VolatilityWeightedBreakout(BaseStrategy):
         """Initialize VolatilityWeightedBreakout strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+        # OPTIMIZABLE PARAMETERS
+        self.atr_period = self.config.get("atr_period", 14)
+        self.atr_mult = self.config.get("atr_mult", 1.5)
+        self.bb_period = self.config.get("bb_period", 20)
+        self.adx_threshold = self.config.get("adx_threshold", 20)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 3.0)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ['atr', 'bollinger', 'adx']
@@ -39,28 +44,41 @@ class VolatilityWeightedBreakout(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
-        for i in range(1, len(df)):
+        
+        # ? Calculate ATR-based volatility threshold
+        atr_mean = df["atr"].rolling(window=self.atr_period).mean()
+        
+        for i in range(max(self.atr_period, self.bb_period), len(df)):
             r = df.iloc[i]
             close, high, low = r["close"], r["high"], r["low"]
-            adx = r.get("adx", 0)
+            adx = r.get("adx", 25)
             bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
             atr = r.get("atr", close*0.02)
             
-            # FIX: Relaxed ADX threshold from 20 to 15
-            if pos is None and adx >= 15:
-                # FIX: Use high/low for breakout detection
+            # ? USE atr_mult parameter for volatility regime detection
+            is_high_volatility = atr > (atr_mean.iloc[i] * self.atr_mult)
+            
+            # ? Volatility-weighted confidence (higher confidence in high volatility)
+            volatility_weight = min(1.0, atr / (atr_mean.iloc[i] + 1e-10))
+            
+            # ? USE adx_threshold parameter
+            if pos is None and adx >= self.adx_threshold and is_high_volatility:
+                # Use high/low for breakout detection
                 if high > bb_u:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, min(1.0, adx/40), sl, tp, 
-                                        {"adx": adx}))
+                    # ? Weight confidence by volatility and ADX
+                    confidence = min(1.0, (adx / 40) * volatility_weight)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, confidence, sl, tp, 
+                                        {"adx": adx, "volatility_weight": volatility_weight}))
                     pos = "LONG"
                 elif low < bb_l:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, min(1.0, adx/40), sl, tp, 
-                                        {"adx": adx}))
+                    confidence = min(1.0, (adx / 40) * volatility_weight)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, confidence, sl, tp, 
+                                        {"adx": adx, "volatility_weight": volatility_weight}))
                     pos = "SHORT"
             
-            # FIX: ADD EXIT LOGIC - opposite breakout
+            # Exit on opposite breakout
             elif pos == "LONG" and low < bb_l:
                 signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
                                     metadata={"reason": "Opposite breakout"}))
@@ -70,6 +88,7 @@ class VolatilityWeightedBreakout(BaseStrategy):
                 signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
                                     metadata={"reason": "Opposite breakout"}))
                 pos = None
+                
         logger.info(f"VolatilityWeightedBreakout: {len(signals)} signals")
         return signals
 

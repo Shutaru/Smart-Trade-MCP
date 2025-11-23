@@ -20,9 +20,14 @@ class DonchianVolatilityBreakout(BaseStrategy):
     def __init__(self, config: StrategyConfig = None):
         """Initialize DonchianVolatilityBreakout strategy."""
         super().__init__(config)
-        self.config.stop_loss_atr_mult = 2.0
-        self.config.take_profit_rr_ratio = 2.5
         
+        # OPTIMIZABLE PARAMETERS
+        self.donchian_period = self.config.get("donchian_period", 20)
+        self.atr_expansion_mult = self.config.get("atr_expansion_mult", 1.5)
+        self.adx_threshold = self.config.get("adx_threshold", 20)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 3.0)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ["donchian", "atr", "adx"]
@@ -38,30 +43,40 @@ class DonchianVolatilityBreakout(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
-        for i in range(5, len(df)):
+        
+        # ? Calculate ATR expansion threshold using parameter
+        atr_mean = df["atr"].rolling(window=14).mean()
+        
+        for i in range(max(self.donchian_period, 14), len(df)):
             r = df.iloc[i]
             close, high, low = r["close"], r["high"], r["low"]
             don_u, don_l = r.get("donchian_upper", close), r.get("donchian_lower", close)
-            adx, atr = r.get("adx", 0), r.get("atr", close*0.02)
-            adx_5ago = df.iloc[i-5].get("adx", 0)
+            adx = r.get("adx", 25)
+            atr = r.get("atr", close*0.02)
             
-            # FIX: Use previous donchian values for breakout detection
+            # ? USE atr_expansion_mult parameter for volatility filter
+            is_volatile = atr > (atr_mean.iloc[i] * self.atr_expansion_mult)
+            
+            # Use previous donchian values for breakout detection
             prev_don_u = df.iloc[i-1].get("donchian_upper", close)
             prev_don_l = df.iloc[i-1].get("donchian_lower", close)
             
             if pos is None:
-                # FIX: Compare with previous donchian
-                if high > prev_don_u and (adx > adx_5ago or adx >= 20):
+                # ? USE adx_threshold parameter
+                # LONG: Donchian upper breakout + volatility + trend strength
+                if high > prev_don_u and is_volatile and adx > self.adx_threshold:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, {"adx": adx}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, 
+                                        {"adx": adx, "atr": atr, "reason": "Donchian upper breakout"}))
                     pos = "LONG"
-                # FIX: Compare with previous donchian
-                elif low < prev_don_l and (adx > adx_5ago or adx >= 20):
+                # SHORT: Donchian lower breakout + volatility + trend strength
+                elif low < prev_don_l and is_volatile and adx > self.adx_threshold:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {"adx": adx}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, 
+                                        {"adx": adx, "atr": atr, "reason": "Donchian lower breakdown"}))
                     pos = "SHORT"
             
-            # FIX: ADD EXIT LOGIC - exit on opposite breakout (trend reversal)
+            # Exit on opposite breakout (trend reversal)
             elif pos == "LONG" and low < prev_don_l:
                 signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, 
                                     metadata={"reason": "Donchian lower breakout (trend reversed)"}))

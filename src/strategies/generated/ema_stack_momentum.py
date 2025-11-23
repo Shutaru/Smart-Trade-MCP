@@ -21,9 +21,14 @@ class EmaStackMomentum(BaseStrategy):
         """Initialize EmaStackMomentum strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+        # OPTIMIZABLE PARAMETERS
+        self.ema_fast = self.config.get("ema_fast", 8)
+        self.ema_mid = self.config.get("ema_mid", 21)
+        self.ema_slow = self.config.get("ema_slow", 55)
+        self.rsi_threshold = self.config.get("rsi_threshold", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ['ema', 'rsi', 'macd', 'atr']
@@ -39,42 +44,108 @@ class EmaStackMomentum(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
+        
         for i in range(1, len(df)):
             r, p = df.iloc[i], df.iloc[i-1]
             close = r["close"]
-            ema12, ema26, ema200 = r.get("ema_12", close), r.get("ema_26", close), r.get("ema_200", close)
-            rsi, macd_hist = r.get("rsi", 50), r.get("macd_hist", 0)
+            
+            # ? USE ema_fast, ema_mid, ema_slow parameters
+            ema_fast_val = r.get(f"ema_{self.ema_fast}", close)
+            ema_mid_val = r.get(f"ema_{self.ema_mid}", close)
+            ema_slow_val = r.get(f"ema_{self.ema_slow}", close)
+            
+            rsi = r.get("rsi", 50)
+            macd_hist = r.get("macd_hist", 0)
             atr = r.get("atr", close*0.02)
             
-            # FIX: Relaxed - partial stack instead of perfect alignment
-            # LONG: Just need 12 > 26 (don't need 26 > 200)
-            partial_stack_bull = ema12 > ema26
-            partial_stack_bear = ema12 < ema26
+            # EMA stack alignment check
+            perfect_stack_bull = ema_fast_val > ema_mid_val > ema_slow_val
+            perfect_stack_bear = ema_fast_val < ema_mid_val < ema_slow_val
             
-            # FIX: Detect momentum surge
+            # Partial stack (more relaxed)
+            partial_stack_bull = ema_fast_val > ema_mid_val
+            partial_stack_bear = ema_fast_val < ema_mid_val
+            
+            # MACD momentum surge
             macd_prev = p.get("macd_hist", 0)
             macd_surging = abs(macd_hist) > abs(macd_prev) * 1.1
             
+            # ? USE rsi_threshold parameter for RSI range
+            rsi_lower = self.rsi_threshold - 15
+            rsi_upper = self.rsi_threshold + 25
+            
             if pos is None:
-                # FIX: Relaxed conditions - partial stack + MACD surge
-                if partial_stack_bull and macd_hist > 0 and macd_surging and 35 < rsi < 75:
+                # LONG: Perfect stack OR (partial stack + strong MACD)
+                long_conditions = (
+                    (perfect_stack_bull or (partial_stack_bull and macd_surging)) and
+                    macd_hist > 0 and
+                    rsi_lower < rsi < rsi_upper
+                )
+                
+                if long_conditions:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, 
-                                        {"ema12": ema12, "ema26": ema26, "macd_hist": macd_hist}))
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        0.8, 
+                        sl, 
+                        tp, 
+                        {
+                            "ema_fast": self.ema_fast,
+                            "ema_mid": self.ema_mid,
+                            "ema_slow": self.ema_slow,
+                            "perfect_stack": perfect_stack_bull,
+                            "macd_hist": macd_hist
+                        }
+                    ))
                     pos = "LONG"
-                elif partial_stack_bear and macd_hist < 0 and macd_surging and 25 < rsi < 65:
+                
+                # SHORT: Perfect stack OR (partial stack + strong MACD)
+                short_conditions = (
+                    (perfect_stack_bear or (partial_stack_bear and macd_surging)) and
+                    macd_hist < 0 and
+                    rsi_lower < rsi < rsi_upper
+                )
+                
+                if short_conditions:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, 
-                                        {"ema12": ema12, "ema26": ema26, "macd_hist": macd_hist}))
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        0.8, 
+                        sl, 
+                        tp, 
+                        {
+                            "ema_fast": self.ema_fast,
+                            "ema_mid": self.ema_mid,
+                            "ema_slow": self.ema_slow,
+                            "perfect_stack": perfect_stack_bear,
+                            "macd_hist": macd_hist
+                        }
+                    ))
                     pos = "SHORT"
             
-            # Exit when MACD reverses
-            elif pos == "LONG" and macd_hist < 0:
-                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={"reason": "MACD reversed"}))
+            # Exit when MACD reverses or stack breaks
+            elif pos == "LONG" and (macd_hist < 0 or not partial_stack_bull):
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, 
+                    r["timestamp"], 
+                    close, 
+                    metadata={"reason": "MACD reversed or stack broke"}
+                ))
                 pos = None
-            elif pos == "SHORT" and macd_hist > 0:
-                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={"reason": "MACD reversed"}))
+                
+            elif pos == "SHORT" and (macd_hist > 0 or not partial_stack_bear):
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, 
+                    r["timestamp"], 
+                    close, 
+                    metadata={"reason": "MACD reversed or stack broke"}
+                ))
                 pos = None
+                
         logger.info(f"EmaStackMomentum: {len(signals)} signals")
         return signals
 

@@ -133,6 +133,12 @@ class TradingAgent:
     async def _scan_and_trade(self):
         """Scan for signals and execute trades."""
         try:
+            # update heartbeat
+            try:
+                self.storage.update_heartbeat(self.agent_id)
+            except Exception:
+                pass
+            
             logger.info(f"?? Fetching data for {self.symbol} {self.timeframe}...")
             
             # Fetch latest data
@@ -274,6 +280,16 @@ class TradingAgent:
             take_profit=take_profit,
             quantity=quantity
         )
+        # add event (already handled by add_trade), keep for compatibility
+        try:
+            self.storage.add_event(self.agent_id, "open_position", {
+                "symbol": self.symbol,
+                "direction": direction,
+                "entry_price": entry_price,
+                "quantity": quantity
+            })
+        except Exception:
+            pass
     
     async def _close_position(self, exit_price: float, reason: str = "Signal"):
         """
@@ -309,6 +325,16 @@ class TradingAgent:
             pnl=pnl,
             notes=reason
         )
+        # add close event
+        try:
+            self.storage.add_event(self.agent_id, "close_position", {
+                "symbol": self.symbol,
+                "exit_price": exit_price,
+                "pnl": pnl,
+                "reason": reason
+            })
+        except Exception:
+            pass
         
         # Clear position
         self.current_position = None

@@ -107,10 +107,16 @@ async def run_walk_forward_analysis(
         
         logger.info(f"Fetching {limit} candles ({days_needed} days) from exchange")
         
-        df = await dm.fetch_ohlcv(
+        # ? Use fetch_historical instead of fetch_ohlcv for large datasets
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days_needed)
+        
+        df = await dm.fetch_historical(
             symbol=symbol,
             timeframe=timeframe,
-            limit=min(limit, 1000),  # CCXT limit
+            start_date=start_date,
+            end_date=end_date,
+            max_candles=limit,
         )
         
         await dm.close()
@@ -128,6 +134,17 @@ async def run_walk_forward_analysis(
             f"Fetched {len(df)} candles covering {actual_days} days "
             f"({df['timestamp'].iloc[0]} to {df['timestamp'].iloc[-1]})"
         )
+        
+        # ? Check if we have enough data
+        if actual_days < (train_days + test_days):
+            return {
+                "error": f"Insufficient data: need {train_days + test_days} days, got {actual_days} days",
+                "suggestion": f"Reduce train_days (currently {train_days}) or test_days (currently {test_days})",
+                "strategy": strategy_name,
+                "symbol": symbol,
+                "actual_days": actual_days,
+                "required_days": train_days + test_days,
+            }
         
         # Calculate required indicators
         required_indicators = strategy.get_required_indicators()

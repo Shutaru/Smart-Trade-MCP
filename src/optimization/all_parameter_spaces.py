@@ -232,10 +232,32 @@ class AllParameterSpaces:
     
     @staticmethod
     def atr_expansion_breakout_strategy() -> ParameterSpace:
-        """ATR Expansion Breakout"""
+        """ATR Expansion Breakout - EXPANDED parameter space"""
         return ParameterSpace.from_dict({
-            "atr_period": {"type": ParameterType.INT, "low": 10, "high": 20},
-            "atr_multiplier": {"type": ParameterType.FLOAT, "low": 1.2, "high": 2.0},
+            "atr_period": {
+                "type": ParameterType.INT,
+                "low": 10,
+                "high": 20,
+                "description": "ATR calculation period"
+            },
+            "atr_multiplier": {
+                "type": ParameterType.FLOAT,
+                "low": 1.0,  # More aggressive
+                "high": 2.5, # More conservative
+                "description": "ATR expansion threshold multiplier"
+            },
+            "stop_loss_atr_mult": {
+                "type": ParameterType.FLOAT,
+                "low": 1.5,
+                "high": 3.0,
+                "description": "Stop-loss ATR multiplier"
+            },
+            "take_profit_rr_ratio": {
+                "type": ParameterType.FLOAT,
+                "low": 1.5,
+                "high": 4.0,
+                "description": "Take-profit risk-reward ratio"
+            },
         }, strategy_name="atr_expansion_breakout")
     
     @staticmethod

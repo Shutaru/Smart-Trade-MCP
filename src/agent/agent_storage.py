@@ -2,7 +2,7 @@
 """
 Agent Storage
 
-Database for storing agent configurations, trades, and performance metrics.
+Database for storing agent configurations, trades, events and performance metrics.
 """
 
 import sqlite3
@@ -54,7 +54,8 @@ class AgentStorage:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     started_at TIMESTAMP,
                     stopped_at TIMESTAMP,
-                    stop_reason TEXT
+                    stop_reason TEXT,
+                    last_heartbeat TIMESTAMP
                 )
             """)
             
@@ -85,6 +86,19 @@ class AgentStorage:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_trade_agent ON agent_trades(agent_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_trade_status ON agent_trades(status)")
             
+            # Events table - store agent events (open/close/heartbeat/other)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS agent_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    agent_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    event_data TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_agent ON agent_events(agent_id)")
+            
             conn.commit()
     
     # ========== AGENT MANAGEMENT ==========
@@ -112,6 +126,11 @@ class AgentStorage:
             
             conn.commit()
             logger.info(f"Added agent to database: {config['agent_id']}")
+            # add create event
+            try:
+                self.add_event(config["agent_id"], "agent_created", {"config": config})
+            except Exception:
+                pass
     
     def update_status(self, agent_id: str, status: str, reason: Optional[str] = None):
         """Update agent status."""
@@ -132,6 +151,11 @@ class AgentStorage:
                 """, (status, agent_id))
             
             conn.commit()
+            # event
+            try:
+                self.add_event(agent_id, f"status_{status}", {"reason": reason})
+            except Exception:
+                pass
     
     def update_params(self, agent_id: str, params: Dict[str, Any]):
         """Update agent parameters."""
@@ -153,6 +177,11 @@ class AgentStorage:
                 """, (json.dumps(current_params), agent_id))
                 
                 conn.commit()
+                # event
+                try:
+                    self.add_event(agent_id, "params_updated", {"params": params})
+                except Exception:
+                    pass
     
     def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
         """Get agent configuration."""
@@ -235,7 +264,13 @@ class AgentStorage:
             ))
             
             conn.commit()
-            return cursor.lastrowid
+            trade_id = cursor.lastrowid
+            # event
+            try:
+                self.add_event(agent_id, "trade_open", {"trade_id": trade_id, "symbol": symbol, "direction": direction, "entry_price": entry_price})
+            except Exception:
+                pass
+            return trade_id
     
     def close_trade(
         self,
@@ -267,6 +302,11 @@ class AgentStorage:
                 """, (exit_price, datetime.now(), pnl, notes, row["id"]))
                 
                 conn.commit()
+                # event
+                try:
+                    self.add_event(agent_id, "trade_close", {"trade_id": row["id"], "exit_price": exit_price, "pnl": pnl, "notes": notes})
+                except Exception:
+                    pass
     
     def get_agent_trades(self, agent_id: str) -> List[Dict[str, Any]]:
         """Get all trades for an agent."""
@@ -300,6 +340,61 @@ class AgentStorage:
                 """)
             
             return [dict(row) for row in cursor.fetchall()]
+    
+    # ========== EVENTS & HEARTBEAT ==========
+    
+    def add_event(self, agent_id: str, event_type: str, event_data: Optional[Dict[str, Any]] = None) -> int:
+        """Add an event for an agent. Returns event id."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO agent_events (agent_id, event_type, event_data)
+                VALUES (?, ?, ?)
+            """, (
+                agent_id,
+                event_type,
+                json.dumps(event_data or {})
+            ))
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_agent_events(self, agent_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get recent events for an agent."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM agent_events
+                WHERE agent_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (agent_id, limit))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def update_heartbeat(self, agent_id: str):
+        """Update last_heartbeat timestamp for agent."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE agents
+                SET last_heartbeat = ?
+                WHERE agent_id = ?
+            """, (datetime.now(), agent_id))
+            conn.commit()
+            # also record event (lightweight)
+            try:
+                self.add_event(agent_id, "heartbeat", {"ts": datetime.now().isoformat()})
+            except Exception:
+                pass
+    
+    def get_last_heartbeat(self, agent_id: str) -> Optional[str]:
+        """Get last heartbeat timestamp as ISO string."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT last_heartbeat FROM agents WHERE agent_id = ?", (agent_id,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                return row[0]
+            return None
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get overall statistics."""

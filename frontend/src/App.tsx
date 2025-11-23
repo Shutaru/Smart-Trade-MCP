@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
+import PaperDashboard from './pages/PaperDashboard'
 
 interface Strategy {
   strategy: string
@@ -234,6 +235,15 @@ function App() {
           </div>
         )}
 
+        <div className="flex justify-end mb-4">
+          <a
+            href="/paper"
+            className="bg-white text-primary-600 px-4 py-2 rounded-lg shadow"
+          >
+            Open Paper Dashboard
+          </a>
+        </div>
+
         <footer className="text-center text-white opacity-75 mt-12">
           <p className="text-lg">Smart Trade MCP - Autonomous Trading System</p>
           <p className="text-sm mt-2">{new Date().toLocaleString()}</p>
@@ -241,6 +251,17 @@ function App() {
       </div>
     </div>
   )
+}
+
+// simple routing: if url path starts with /paper render PaperDashboard
+if (window.location.pathname.startsWith('/paper')) {
+  const root = document.getElementById('root')
+  if (root) {
+    // render PaperDashboard instead
+    import('react-dom').then((ReactDOM) => {
+      ReactDOM.render(<PaperDashboard />, root)
+    })
+  }
 }
 
 function StatCard({ label, value, unit }: { label: string; value: number | string; unit?: string }) {

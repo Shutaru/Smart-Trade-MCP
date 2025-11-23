@@ -6,37 +6,103 @@ from ...core.logger import logger
 
 class KeltnerPullbackContinuation(BaseStrategy):
     def __init__(self, config: StrategyConfig = None):
+        """Initialize KeltnerPullbackContinuation strategy."""
         super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.keltner_period = self.config.get("keltner_period", 20)
+        self.keltner_mult = self.config.get("keltner_mult", 2.0)
+        self.ema_period = self.config.get("ema_period", 50)
+        self.rsi_threshold = self.config.get("rsi_threshold", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         return ["keltner", "ema", "atr"]
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         signals, pos = [], None
-        for i in range(1, len(df)):
+        
+        for i in range(max(self.keltner_period, self.ema_period), len(df)):
             r = df.iloc[i]
             close = r["close"]
-            kc_m, kc_l, kc_u = r.get("keltner_middle", close), r.get("keltner_lower", close), r.get("keltner_upper", close)
-            ema200, atr = r.get("ema_200", close), r.get("atr", close*0.02)
+            
+            # Get Keltner Channel values
+            kc_m = r.get("keltner_middle", close)
+            kc_l = r.get("keltner_lower", close)
+            kc_u = r.get("keltner_upper", close)
+            
+            # ? USE ema_period parameter
+            ema_trend = r.get(f"ema_{self.ema_period}", close)
+            rsi = r.get("rsi", 50)
+            atr = r.get("atr", close*0.02)
+            
+            # ? USE rsi_threshold parameter for RSI filter
+            rsi_lower = self.rsi_threshold - 10
+            rsi_upper = self.rsi_threshold + 10
             
             if pos is None:
-                if close > ema200 and kc_l < close < kc_m:
+                # LONG: Uptrend + pullback to lower Keltner (but not below) + RSI neutral
+                in_uptrend = close > ema_trend
+                pullback_zone = kc_l < close < kc_m  # Between lower and middle
+                rsi_neutral = rsi_lower < rsi < rsi_upper
+                
+                if in_uptrend and pullback_zone and rsi_neutral:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, {}))
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        0.75, 
+                        sl, 
+                        tp, 
+                        {
+                            "keltner_period": self.keltner_period,
+                            "ema_period": self.ema_period,
+                            "reason": "Keltner pullback in uptrend"
+                        }
+                    ))
                     pos = "LONG"
-                elif close < ema200 and kc_m < close < kc_u:
+                
+                # SHORT: Downtrend + pullback to upper Keltner (but not above) + RSI neutral
+                in_downtrend = close < ema_trend
+                pullback_zone_short = kc_m < close < kc_u  # Between middle and upper
+                
+                if in_downtrend and pullback_zone_short and rsi_neutral:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, {}))
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        0.75, 
+                        sl, 
+                        tp, 
+                        {
+                            "keltner_period": self.keltner_period,
+                            "ema_period": self.ema_period,
+                            "reason": "Keltner pullback in downtrend"
+                        }
+                    ))
                     pos = "SHORT"
             
-            # ADD EXIT LOGIC - exit when exits Keltner channel
+            # Exit when breaks out of Keltner channel (momentum lost)
             elif pos == "LONG" and close < kc_l:
-                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
-                                    metadata={"reason": "Exited Keltner channel"}))
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Broke below Keltner lower"}
+                ))
                 pos = None
             
             elif pos == "SHORT" and close > kc_u:
-                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
-                                    metadata={"reason": "Exited Keltner channel"}))
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Broke above Keltner upper"}
+                ))
                 pos = None
+                
         logger.info(f"KeltnerPullbackContinuation: {len(signals)} signals")
         return signals
 

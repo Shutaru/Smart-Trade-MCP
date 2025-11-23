@@ -141,6 +141,7 @@ class ParameterSpace(BaseModel):
             )
         
         return cls(parameters=parameters, strategy_name=strategy_name)
+    
 
 
 # Common parameter spaces for built-in strategies

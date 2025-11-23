@@ -21,9 +21,18 @@ class MultiOscillatorConfluence(BaseStrategy):
         """Initialize MultiOscillatorConfluence strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+        # OPTIMIZABLE PARAMETERS
+        self.rsi_period = self.config.get("rsi_period", 14)
+        self.rsi_oversold = self.config.get("rsi_oversold", 30)
+        self.rsi_overbought = self.config.get("rsi_overbought", 70)
+        self.cci_period = self.config.get("cci_period", 20)
+        self.cci_oversold = self.config.get("cci_oversold", -100)
+        self.cci_overbought = self.config.get("cci_overbought", 100)
+        self.stoch_k = self.config.get("stoch_k", 14)
+        self.stoch_d = self.config.get("stoch_d", 3)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ['rsi', 'cci', 'stochastic', 'atr']
@@ -39,43 +48,116 @@ class MultiOscillatorConfluence(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
+        
         for i in range(1, len(df)):
             r = df.iloc[i]
-            rsi, cci, stoch_k = r.get("rsi", 50), r.get("cci", 0), r.get("stoch_k", 50)
-            atr = r.get("atr", r["close"] * 0.02)
+            close = r["close"]
+            
+            # Get oscillator values
+            rsi = r.get("rsi", 50)
+            cci = r.get("cci", 0)
+            stoch_k_val = r.get("stoch_k", 50)
+            atr = r.get("atr", close * 0.02)
             
             if pos is None:
-                # FIX: Relaxed - need 2 out of 3 oscillators (not all 3)
-                oversold_count = sum([rsi < 35, cci < -80, stoch_k < 25])
-                overbought_count = sum([rsi > 65, cci > 80, stoch_k > 75])
+                # ? USE parameters for oversold/overbought levels
+                # Count oversold signals (using parameters!)
+                oversold_count = sum([
+                    rsi < self.rsi_oversold,
+                    cci < self.cci_oversold,
+                    stoch_k_val < 20  # Stochastic oversold threshold
+                ])
                 
-                if oversold_count >= 2:  # At least 2 oscillators oversold
-                    sl, tp = self.calculate_exit_levels(SignalType.LONG, r["close"], atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], r["close"], 0.9, sl, tp, 
-                                        {"rsi": rsi, "cci": cci, "stoch_k": stoch_k}))
+                # Count overbought signals
+                overbought_count = sum([
+                    rsi > self.rsi_overbought,
+                    cci > self.cci_overbought,
+                    stoch_k_val > 80  # Stochastic overbought threshold
+                ])
+                
+                # LONG: At least 2 out of 3 oscillators oversold (reversal signal)
+                if oversold_count >= 2:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        oversold_count / 3.0,  # Confidence based on alignment
+                        sl, 
+                        tp, 
+                        {
+                            "rsi": rsi,
+                            "cci": cci,
+                            "stoch_k": stoch_k_val,
+                            "oversold_signals": oversold_count,
+                            "rsi_oversold": self.rsi_oversold,
+                            "cci_oversold": self.cci_oversold
+                        }
+                    ))
                     pos = "LONG"
-                elif overbought_count >= 2:  # At least 2 oscillators overbought
-                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, r["close"], atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.9, sl, tp, 
-                                        {"rsi": rsi, "cci": cci, "stoch_k": stoch_k}))
+                
+                # SHORT: At least 2 out of 3 oscillators overbought (reversal signal)
+                elif overbought_count >= 2:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        overbought_count / 3.0,
+                        sl, 
+                        tp, 
+                        {
+                            "rsi": rsi,
+                            "cci": cci,
+                            "stoch_k": stoch_k_val,
+                            "overbought_signals": overbought_count,
+                            "rsi_overbought": self.rsi_overbought,
+                            "cci_overbought": self.cci_overbought
+                        }
+                    ))
                     pos = "SHORT"
             
-            # FIX: ADD EXIT LOGIC - exit when oscillators reach opposite extreme
+            # Exit when oscillators reach opposite extreme
             elif pos == "LONG":
-                # Exit LONG when at least 2 oscillators overbought
-                overbought_count = sum([rsi > 70, cci > 100, stoch_k > 80])
+                # ? USE overbought parameters for exit
+                overbought_count = sum([
+                    rsi > self.rsi_overbought,
+                    cci > self.cci_overbought,
+                    stoch_k_val > 80
+                ])
+                
                 if overbought_count >= 2:
-                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], r["close"], 
-                                        metadata={"reason": "Oscillators overbought"}))
+                    signals.append(Signal(
+                        SignalType.CLOSE_LONG, 
+                        r["timestamp"], 
+                        close, 
+                        metadata={
+                            "reason": "Oscillators overbought", 
+                            "overbought_signals": overbought_count
+                        }
+                    ))
                     pos = None
             
             elif pos == "SHORT":
-                # Exit SHORT when at least 2 oscillators oversold  
-                oversold_count = sum([rsi < 30, cci < -100, stoch_k < 20])
+                # ? USE oversold parameters for exit
+                oversold_count = sum([
+                    rsi < self.rsi_oversold,
+                    cci < self.cci_oversold,
+                    stoch_k_val < 20
+                ])
+                
                 if oversold_count >= 2:
-                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], r["close"], 
-                                        metadata={"reason": "Oscillators oversold"}))
+                    signals.append(Signal(
+                        SignalType.CLOSE_SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        metadata={
+                            "reason": "Oscillators oversold", 
+                            "oversold_signals": oversold_count
+                        }
+                    ))
                     pos = None
+                    
         logger.info(f"MultiOscillatorConfluence: {len(signals)} signals")
         return signals
 

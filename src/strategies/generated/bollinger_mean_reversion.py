@@ -13,10 +13,20 @@ class BollingerMeanReversion(BaseStrategy):
     """Price touches BB bands and reverts to middle - WIN RATE: 60-70%"""
     
     def __init__(self, config: StrategyConfig = None):
+        """Initialize BollingerMeanReversion strategy."""
         super().__init__(config)
-        self.config.stop_loss_atr_mult = 0.8  # Tight stops
-        self.config.take_profit_rr_ratio = 2.0
         
+        # OPTIMIZABLE PARAMETERS
+        self.bb_period = self.config.get("bb_period", 20)
+        self.bb_std = self.config.get("bb_std", 2.0)
+        self.rsi_period = self.config.get("rsi_period", 14)
+        self.rsi_filter = self.config.get("rsi_filter", 50)
+        self.rsi_oversold = self.config.get("rsi_oversold", 35)
+        self.rsi_overbought = self.config.get("rsi_overbought", 65)
+        self.bb_width_min = self.config.get("bb_width_min", 1.5)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.0)
+
     def get_required_indicators(self) -> List[str]:
         return ["bollinger", "rsi", "atr"]
     
@@ -33,10 +43,9 @@ class BollingerMeanReversion(BaseStrategy):
             
             if pos is None:
                 # LONG: Price TOUCHES/BREAKS BB lower + RSI oversold + sufficient volatility
-                # FIX: Relaxed BB width filter (was 2.0%, now 1.5%)
                 touches_bb_lower = low <= bb_l  # Must actually touch/break
-                rsi_oversold = rsi < 35  # Truly oversold
-                has_volatility = bb_width > 1.5  # FIX: Reduced from 2.0% to 1.5%
+                rsi_oversold = rsi < self.rsi_oversold  # ? USING PARAMETER
+                has_volatility = bb_width > self.bb_width_min  # ? USING PARAMETER
                 
                 if touches_bb_lower and rsi_oversold and has_volatility:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
@@ -47,9 +56,8 @@ class BollingerMeanReversion(BaseStrategy):
                     pos = "LONG"
                 
                 # SHORT: Price TOUCHES/BREAKS BB upper + RSI overbought + sufficient volatility
-                # FIX: Relaxed BB width filter (was 2.0%, now 1.5%)
                 touches_bb_upper = high >= bb_u  # Must actually touch/break
-                rsi_overbought = rsi > 65  # Truly overbought
+                rsi_overbought = rsi > self.rsi_overbought  # ? USING PARAMETER
                 
                 if touches_bb_upper and rsi_overbought and has_volatility:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)

@@ -1,4 +1,4 @@
-"""Generated strategies - All 38 trading strategies"""
+"""Generated strategies - All 37 trading strategies"""
 
 # Mean Reversion (5)
 from .bollinger_mean_reversion import BollingerMeanReversion
@@ -7,8 +7,7 @@ from .cci_extreme_snapback import CciExtremeSnapback
 from .mfi_divergence_reversion import MfiDivergenceReversion
 from .stoch_signal_reversal import StochSignalReversal
 
-# Trend Following (5)
-from .ema_cloud_trend import EmaCloudTrend
+# Trend Following (4) - ? ema_cloud_trend removed (doesn't exist)
 from .donchian_continuation import DonchianContinuation
 from .macd_zero_trend import MacdZeroTrend
 from .adx_trend_filter_plus import AdxTrendFilterPlus
@@ -57,8 +56,7 @@ __all__ = [
     "CciExtremeSnapback",
     "MfiDivergenceReversion",
     "StochSignalReversal",
-    # Trend Following
-    "EmaCloudTrend",
+    # Trend Following (? removed EmaCloudTrend)
     "DonchianContinuation",
     "MacdZeroTrend",
     "AdxTrendFilterPlus",

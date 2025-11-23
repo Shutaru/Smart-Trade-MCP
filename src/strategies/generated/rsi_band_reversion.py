@@ -12,48 +12,105 @@ class RsiBandReversion(BaseStrategy):
     """RSI extreme + BB touch + trigger - WIN RATE: 58-68%"""
     
     def __init__(self, config: StrategyConfig = None):
+        """Initialize RsiBandReversion strategy."""
         super().__init__(config)
-        self.config.stop_loss_atr_mult = 1.5
-        self.config.take_profit_rr_ratio = 1.8
         
+        # OPTIMIZABLE PARAMETERS
+        self.rsi_period = self.config.get("rsi_period", 14)
+        self.rsi_oversold = self.config.get("rsi_oversold", 30)
+        self.rsi_overbought = self.config.get("rsi_overbought", 70)
+        self.bb_period = self.config.get("bb_period", 20)
+        self.bb_std = self.config.get("bb_std", 2.0)
+        self.ema_period = self.config.get("ema_period", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.0)
+
     def get_required_indicators(self) -> List[str]:
         return ["rsi", "bollinger", "ema", "atr"]
     
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         signals, pos = [], None
+        
         for i in range(1, len(df)):
             r, p = df.iloc[i], df.iloc[i-1]
             close = r["close"]
             rsi = r.get("rsi", 50)
-            bb_l, bb_u = r.get("bb_lower", close), r.get("bb_upper", close)
-            ema_50 = r.get("ema_50", close)
+            bb_l = r.get("bb_lower", close)
+            bb_u = r.get("bb_upper", close)
+            # ? USE ema_period parameter
+            ema_trend = r.get(f"ema_{self.ema_period}", close)
             atr = r.get("atr", close*0.02)
             prev_high, prev_low = p["high"], p["low"]
             
             if pos is None:
-                # LONG: Near EMA50 OR BB lower + RSI 25-35 + trigger (break prev high)
-                near_ema50 = abs(close - ema_50) < (ema_50 * 0.01)
+                # ? USE rsi_oversold parameter
+                # LONG: Near EMA OR BB lower + RSI oversold + trigger
+                near_ema = abs(close - ema_trend) < (ema_trend * 0.01)
                 touch_bb = close <= bb_l * 1.01
                 
-                if (near_ema50 or touch_bb) and 25 <= rsi <= 35 and close > prev_high:
+                # Use parameter for RSI range (centered on oversold level)
+                rsi_oversold_zone = (
+                    self.rsi_oversold - 5 <= rsi <= self.rsi_oversold + 5
+                )
+                
+                if (near_ema or touch_bb) and rsi_oversold_zone and close > prev_high:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 1.0 - (rsi/100), sl, tp,
-                                        {"rsi": rsi, "reason": "BB lower" if touch_bb else "EMA50 bounce"}))
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        1.0 - (rsi/100), 
+                        sl, 
+                        tp,
+                        {
+                            "rsi": rsi,
+                            "rsi_oversold": self.rsi_oversold,
+                            "ema_period": self.ema_period,
+                            "reason": "BB lower" if touch_bb else f"EMA{self.ema_period} bounce"
+                        }
+                    ))
                     pos = "LONG"
                 
-                # SHORT: BB upper + RSI 65-75 + trigger (break prev low)
-                if close >= bb_u * 0.99 and 65 <= rsi <= 75 and close < prev_low:
+                # ? USE rsi_overbought parameter
+                # SHORT: BB upper + RSI overbought + trigger
+                rsi_overbought_zone = (
+                    self.rsi_overbought - 5 <= rsi <= self.rsi_overbought + 5
+                )
+                
+                if close >= bb_u * 0.99 and rsi_overbought_zone and close < prev_low:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, (rsi-50)/50, sl, tp,
-                                        {"rsi": rsi, "reason": "BB upper + RSI overbought"}))
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        (rsi-50)/50, 
+                        sl, 
+                        tp,
+                        {
+                            "rsi": rsi,
+                            "rsi_overbought": self.rsi_overbought,
+                            "reason": "BB upper + RSI overbought"
+                        }
+                    ))
                     pos = "SHORT"
             
-            # Exit when RSI returns to neutral
+            # Exit when RSI returns to neutral (50)
             elif pos == "LONG" and rsi >= 50:
-                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={"reason": "RSI neutral"}))
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, 
+                    r["timestamp"], 
+                    close, 
+                    metadata={"reason": "RSI neutral"}
+                ))
                 pos = None
+                
             elif pos == "SHORT" and rsi <= 50:
-                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={"reason": "RSI neutral"}))
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, 
+                    r["timestamp"], 
+                    close, 
+                    metadata={"reason": "RSI neutral"}
+                ))
                 pos = None
                 
         logger.info(f"RsiBandReversion: {len(signals)} signals")

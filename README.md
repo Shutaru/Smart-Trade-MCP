@@ -202,14 +202,13 @@ Smart-Trade-MCP/
 
 ## 📊 **Strategy Categories**
 
-| Category | Count | Description | Best For |
-|----------|-------|-------------|----------|
-| **Breakout** | 12 | High-volatility expansion | Trending, high vol |
-| **Trend** | 8 | Momentum-based following | Strong trends |
-| **Mean Reversion** | 6 | Counter-trend extremes | Ranging, low vol |
-| **Momentum** | 8 | Oscillator-based | Medium vol, trending |
-| **Hybrid** | 6 | Combined approaches | All conditions |
-| **Advanced** | 2 | Multi-component adaptive | Adaptive |
+| Category         | Count | Description               | Best For |
+|----------        |-------|------------              -|----------|
+| **Breakout**       |  12 | High-volatility expansion | Trending, high vol |
+| **Trend**          |  8  | Momentum-based following  | Strong trends |
+| **Mean Reversion** |  6  | Counter-trend extremes    | Ranging, low vol |
+| **Momentum*        |  6  | Combined approaches       | All conditions |
+| **Advanced**       |  2  | Multi-component adaptive  | Adaptive |
 
 **Top Performers (Last Year):**
 1. `cci_extreme_snapback` - +7.91% return, 72.15% win rate ⭐

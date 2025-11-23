@@ -9,38 +9,98 @@ from ...core.logger import logger
 
 class RsiSupertrendFlip(BaseStrategy):
     def __init__(self, config: StrategyConfig = None):
+        """Initialize RsiSupertrendFlip strategy."""
         super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.rsi_period = self.config.get("rsi_period", 14)
+        self.rsi_threshold = self.config.get("rsi_threshold", 50)
+        self.st_period = self.config.get("st_period", 10)
+        self.st_multiplier = self.config.get("st_multiplier", 3.0)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
 
     def get_required_indicators(self) -> List[str]:
         return ["rsi", "supertrend", "atr"]
 
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         signals, pos = [], None
+        
         for i in range(1, len(df)):
             r, p = df.iloc[i], df.iloc[i - 1]
-            st_trend, st_prev = r.get("supertrend_trend", 0), p.get("supertrend_trend", 0)
-            rsi, atr = r.get("rsi", 50), r.get("atr", r["close"] * 0.02)
+            close = r["close"]
             
-            if pos is None and st_trend != st_prev:
-                if st_trend > 0 and 40 < rsi < 60:
-                    sl, tp = self.calculate_exit_levels(SignalType.LONG, r["close"], atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], r["close"], 0.8, sl, tp, {}))
+            # Get indicators
+            st_trend = r.get("supertrend_trend", 0)
+            st_prev = p.get("supertrend_trend", 0)
+            rsi = r.get("rsi", 50)
+            atr = r.get("atr", close * 0.02)
+            
+            # SuperTrend flip detection
+            st_flip_bull = st_trend > 0 and st_prev <= 0
+            st_flip_bear = st_trend < 0 and st_prev >= 0
+            
+            # ? USE rsi_threshold parameter for RSI range
+            rsi_lower = self.rsi_threshold - 10
+            rsi_upper = self.rsi_threshold + 10
+            
+            # Entry on SuperTrend flip with RSI confirmation
+            if pos is None:
+                # LONG: SuperTrend flips bullish + RSI neutral
+                if st_flip_bull and rsi_lower < rsi < rsi_upper:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        0.8, 
+                        sl, 
+                        tp, 
+                        {
+                            "rsi": rsi,
+                            "rsi_threshold": self.rsi_threshold,
+                            "reason": "SuperTrend flip bullish"
+                        }
+                    ))
                     pos = "LONG"
-                elif st_trend < 0 and 40 < rsi < 60:
-                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, r["close"], atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.8, sl, tp, {}))
+                
+                # SHORT: SuperTrend flips bearish + RSI neutral
+                elif st_flip_bear and rsi_lower < rsi < rsi_upper:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        0.8, 
+                        sl, 
+                        tp, 
+                        {
+                            "rsi": rsi,
+                            "rsi_threshold": self.rsi_threshold,
+                            "reason": "SuperTrend flip bearish"
+                        }
+                    ))
                     pos = "SHORT"
             
-            # FIX: ADD EXIT LOGIC - exit when SuperTrend reverses
+            # Exit when SuperTrend reverses
             elif pos == "LONG" and st_trend < 0:
-                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], r["close"],
-                                    metadata={"reason": "SuperTrend reversed"}))
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "SuperTrend reversed"}
+                ))
                 pos = None
             
             elif pos == "SHORT" and st_trend > 0:
-                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], r["close"],
-                                    metadata={"reason": "SuperTrend reversed"}))
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "SuperTrend reversed"}
+                ))
                 pos = None
+                
         logger.info(f"RsiSupertrendFlip: {len(signals)} signals")
         return signals
 

@@ -25,12 +25,16 @@ class DonchianContinuation(BaseStrategy):
     """
 
     def __init__(self, config: StrategyConfig = None):
-        """Initialize Donchian Continuation strategy."""
+        """Initialize DonchianContinuation strategy."""
         super().__init__(config)
         
-        self.config.stop_loss_atr_mult = 2.0
-        self.config.take_profit_rr_ratio = 2.0
-        
+        # OPTIMIZABLE PARAMETERS
+        self.donchian_period = self.config.get("donchian_period", 20)
+        self.adx_threshold = self.config.get("adx_threshold", 25)
+        self.ema_period = self.config.get("ema_period", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators."""
         return ["donchian", "ema", "adx", "atr", "supertrend"]
@@ -40,27 +44,34 @@ class DonchianContinuation(BaseStrategy):
         signals = []
         position = None
         
-        for i in range(5, len(df)):
+        for i in range(max(5, self.donchian_period), len(df)):
             row = df.iloc[i]
-            prev_5 = df.iloc[i - 5]
+            prev = df.iloc[i - 1]
             
             close = row["close"]
             donchian_upper = row.get("donchian_upper", close)
             donchian_lower = row.get("donchian_lower", close)
-            ema_200 = row.get("ema_200", close)
+            # ? USE ema_period parameter
+            ema_trend = row.get(f"ema_{self.ema_period}", close)
             adx = row.get("adx", 0)
-            adx_5ago = prev_5.get("adx", 0)
             supertrend_trend = row.get("supertrend_trend", 0)
             atr = row.get("atr", close * 0.02)
             timestamp = row["timestamp"]
             
-            # LONG entry
+            # Previous Donchian values for breakout detection
+            prev_don_upper = prev.get("donchian_upper", close)
+            prev_don_lower = prev.get("donchian_lower", close)
+            
+            # ? USE adx_threshold parameter
+            # LONG entry: Donchian upper breakout + trend confirmation
             if position is None:
-                # Removed EMA filter, relaxed ADX
-                long_filters = supertrend_trend > 0 and adx >= 15  # Relaxed from 18
+                long_filters = (
+                    supertrend_trend > 0 and 
+                    adx >= self.adx_threshold and
+                    close > ema_trend  # Use parameter EMA for trend filter
+                )
                 
-                prev_don_upper = df.iloc[i-1].get("donchian_upper", close) if i > 0 else donchian_upper
-                if long_filters and row["high"] > prev_don_upper:  # Removed ADX rising requirement
+                if long_filters and row["high"] > prev_don_upper:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(
                         type=SignalType.LONG,
@@ -69,14 +80,22 @@ class DonchianContinuation(BaseStrategy):
                         confidence=min(1.0, adx / 40),
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={"adx": adx, "reason": "Donchian breakout"},
+                        metadata={
+                            "adx": adx, 
+                            "reason": "Donchian breakout",
+                            "donchian_period": self.donchian_period,
+                            "ema_period": self.ema_period
+                        },
                     ))
                     position = "LONG"
             
-                # SHORT entry
-                short_filters = supertrend_trend < 0 and adx >= 15
+                # SHORT entry: Donchian lower breakdown + trend confirmation
+                short_filters = (
+                    supertrend_trend < 0 and 
+                    adx >= self.adx_threshold and
+                    close < ema_trend
+                )
                 
-                prev_don_lower = df.iloc[i-1].get("donchian_lower", close) if i > 0 else donchian_lower
                 if short_filters and row["low"] < prev_don_lower:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(
@@ -86,16 +105,32 @@ class DonchianContinuation(BaseStrategy):
                         confidence=min(1.0, adx / 40),
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={"adx": adx, "reason": "Donchian breakdown"},
+                        metadata={
+                            "adx": adx, 
+                            "reason": "Donchian breakdown",
+                            "donchian_period": self.donchian_period,
+                            "ema_period": self.ema_period
+                        },
                     ))
                     position = "SHORT"
             
-            # Exit
+            # Exit on SuperTrend reversal
             elif position == "LONG" and supertrend_trend < 0:
-                signals.append(Signal(type=SignalType.CLOSE_LONG, timestamp=timestamp, price=close, metadata={"reason": "SuperTrend reversal"}))
+                signals.append(Signal(
+                    type=SignalType.CLOSE_LONG, 
+                    timestamp=timestamp, 
+                    price=close, 
+                    metadata={"reason": "SuperTrend reversal"}
+                ))
                 position = None
+                
             elif position == "SHORT" and supertrend_trend > 0:
-                signals.append(Signal(type=SignalType.CLOSE_SHORT, timestamp=timestamp, price=close, metadata={"reason": "SuperTrend reversal"}))
+                signals.append(Signal(
+                    type=SignalType.CLOSE_SHORT, 
+                    timestamp=timestamp, 
+                    price=close, 
+                    metadata={"reason": "SuperTrend reversal"}
+                ))
                 position = None
         
         logger.info(f"DonchianContinuation generated {len(signals)} signals")

@@ -30,6 +30,7 @@ import time
 
 from .config import settings
 from .routers import strategies, backtest, optimization, portfolio, market, pairs
+from .routers import paper
 from ..core.logger import logger
 
 # Track startup time
@@ -203,6 +204,12 @@ app.include_router(
     pairs.router,
     prefix=f"{settings.API_V1_PREFIX}/pairs",
     tags=["Pair Management"],
+)
+
+app.include_router(
+    paper.router,
+    prefix=f"{settings.API_V1_PREFIX}/paper",
+    tags=["Paper Trading"],
 )
 
 

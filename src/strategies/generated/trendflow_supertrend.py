@@ -26,11 +26,16 @@ class TrendflowSupertrend(BaseStrategy):
         """Initialize TrendflowSupertrend strategy."""
         super().__init__(config)
         
-        # Strategy parameters
-        self.adx_threshold = self.config.get("adx_threshold", 22)
+        # OPTIMIZABLE PARAMETERS
+        self.st_period = self.config.get("st_period", 10)
+        self.st_multiplier = self.config.get("st_multiplier", 3.0)
+        self.adx_threshold = self.config.get("adx_threshold", 25)
         self.rsi_pullback_min = self.config.get("rsi_pullback_min", 40)
-        self.rsi_pullback_max = self.config.get("rsi_pullback_max", 55)
-        
+        self.rsi_pullback_max = self.config.get("rsi_pullback_max", 60)
+        self.ema_period = self.config.get("ema_period", 20)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ["supertrend", "adx", "ema", "rsi", "atr"]
@@ -64,28 +69,24 @@ class TrendflowSupertrend(BaseStrategy):
             low = row["low"]
             adx = row.get("adx", 0)
             rsi = row.get("rsi", 50)
-            ema20 = row.get("ema_12", close)  # Fallback to close
-            ema200 = row.get("ema_26", close)
+            # ? USE ema_period parameter
+            ema_trend = row.get(f"ema_{self.ema_period}", close)
             atr = row.get("atr", close * 0.02)
             
-            # SuperTrend: simplified version (needs proper implementation)
-            # For now, use EMA alignment as proxy
-            supertrend_bull = ema20 > ema200
-            supertrend_bear = ema20 < ema200
-            
-            # Get actual SuperTrend indicator
+            # Get SuperTrend indicator
             st_trend = row.get("supertrend_trend", 0)
             st_trend_prev = prev_row.get("supertrend_trend", 0)
             
-            # FIX: Simplified - just need SuperTrend flip + basic filters
+            # SuperTrend flip detection
             supertrend_flip_bull = st_trend > 0 and st_trend_prev <= 0
             supertrend_flip_bear = st_trend < 0 and st_trend_prev >= 0
             
             timestamp = row["timestamp"]
             
-            # FIX: LONG - just SuperTrend flip + ADX > 15 (relaxed from 18)
-            if position is None and adx >= 15:
-                if supertrend_flip_bull and 30 < rsi < 70:
+            # ? USE adx_threshold parameter
+            if position is None and adx >= self.adx_threshold:
+                # ? USE rsi_pullback_min and rsi_pullback_max parameters
+                if supertrend_flip_bull and self.rsi_pullback_min < rsi < self.rsi_pullback_max:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(
                         type=SignalType.LONG,
@@ -98,9 +99,9 @@ class TrendflowSupertrend(BaseStrategy):
                     ))
                     position = "LONG"
             
-            # FIX: SHORT - just SuperTrend flip + ADX > 15
-            elif position is None and adx >= 15:
-                if supertrend_flip_bear and 30 < rsi < 70:
+            # ? USE parameters for SHORT
+            elif position is None and adx >= self.adx_threshold:
+                if supertrend_flip_bear and self.rsi_pullback_min < rsi < self.rsi_pullback_max:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(
                         type=SignalType.SHORT,

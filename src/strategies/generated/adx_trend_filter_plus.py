@@ -16,10 +16,17 @@ class AdxTrendFilterPlus(BaseStrategy):
     """ADX Trend Filter - Strong ADX + EMA alignment + RSI pullback"""
 
     def __init__(self, config: StrategyConfig = None):
+        """Initialize AdxTrendFilterPlus strategy."""
         super().__init__(config)
-        self.config.stop_loss_atr_mult = 1.8
-        self.config.take_profit_rr_ratio = 2.4
         
+        # OPTIMIZABLE PARAMETERS
+        self.adx_period = self.config.get("adx_period", 14)
+        self.adx_threshold = self.config.get("adx_threshold", 25)
+        self.ema_fast = self.config.get("ema_fast", 20)
+        self.ema_slow = self.config.get("ema_slow", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         return ["adx", "ema", "rsi", "atr"]
     
@@ -34,15 +41,24 @@ class AdxTrendFilterPlus(BaseStrategy):
             close = row["close"]
             adx = row.get("adx", 0)
             rsi = row.get("rsi", 50)
-            ema_200 = row.get("ema_200", close)
-            ema_12 = row.get("ema_12", close)
-            ema_12_prev = prev.get("ema_12", close)
+            # ? USE ema_fast and ema_slow parameters
+            ema_fast_val = row.get(f"ema_{self.ema_fast}", close)
+            ema_slow_val = row.get(f"ema_{self.ema_slow}", close)
             atr = row.get("atr", close * 0.02)
             timestamp = row["timestamp"]
             
-            # LONG
-            if position is None and close > ema_200:
-                if adx >= 20 and 35 <= rsi <= 65:  # Relaxed from ADX>=25, RSI 42-55
+            # EMA alignment check
+            ema_aligned_bull = ema_fast_val > ema_slow_val
+            ema_aligned_bear = ema_fast_val < ema_slow_val
+            
+            # RSI range (35-65 for flexibility)
+            rsi_lower = 35
+            rsi_upper = 65
+            
+            # ? USE adx_threshold parameter
+            # LONG: ADX strong + bullish EMA alignment + price above slow EMA
+            if position is None and close > ema_slow_val:
+                if adx >= self.adx_threshold and ema_aligned_bull and rsi_lower <= rsi <= rsi_upper:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
                     signals.append(Signal(
                         type=SignalType.LONG,
@@ -51,13 +67,18 @@ class AdxTrendFilterPlus(BaseStrategy):
                         confidence=min(1.0, adx / 40),
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={"adx": adx, "rsi": rsi},
+                        metadata={
+                            "adx": adx, 
+                            "rsi": rsi,
+                            "ema_fast": self.ema_fast,
+                            "ema_slow": self.ema_slow
+                        },
                     ))
                     position = "LONG"
             
-            # SHORT
-            elif position is None and close < ema_200:
-                if adx >= 20 and 35 <= rsi <= 65:  # Relaxed from ADX>=25, RSI 45-58
+            # SHORT: ADX strong + bearish EMA alignment + price below slow EMA
+            elif position is None and close < ema_slow_val:
+                if adx >= self.adx_threshold and ema_aligned_bear and rsi_lower <= rsi <= rsi_upper:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
                     signals.append(Signal(
                         type=SignalType.SHORT,
@@ -66,16 +87,32 @@ class AdxTrendFilterPlus(BaseStrategy):
                         confidence=min(1.0, adx / 40),
                         stop_loss=sl,
                         take_profit=tp,
-                        metadata={"adx": adx, "rsi": rsi},
+                        metadata={
+                            "adx": adx, 
+                            "rsi": rsi,
+                            "ema_fast": self.ema_fast,
+                            "ema_slow": self.ema_slow
+                        },
                     ))
                     position = "SHORT"
             
-            # Exit
-            elif position == "LONG" and close < ema_200:
-                signals.append(Signal(type=SignalType.CLOSE_LONG, timestamp=timestamp, price=close, metadata={"reason": "Trend reversal"}))
+            # Exit on EMA cross (trend reversal)
+            elif position == "LONG" and not ema_aligned_bull:
+                signals.append(Signal(
+                    type=SignalType.CLOSE_LONG, 
+                    timestamp=timestamp, 
+                    price=close, 
+                    metadata={"reason": "EMA alignment lost"}
+                ))
                 position = None
-            elif position == "SHORT" and close > ema_200:
-                signals.append(Signal(type=SignalType.CLOSE_SHORT, timestamp=timestamp, price=close, metadata={"reason": "Trend reversal"}))
+                
+            elif position == "SHORT" and not ema_aligned_bear:
+                signals.append(Signal(
+                    type=SignalType.CLOSE_SHORT, 
+                    timestamp=timestamp, 
+                    price=close, 
+                    metadata={"reason": "EMA alignment lost"}
+                ))
                 position = None
         
         logger.info(f"AdxTrendFilterPlus generated {len(signals)} signals")

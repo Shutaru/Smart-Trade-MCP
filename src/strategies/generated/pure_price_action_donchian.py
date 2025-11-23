@@ -7,7 +7,14 @@ from ...core.logger import logger
 
 class PurePriceActionDonchian(BaseStrategy):
     def __init__(self, config: StrategyConfig = None):
+        """Initialize PurePriceActionDonchian strategy."""
         super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.donchian_period = self.config.get("donchian_period", 20)
+        self.breakout_confirm_bars = self.config.get("breakout_confirm_bars", 2)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
 
     def get_required_indicators(self) -> List[str]:
         return ["donchian", "atr"]

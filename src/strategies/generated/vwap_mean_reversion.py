@@ -21,9 +21,14 @@ class VwapMeanReversion(BaseStrategy):
         """Initialize VwapMeanReversion strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+        # OPTIMIZABLE PARAMETERS
+        self.vwap_deviation_std = self.config.get("vwap_deviation_std", 2.0)
+        self.rsi_filter = self.config.get("rsi_filter", 50)
+        self.rsi_oversold = self.config.get("rsi_oversold", 35)
+        self.rsi_overbought = self.config.get("rsi_overbought", 65)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.0)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ["vwap", "rsi", "atr"]
@@ -39,24 +44,84 @@ class VwapMeanReversion(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
-        for i in range(1, len(df)):
+        
+        # Calculate VWAP standard deviation bands
+        vwap_std = df["close"].rolling(window=20).std()
+        
+        for i in range(20, len(df)):
             r = df.iloc[i]
             close = r["close"]
-            vwap, rsi, atr = r.get("vwap", close), r.get("rsi", 50), r.get("atr", close*0.02)
-            dist = abs(close - vwap) / vwap if vwap > 0 else 0
-            if pos is None and dist > 0.015:
-                if close < vwap and rsi < 40:
+            vwap = r.get("vwap", close)
+            rsi = r.get("rsi", 50)
+            atr = r.get("atr", close*0.02)
+            
+            # ? USE vwap_deviation_std parameter for bands
+            vwap_upper = vwap + (vwap_std.iloc[i] * self.vwap_deviation_std)
+            vwap_lower = vwap - (vwap_std.iloc[i] * self.vwap_deviation_std)
+            
+            # Distance from VWAP
+            dist_from_vwap = abs(close - vwap) / vwap if vwap > 0 else 0
+            
+            if pos is None:
+                # ? USE rsi_oversold parameter
+                # LONG: Price below VWAP lower band + RSI oversold
+                if close < vwap_lower and rsi < self.rsi_oversold:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
+                    # TP at VWAP (mean reversion target)
+                    tp = vwap
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        0.7, 
+                        sl, 
+                        tp, 
+                        {
+                            "vwap": vwap,
+                            "distance_pct": dist_from_vwap * 100,
+                            "vwap_deviation_std": self.vwap_deviation_std,
+                            "rsi": rsi,
+                            "rsi_oversold": self.rsi_oversold,
+                            "reason": "VWAP lower band reversion"
+                        }
+                    ))
                     pos = "LONG"
-                elif close > vwap and rsi > 60:
+                
+                # ? USE rsi_overbought parameter
+                # SHORT: Price above VWAP upper band + RSI overbought
+                elif close > vwap_upper and rsi > self.rsi_overbought:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {}))
+                    # TP at VWAP (mean reversion target)
+                    tp = vwap
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        0.7, 
+                        sl, 
+                        tp, 
+                        {
+                            "vwap": vwap,
+                            "distance_pct": dist_from_vwap * 100,
+                            "vwap_deviation_std": self.vwap_deviation_std,
+                            "rsi": rsi,
+                            "rsi_overbought": self.rsi_overbought,
+                            "reason": "VWAP upper band reversion"
+                        }
+                    ))
                     pos = "SHORT"
-            elif pos and abs(close - vwap) / vwap < 0.005:
+            
+            # Exit when price returns near VWAP (mean reversion complete)
+            elif pos and dist_from_vwap < 0.005:  # Within 0.5% of VWAP
                 sig_type = SignalType.CLOSE_LONG if pos == "LONG" else SignalType.CLOSE_SHORT
-                signals.append(Signal(sig_type, r["timestamp"], close, metadata={}))
+                signals.append(Signal(
+                    sig_type, 
+                    r["timestamp"], 
+                    close, 
+                    metadata={"reason": "Price returned to VWAP"}
+                ))
                 pos = None
+                
         logger.info(f"VwapMeanReversion: {len(signals)} signals")
         return signals
 

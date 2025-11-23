@@ -17,7 +17,6 @@ from ...core.indicators import calculate_all_indicators
 from ...strategies import registry
 from ...optimization import (
     GeneticOptimizer,
-    AllParameterSpaces,
     OptimizationConfig,
     WalkForwardAnalyzer,
     WalkForwardConfig,
@@ -30,34 +29,73 @@ async def optimize_strategy_parameters(
     strategy_name: str,
     symbol: str = "BTC/USDT",
     timeframe: str = "1h",
-    population_size: int = 50,
-    n_generations: int = 20,
+    population_size: int = 20,  # ? CHANGED: 50 ? 20 (default faster)
+    n_generations: int = 8,      # ? CHANGED: 20 ? 8 (default faster)
     use_ray: bool = False,
+    mode: str = "balanced",  # ? NEW: "fast", "balanced", "thorough"
 ) -> Dict[str, Any]:
     """
     Optimize strategy parameters using Genetic Algorithm.
     
-    Finds optimal parameter values that maximize strategy performance.
+    ? WITH STREAMING PROGRESS: Updates sent every generation!
+    ? Uses META-LEARNER for intelligent parameter ranges (SMART vs NAIVE)
+    
+    ?? **TIMEOUT WARNING:** Claude Desktop has 4-minute timeout!
+    - "fast" mode: pop=10, gen=5 (~1 min) ?
+    - "balanced" mode: pop=20, gen=8 (~2-3 min) ? RECOMMENDED
+    - "thorough" mode: pop=50, gen=20 (~5-8 min) ?? MAY TIMEOUT!
     
     Args:
         strategy_name: Name of strategy to optimize
         symbol: Trading pair
         timeframe: Candle timeframe
-        population_size: GA population size
-        n_generations: Number of generations
+        population_size: GA population size (overridden by mode if specified)
+        n_generations: Number of generations (overridden by mode if specified)
         use_ray: Use Ray for parallel processing
+        mode: Optimization speed preset ("fast", "balanced", "thorough")
         
     Returns:
-        Dictionary with optimization results:
-        {
-            "strategy": str,
-            "best_params": Dict,
-            "best_fitness": Dict,
-            "total_time": float,
-            "total_evaluations": int,
-        }
+        Dictionary with optimization results
     """
     logger.info(f"Optimizing {strategy_name} on {symbol} {timeframe}")
+    
+    # ? Apply mode presets (override manual params if mode is not default)
+    if mode != "balanced":
+        if mode == "fast":
+            population_size = 10
+            n_generations = 5
+            logger.info("? FAST MODE: pop=10, gen=5 (~1 min)")
+        elif mode == "thorough":
+            population_size = 50
+            n_generations = 20
+            logger.warning("?? THOROUGH MODE: pop=50, gen=20 (~5-8 min) - MAY TIMEOUT!")
+        else:
+            logger.warning(f"Unknown mode '{mode}', using manual params")
+    else:
+        logger.info(f"? BALANCED MODE: pop={population_size}, gen={n_generations} (~2-3 min)")
+    
+    # ? Progress tracking
+    progress_data = {
+        "current_generation": 0,
+        "total_generations": n_generations,
+        "best_sharpe": 0.0,
+        "status": "initializing"
+    }
+    
+    def progress_callback(generation: int, stats: Dict):
+        """Called by GA optimizer on each generation"""
+        progress_data["current_generation"] = generation
+        progress_data["best_sharpe"] = stats["best_fitness"]["sharpe_ratio"]
+        progress_data["avg_sharpe"] = stats["avg_fitness"]["sharpe_ratio"]
+        progress_data["status"] = "optimizing"
+        progress_data["elapsed_time"] = stats["elapsed_time"]
+        
+        # Log progress (will appear in Claude's console)
+        logger.info(
+            f"? Gen {generation}/{n_generations}: "
+            f"Best Sharpe={stats['best_fitness']['sharpe_ratio']:.2f}, "
+            f"Avg={stats['avg_fitness']['sharpe_ratio']:.2f}"
+        )
     
     try:
         # Get strategy
@@ -68,6 +106,9 @@ async def optimize_strategy_parameters(
         
         end_date = datetime.now()
         start_date = end_date - timedelta(days=180)  # 6 months
+        
+        logger.info(f"?? Fetching data: {start_date.date()} to {end_date.date()}")
+        progress_data["status"] = "fetching_data"
         
         df = await dm.fetch_historical(
             symbol=symbol,
@@ -82,20 +123,62 @@ async def optimize_strategy_parameters(
         if df.empty:
             return {"error": "No data available"}
         
+        logger.info(f"? Fetched {len(df)} candles")
+        
         # Calculate indicators
+        logger.info(f"?? Calculating indicators...")
+        progress_data["status"] = "calculating_indicators"
+        
         required = strategy.get_required_indicators()
         df = calculate_all_indicators(df, required, use_gpu=False)
         
-        # Get parameter space
-        param_space_method = getattr(AllParameterSpaces, f"{strategy_name}_strategy", None)
+        # ? Use META-LEARNER to get parameter ranges
+        from ...optimization.meta_learner import ParameterMetaLearner
+        from ...optimization.parameter_space import ParameterSpace, ParameterDefinition, ParameterType
         
-        if param_space_method is None:
-            return {
-                "error": f"No parameter space defined for {strategy_name}",
-                "suggestion": "Use default parameters or define custom space",
-            }
+        logger.info(f"?? Using Meta-Learner for smart ranges...")
+        progress_data["status"] = "meta_learning"
         
-        param_space = param_space_method()
+        meta_learner = ParameterMetaLearner()
+        
+        # Get SMART ranges (market-adaptive)
+        try:
+            smart_ranges = meta_learner.get_smart_ranges(
+                strategy_name=strategy_name,
+                df=df,
+                lookback=100
+            )
+            
+            logger.info(
+                f"? META-LEARNER SMART ranges: {len(smart_ranges)} parameters"
+            )
+            
+        except KeyError:
+            logger.warning(f"?? No meta-learner ranges for {strategy_name}, using NAIVE defaults")
+            smart_ranges = meta_learner.get_naive_ranges(strategy_name)
+        
+        # Convert ranges to ParameterSpace
+        param_definitions = {}
+        for param_name, (min_val, max_val) in smart_ranges.items():
+            if isinstance(min_val, int) and isinstance(max_val, int):
+                param_type = ParameterType.INT
+            else:
+                param_type = ParameterType.FLOAT
+            
+            param_definitions[param_name] = ParameterDefinition(
+                name=param_name,
+                type=param_type,
+                low=min_val,
+                high=max_val,
+                description=f"Meta-learner range for {param_name}"
+            )
+        
+        param_space = ParameterSpace(
+            parameters=param_definitions,
+            strategy_name=strategy_name
+        )
+        
+        logger.info(f"? Parameter space: {len(param_space)} parameters")
         
         # Create optimization config
         config = OptimizationConfig(
@@ -104,20 +187,25 @@ async def optimize_strategy_parameters(
             use_ray=use_ray,
         )
         
-        # Run optimization
-        logger.info(f"Starting GA optimization: pop={population_size}, gen={n_generations}")
+        # Run optimization WITH PROGRESS CALLBACK
+        logger.info(f"?? Starting GA: pop={population_size}, gen={n_generations}")
+        progress_data["status"] = "optimizing"
         
         optimizer = GeneticOptimizer(
             df=df,
             strategy_class=strategy,
             param_space=param_space,
             config=config,
+            use_smart_ranges=False,  # Already using smart ranges
+            progress_callback=progress_callback,  # ? STREAMING!
         )
         
         results = optimizer.optimize()
         
+        progress_data["status"] = "completed"
+        
         logger.info(
-            f"Optimization complete: Sharpe={results['best_fitness']['sharpe_ratio']:.2f}, "
+            f"? Optimization complete: Sharpe={results['best_fitness']['sharpe_ratio']:.2f}, "
             f"Time={results['total_time']:.1f}s"
         )
         
@@ -136,7 +224,9 @@ async def optimize_strategy_parameters(
         }
         
     except Exception as e:
-        logger.error(f"Optimization error: {e}", exc_info=True)
+        logger.error(f"? Optimization error: {e}", exc_info=True)
+        progress_data["status"] = "failed"
+        progress_data["error"] = str(e)
         return {"error": str(e)}
 
 

@@ -8,24 +8,115 @@ from ...core.logger import logger
 class VwapInstitutionalTrend(BaseStrategy):
     """VWAP institutional trend (58-68% WR)"""
     def __init__(self, config: StrategyConfig = None):
+        """Initialize VwapInstitutionalTrend strategy."""
         super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.vwap_deviation_std = self.config.get("vwap_deviation_std", 1.0)
+        self.obv_ema_period = self.config.get("obv_ema_period", 20)
+        self.price_ema_period = self.config.get("price_ema_period", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         return ["vwap", "ema", "atr"]
     def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
         signals, pos = [], None
-        for i in range(1, len(df)):
+        
+        # ? Calculate OBV EMA using parameter
+        obv_ema = df["obv"].ewm(span=self.obv_ema_period, adjust=False).mean() if "obv" in df.columns else None
+        
+        for i in range(max(self.obv_ema_period, self.price_ema_period), len(df)):
             r = df.iloc[i]
+            prev = df.iloc[i-1]
             close = r["close"]
-            vwap, ema200, atr = r.get("vwap", close), r.get("ema_200", close), r.get("atr", close*0.02)
+            
+            # Get indicators
+            vwap = r.get("vwap", close)
+            # ? USE price_ema_period parameter
+            price_ema = r.get(f"ema_{self.price_ema_period}", close)
+            obv = r.get("obv", 0)
+            atr = r.get("atr", close*0.02)
+            
+            # ? Calculate VWAP deviation bands using parameter
+            vwap_std = df["close"].rolling(window=20).std().iloc[i]
+            vwap_upper = vwap + (vwap_std * self.vwap_deviation_std)
+            vwap_lower = vwap - (vwap_std * self.vwap_deviation_std)
+            
+            # OBV trend detection
+            obv_prev = prev.get("obv", 0)
+            obv_rising = obv > obv_prev
+            obv_falling = obv < obv_prev
+            
+            # Previous price
+            prev_close = prev["close"]
+            
             if pos is None:
-                if close > ema200 and close > vwap and df.iloc[i-1]["close"] <= vwap:
+                # LONG: Price crosses above VWAP + uptrend + OBV rising (institutional buying)
+                crosses_above_vwap = close > vwap and prev_close <= vwap
+                in_uptrend = close > price_ema
+                
+                if crosses_above_vwap and in_uptrend and obv_rising:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        0.8, 
+                        sl, 
+                        tp, 
+                        {
+                            "vwap": vwap,
+                            "obv": obv,
+                            "price_ema_period": self.price_ema_period,
+                            "vwap_deviation_std": self.vwap_deviation_std,
+                            "reason": "Institutional buying (VWAP cross + OBV)"
+                        }
+                    ))
                     pos = "LONG"
-                elif close < ema200 and close < vwap and df.iloc[i-1]["close"] >= vwap:
+                
+                # SHORT: Price crosses below VWAP + downtrend + OBV falling (institutional selling)
+                crosses_below_vwap = close < vwap and prev_close >= vwap
+                in_downtrend = close < price_ema
+                
+                if crosses_below_vwap and in_downtrend and obv_falling:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {}))
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        0.8, 
+                        sl, 
+                        tp, 
+                        {
+                            "vwap": vwap,
+                            "obv": obv,
+                            "price_ema_period": self.price_ema_period,
+                            "vwap_deviation_std": self.vwap_deviation_std,
+                            "reason": "Institutional selling (VWAP cross + OBV)"
+                        }
+                    ))
                     pos = "SHORT"
+            
+            # Exit when trend reverses or OBV diverges
+            elif pos == "LONG" and (close < price_ema or obv_falling):
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Trend reversed or OBV divergence"}
+                ))
+                pos = None
+            
+            elif pos == "SHORT" and (close > price_ema or obv_rising):
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Trend reversed or OBV divergence"}
+                ))
+                pos = None
+                
         logger.info(f"VwapInstitutionalTrend: {len(signals)} signals")
         return signals
 

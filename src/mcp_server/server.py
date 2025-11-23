@@ -764,6 +764,113 @@ class SmartTradeMCPServer:
                         },
                     },
                 ),
+                # ==== ASYNC OPTIMIZATION JOBS (NO TIMEOUT!) ====
+                Tool(
+                    name="start_optimization_job",
+                    description="? START optimization job in background (NO TIMEOUT!) - Use pop=50, gen=20 for FULL QUALITY! Job runs async, Claude can check status later.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Strategy to optimize",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe",
+                                "default": "1h",
+                            },
+                            "population_size": {
+                                "type": "integer",
+                                "description": "Population size (50 recommended for quality)",
+                                "default": 50,
+                            },
+                            "n_generations": {
+                                "type": "integer",
+                                "description": "Generations (20 recommended for quality)",
+                                "default": 20,
+                            },
+                            "use_ray": {
+                                "type": "boolean",
+                                "description": "Use Ray parallelization",
+                                "default": False,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="get_optimization_job_status",
+                    description="? Check optimization job status - Fast (<1s), shows progress and ETA",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "job_id": {
+                                "type": "string",
+                                "description": "Job ID from start_optimization_job",
+                            },
+                        },
+                        "required": ["job_id"],
+                    },
+                ),
+                Tool(
+                    name="get_optimization_job_results",
+                    description="?? Get completed optimization results - Fast (<1s) if job is done",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "job_id": {
+                                "type": "string",
+                                "description": "Job ID from start_optimization_job",
+                            },
+                        },
+                        "required": ["job_id"],
+                    },
+                ),
+                Tool(
+                    name="list_optimization_jobs",
+                    description="?? List all optimization jobs - Shows all running/completed jobs",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "description": "Filter by status",
+                                "enum": ["all", "running", "completed", "failed"],
+                                "default": "all",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Max results",
+                                "default": 20,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="cancel_optimization_job",
+                    description="?? Cancel running optimization job",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "job_id": {
+                                "type": "string",
+                                "description": "Job ID to cancel",
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "Cancellation reason",
+                                "default": "User requested",
+                            },
+                        },
+                        "required": ["job_id"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -794,6 +901,14 @@ class SmartTradeMCPServer:
                 optimize_strategy_parameters,
                 optimize_portfolio,
                 run_nfold_walk_forward,
+            )
+            # NEW: ASYNC OPTIMIZATION JOBS
+            from .tools.optimization_jobs import (
+                start_optimization_job,
+                get_optimization_job_status,
+                get_optimization_job_results,
+                list_optimization_jobs,
+                cancel_optimization_job,
             )
             # NEW: AI-DRIVEN TOOLS
             from .tools.agent_management import (
@@ -847,6 +962,17 @@ class SmartTradeMCPServer:
                     result = await optimize_portfolio(**arguments)
                 elif name == "run_nfold_walk_forward":
                     result = await run_nfold_walk_forward(**arguments)
+                # ASYNC OPTIMIZATION JOBS (NO TIMEOUT!)
+                elif name == "start_optimization_job":
+                    result = await start_optimization_job(**arguments)
+                elif name == "get_optimization_job_status":
+                    result = await get_optimization_job_status(**arguments)
+                elif name == "get_optimization_job_results":
+                    result = await get_optimization_job_results(**arguments)
+                elif name == "list_optimization_jobs":
+                    result = await list_optimization_jobs(**arguments)
+                elif name == "cancel_optimization_job":
+                    result = await cancel_optimization_job(**arguments)
                 # AGENT MANAGEMENT TOOLS (AI-DRIVEN)
                 elif name == "launch_trading_agent":
                     result = await launch_trading_agent(**arguments)
@@ -997,33 +1123,6 @@ Avoid: Full equity curves, all trades, excessive decimals
 - `get_diversification_recommendations` - Suggests symbols for diversification
 - `rebalance_agent_portfolio` - Auto-rebalances portfolio allocation
 - `suggest_new_agents` - Suggests new agents to add based on analysis
-
-## ?? TYPICAL WORKFLOWS
-
-**Workflow 1: Find Best Strategy (~15 sec)**
-1. compare_strategies(all_strategies)
-2. Show top 10 by Sharpe Ratio
-3. Recommend top 3
-
-**Workflow 2: Build Portfolio**
-1. compare_strategies(all_strategies)
-2. Select top 5-10 by Sharpe
-3. optimize_portfolio(selected, "max_sharpe")
-
-**Workflow 3: Market-Aware Selection**
-1. detect_market_regime()
-2. Filter recommended strategies
-3. compare_strategies(filtered)
-
-**Workflow 4: Agent Launch & Management**
-1. launch_trading_agent("BTC/USDT", "1h", "cci_extreme_snapback")
-2. Monitor with list_active_agents()
-3. Stop underperforming agents with stop_trading_agent()
-
-**Workflow 5: Correlation & Rebalancing**
-1. detect_symbol_correlations(["BTC/USDT", "ETH/USDT"])
-2. get_diversification_recommendations(active_agents, ["LINK/USDT", "XRP/USDT"])
-3. rebalance_agent_portfolio()
 
 ## ? PERFORMANCE EXPECTATIONS
 

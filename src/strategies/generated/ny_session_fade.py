@@ -9,7 +9,17 @@ from ...core.logger import logger
 
 class NySessionFade(BaseStrategy):
     def __init__(self, config: StrategyConfig = None):
+        """Initialize NySessionFade strategy."""
         super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.vwap_deviation_std = self.config.get("vwap_deviation_std", 2.0)
+        self.atr_period = self.config.get("atr_period", 14)
+        self.ema_period = self.config.get("ema_period", 20)
+        self.ny_start_hour = self.config.get("ny_start_hour", 14)
+        self.ny_end_hour = self.config.get("ny_end_hour", 18)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
 
     def get_required_indicators(self) -> List[str]:
         return ["rsi", "bollinger", "atr"]

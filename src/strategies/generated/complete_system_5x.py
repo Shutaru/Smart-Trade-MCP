@@ -13,8 +13,19 @@ class CompleteSystem5x(BaseStrategy):
     """Complete System 5x - Ultimate multi-factor confluence system"""
 
     def __init__(self, config: StrategyConfig = None):
-        """Initialize Complete System 5x strategy."""
+        """Initialize CompleteSystem5x strategy."""
         super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.ema_fast = self.config.get("ema_fast", 20)
+        self.ema_slow = self.config.get("ema_slow", 50)
+        self.rsi_period = self.config.get("rsi_period", 14)
+        self.rsi_threshold = self.config.get("rsi_threshold", 50)
+        self.macd_fast = self.config.get("macd_fast", 12)
+        self.macd_slow = self.config.get("macd_slow", 26)
+        self.adx_threshold = self.config.get("adx_threshold", 25)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
 
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""

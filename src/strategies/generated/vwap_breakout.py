@@ -21,9 +21,13 @@ class VwapBreakout(BaseStrategy):
         """Initialize VwapBreakout strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+        # OPTIMIZABLE PARAMETERS
+        self.vwap_deviation_std = self.config.get("vwap_deviation_std", 2.0)
+        self.volume_mult = self.config.get("volume_mult", 1.5)
+        self.rsi_threshold = self.config.get("rsi_threshold", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 3.0)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ['vwap', 'atr', 'rsi']
@@ -39,29 +43,53 @@ class VwapBreakout(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
-        for i in range(1, len(df)):
+        
+        # Calculate volume threshold using parameter
+        volume_ma = df["volume"].rolling(window=20).mean()
+        
+        # Calculate VWAP deviation bands using parameter
+        vwap_std = df["close"].rolling(window=20).std()
+        
+        for i in range(20, len(df)):
             r = df.iloc[i]
-            close = r["close"]
+            close, high, low = r["close"], r["high"], r["low"]
             vwap = r.get("vwap", close)
-            rsi, atr = r.get("rsi", 50), r.get("atr", close*0.02)
-            if pos is None:
-                # FIX: Relaxed VWAP breakout threshold from 1.002 to 1.001 (0.2% to 0.1%)
-                # Use high for breakout detection
-                if r["high"] > vwap * 1.001 and 45 < rsi < 75:  # Wider RSI range
+            rsi = r.get("rsi", 50)
+            atr = r.get("atr", close*0.02)
+            volume = r.get("volume", 0)
+            
+            # USE vwap_deviation_std parameter for bands
+            vwap_upper = vwap + (vwap_std.iloc[i] * self.vwap_deviation_std)
+            vwap_lower = vwap - (vwap_std.iloc[i] * self.vwap_deviation_std)
+            
+            # USE volume_mult parameter for volume confirmation
+            has_volume = volume > (volume_ma.iloc[i] * self.volume_mult)
+            
+            # USE rsi_threshold parameter for momentum filter
+            if pos is None and has_volume:
+                # LONG: Break above VWAP upper band with volume
+                if high > vwap_upper and rsi > self.rsi_threshold:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {"vwap_dist": (close-vwap)/vwap}))
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, 
+                                        {"vwap_dist": (close-vwap)/vwap, "volume_ratio": volume/volume_ma.iloc[i]}))
                     pos = "LONG"
-                # Use low for breakdown
-                elif r["low"] < vwap * 0.999 and 25 < rsi < 55:
+                # SHORT: Break below VWAP lower band with volume
+                elif low < vwap_lower and rsi < self.rsi_threshold:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {"vwap_dist": (close-vwap)/vwap}))
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, 
+                                        {"vwap_dist": (close-vwap)/vwap, "volume_ratio": volume/volume_ma.iloc[i]}))
                     pos = "SHORT"
+            
+            # Exit when price returns to VWAP
             elif pos == "LONG" and close < vwap:
-                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={}))
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, 
+                                    metadata={"reason": "Return to VWAP"}))
                 pos = None
             elif pos == "SHORT" and close > vwap:
-                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={}))
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, 
+                                    metadata={"reason": "Return to VWAP"}))
                 pos = None
+                
         logger.info(f"VwapBreakout: {len(signals)} signals")
         return signals
 

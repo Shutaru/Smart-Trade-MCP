@@ -21,9 +21,13 @@ class TrendVolumeCombo(BaseStrategy):
         """Initialize TrendVolumeCombo strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+        # OPTIMIZABLE PARAMETERS
+        self.ema_fast = self.config.get("ema_fast", 20)
+        self.ema_slow = self.config.get("ema_slow", 50)
+        self.obv_ema_period = self.config.get("obv_ema_period", 20)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ["ema", "obv", "atr"]
@@ -39,38 +43,95 @@ class TrendVolumeCombo(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
-        for i in range(5, len(df)):
+        
+        # ? Calculate OBV EMA using parameter
+        obv_ema = df["obv"].ewm(span=self.obv_ema_period, adjust=False).mean() if "obv" in df.columns else None
+        
+        for i in range(max(5, self.obv_ema_period), len(df)):
             r = df.iloc[i]
-            close, volume = r["close"], r["volume"]
+            prev = df.iloc[i - 1]
+            
+            close = r["close"]
+            volume = r["volume"]
             obv = r.get("obv", 0)
+            obv_prev = prev.get("obv", 0)
             atr = r.get("atr", close*0.02)
+            
+            # ? USE ema_fast and ema_slow parameters
+            ema_fast_val = r.get(f"ema_{self.ema_fast}", close)
+            ema_slow_val = r.get(f"ema_{self.ema_slow}", close)
+            
+            # Volume confirmation
             vol_avg = df["volume"].iloc[i-5:i].mean()
-            # FIX: Relaxed from 1.5x to 1.2x
             high_vol = volume > vol_avg * 1.2
             
+            # Trend confirmation
+            bullish_trend = ema_fast_val > ema_slow_val
+            bearish_trend = ema_fast_val < ema_slow_val
+            
+            # OBV trend confirmation
+            obv_rising = obv > obv_prev
+            obv_falling = obv < obv_prev
+            
+            # ? USE EMA parameters for trend + OBV for volume confirmation
             if pos is None and high_vol:
-                # FIX: Removed EMA filter
-                if obv > df.iloc[i-1].get("obv", 0):
+                # LONG: Bullish EMA + OBV rising + volume
+                if bullish_trend and obv_rising:
                     sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, 
-                                        {"vol_ratio": volume/vol_avg}))
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        0.75, 
+                        sl, 
+                        tp, 
+                        {
+                            "vol_ratio": volume/vol_avg,
+                            "ema_fast": self.ema_fast,
+                            "ema_slow": self.ema_slow,
+                            "obv_rising": obv_rising
+                        }
+                    ))
                     pos = "LONG"
-                elif obv < df.iloc[i-1].get("obv", 0):
+                    
+                # SHORT: Bearish EMA + OBV falling + volume
+                elif bearish_trend and obv_falling:
                     sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.75, sl, tp, 
-                                        {"vol_ratio": volume/vol_avg}))
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        0.75, 
+                        sl, 
+                        tp, 
+                        {
+                            "vol_ratio": volume/vol_avg,
+                            "ema_fast": self.ema_fast,
+                            "ema_slow": self.ema_slow,
+                            "obv_falling": obv_falling
+                        }
+                    ))
                     pos = "SHORT"
             
-            # FIX: ADD EXIT LOGIC - exit when OBV reverses
-            elif pos == "LONG" and obv < df.iloc[i-1].get("obv", 0):
-                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
-                                    metadata={"reason": "OBV reversed"}))
+            # Exit when trend or OBV reverses
+            elif pos == "LONG" and (not bullish_trend or obv_falling):
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Trend or OBV reversed"}
+                ))
                 pos = None
             
-            elif pos == "SHORT" and obv > df.iloc[i-1].get("obv", 0):
-                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
-                                    metadata={"reason": "OBV reversed"}))
+            elif pos == "SHORT" and (not bearish_trend or obv_rising):
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Trend or OBV reversed"}
+                ))
                 pos = None
+                
         logger.info(f"TrendVolumeCombo: {len(signals)} signals")
         return signals
 

@@ -20,8 +20,15 @@ class ChannelSqueezePlus(BaseStrategy):
     def __init__(self, config: StrategyConfig = None):
         """Initialize ChannelSqueezePlus strategy."""
         super().__init__(config)
-        self.config.stop_loss_atr_mult = 2.0
         
+        # OPTIMIZABLE PARAMETERS
+        self.bb_period = self.config.get("bb_period", 20)
+        self.keltner_period = self.config.get("keltner_period", 20)
+        self.donchian_period = self.config.get("donchian_period", 20)
+        self.squeeze_threshold_pct = self.config.get("squeeze_threshold_pct", 5.0)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 3.0)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ['bollinger', 'keltner', 'atr']
@@ -47,7 +54,7 @@ class ChannelSqueezePlus(BaseStrategy):
             # FIX: Relaxed squeeze detection - allow partial squeeze
             bb_width = (bb_u - bb_l) / close if close > 0 else 0
             kc_width = (kc_u - kc_l) / close if close > 0 else 0
-            is_squeezed = bb_width < kc_width * 0.85  # Relaxed from exact inside check
+            is_squeezed = bb_width < (self.squeeze_threshold_pct/100) and bb_width < kc_width * 0.85  # Relaxed from exact inside check
             bb_m = (bb_u + bb_l) / 2  # Calculate BB middle
             
             if pos is None and is_squeezed:

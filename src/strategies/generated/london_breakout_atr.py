@@ -21,9 +21,15 @@ class LondonBreakoutAtr(BaseStrategy):
         """Initialize LondonBreakoutAtr strategy."""
         super().__init__(config)
         
-        # Strategy-specific parameters
-        # TODO: Add configurable parameters from config.params
-        
+        # OPTIMIZABLE PARAMETERS
+        self.atr_period = self.config.get("atr_period", 14)
+        self.atr_mult = self.config.get("atr_mult", 1.5)
+        self.ema_period = self.config.get("ema_period", 20)
+        self.london_start_hour = self.config.get("london_start_hour", 8)
+        self.london_end_hour = self.config.get("london_end_hour", 12)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 3.0)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ["atr", "ema"]

@@ -16,6 +16,9 @@ _LOGGING_DISABLED = os.environ.get('SMART_TRADE_DISABLE_LOGGING', '').lower() ==
 # Flag to disable colors (for MCP Server - JSON output must be clean!)
 _IS_MCP_SERVER = os.environ.get('SMART_TRADE_MCP_MODE', '').lower() == 'true'
 
+# Flag for test mode (disable rotation to avoid conflicts)
+_IS_TEST_MODE = os.environ.get('SMART_TRADE_TEST_MODE', '').lower() == 'true'
+
 
 def setup_logging(log_file: Optional[Path] = None) -> None:
     """
@@ -56,16 +59,29 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
 
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.add(
-        log_file,
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-        level="DEBUG",
-        rotation="10 MB",
-        retention="30 days",
-        compression="zip",
-    )
+    # ? FIX: Disable rotation in test mode to avoid file conflicts
+    if _IS_TEST_MODE:
+        # Test mode: Simple file logging, no rotation
+        logger.add(
+            log_file,
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+            level="DEBUG",
+            rotation=None,  # ? DISABLED
+            enqueue=True,  # ? Thread-safe
+        )
+    else:
+        # Production mode: Full rotation
+        logger.add(
+            log_file,
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+            level="DEBUG",
+            rotation="10 MB",
+            retention="30 days",
+            compression="zip",
+            enqueue=True,  # ? Thread-safe
+        )
 
-    logger.info(f"Logging initialized - Level: {settings.log_level}, MCP Mode: {_IS_MCP_SERVER}")
+    logger.info(f"Logging initialized - Level: {settings.log_level}, MCP Mode: {_IS_MCP_SERVER}, Test Mode: {_IS_TEST_MODE}")
 
 
 # Initialize on import (unless disabled)

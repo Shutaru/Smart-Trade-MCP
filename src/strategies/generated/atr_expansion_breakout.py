@@ -14,15 +14,19 @@ class AtrExpansionBreakout(BaseStrategy):
     AtrExpansionBreakout - ATR expansion signals volatility breakout
     
     Category: breakout
-    Indicators: atr, ema, rsi
+    Indicators: atr, ema, rsi, supertrend, adx
     """
 
     def __init__(self, config: StrategyConfig = None):
         """Initialize AtrExpansionBreakout strategy."""
         super().__init__(config)
-        self.config.stop_loss_atr_mult = 2.2
-        self.config.take_profit_rr_ratio = 2.4
         
+        # OPTIMIZABLE PARAMETERS
+        self.atr_period = self.config.get("atr_period", 14)
+        self.atr_multiplier = self.config.get("atr_multiplier", 1.25)
+        self.stop_loss_atr_mult = self.config.get("stop_loss_atr_mult", 2.2)
+        self.take_profit_rr_ratio = self.config.get("take_profit_rr_ratio", 2.4)
+
     def get_required_indicators(self) -> List[str]:
         """Required indicators for this strategy."""
         return ["atr", "ema", "supertrend", "adx"]
@@ -38,37 +42,79 @@ class AtrExpansionBreakout(BaseStrategy):
             List of trading signals
         """
         signals, pos = [], None
-        for i in range(20, len(df)):
+        
+        # Calculate dynamic ATR threshold from parameter
+        atr_mean = df["atr"].rolling(window=self.atr_period).mean()
+        atr_expansion_threshold = atr_mean * self.atr_multiplier
+        
+        for i in range(self.atr_period, len(df)):
             r = df.iloc[i]
             close = r["close"]
-            atr = r.get("atr", close*0.02)
-            # FIX: ATR expansion threshold relaxed from 1.5x to 1.25x
-            atr_avg = df["atr"].iloc[i-20:i].mean() if "atr" in df.columns else atr
-            atr_expanding = atr > atr_avg * 1.25  # Relaxed from 1.5
-            st_trend = r.get("supertrend_trend", 0)
-            prev_high, prev_low = df.iloc[i-1]["high"], df.iloc[i-1]["low"]
+            atr = r.get("atr", close * 0.02)
             
-            if pos is None and atr_expanding:
-                # FIX: Removed EMA filter - just need SuperTrend + breakout
-                if st_trend > 0 and close > prev_high:
-                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
-                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {"atr_ratio": atr/atr_avg}))
+            # USE atr_expansion_threshold from parameter
+            is_expanding = atr > atr_expansion_threshold.iloc[i]
+            
+            # Get SuperTrend and EMA for trend confirmation
+            st_trend = r.get("supertrend_trend", 0)
+            adx = r.get("adx", 25)
+            
+            if pos is None:
+                # USE adx parameter if available (from metadata, default 20)
+                min_adx = 20  # Could add as parameter if needed
+                
+                # LONG: ATR expansion + bullish SuperTrend + strong trend
+                if is_expanding and st_trend == 1 and adx > min_adx:
+                    # USE sl/tp parameters
+                    sl = close - (atr * self.stop_loss_atr_mult)
+                    tp = close + (atr * self.stop_loss_atr_mult * self.take_profit_rr_ratio)
+                    
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        0.8, 
+                        sl, 
+                        tp,
+                        {"atr": atr, "adx": adx, "reason": "ATR expansion breakout"}
+                    ))
                     pos = "LONG"
-                elif st_trend < 0 and close < prev_low:
-                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
-                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {"atr_ratio": atr/atr_avg}))
+                
+                # SHORT: ATR expansion + bearish SuperTrend + strong trend
+                elif is_expanding and st_trend == -1 and adx > min_adx:
+                    # USE sl/tp parameters
+                    sl = close + (atr * self.stop_loss_atr_mult)
+                    tp = close - (atr * self.stop_loss_atr_mult * self.take_profit_rr_ratio)
+                    
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        0.8, 
+                        sl, 
+                        tp,
+                        {"atr": atr, "adx": adx, "reason": "ATR expansion breakdown"}
+                    ))
                     pos = "SHORT"
             
-            # FIX: ADD EXIT LOGIC - exit on SuperTrend reversal
-            elif pos == "LONG" and st_trend < 0:
-                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
-                                    metadata={"reason": "SuperTrend reversed"}))
+            # Exit on SuperTrend flip
+            elif pos == "LONG" and st_trend == -1:
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "SuperTrend flip"}
+                ))
                 pos = None
-            
-            elif pos == "SHORT" and st_trend > 0:
-                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
-                                    metadata={"reason": "SuperTrend reversed"}))
+            elif pos == "SHORT" and st_trend == 1:
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "SuperTrend flip"}
+                ))
                 pos = None
+        
         logger.info(f"AtrExpansionBreakout: {len(signals)} signals")
         return signals
 
