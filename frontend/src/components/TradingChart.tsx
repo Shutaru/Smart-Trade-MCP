@@ -1,14 +1,5 @@
-import React, { useEffect, useRef } from 'react'
-import { createChart, IChartApi, ISeriesApi, UTCTimestamp } from 'lightweight-charts'
-
-interface Candle {
-  time: number | string // unix timestamp (s) or ISO
-  open: number
-  high: number
-  low: number
-  close: number
-  volume?: number
-}
+import { useEffect, useRef } from 'react'
+import { createChart, IChartApi, ISeriesApi } from 'lightweight-charts'
 
 interface Trade {
   id: number

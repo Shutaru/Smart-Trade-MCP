@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { createChart, IChartApi, ISeriesApi } from 'lightweight-charts'
 
 export default function MoneyFlowChart({ series }: { series: { time: string; value: number }[] }) {
