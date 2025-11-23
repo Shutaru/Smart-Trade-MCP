@@ -58,11 +58,108 @@ class AgentOrchestrator:
             self._restore_active_agents()
         except Exception as e:
             logger.warning(f"Failed to restore agents on init: {e}")
+        # Attach any external processes recorded in DB (pid) to orchestrator
+        try:
+            attached = self.reconcile_db_agents()
+            if attached:
+                logger.info(f"Attached external agents from DB on init: {attached}")
+        except Exception as e:
+            logger.debug(f"reconcile_db_agents failed on init: {e}")
         
         # Start monitor thread
         self._start_monitor()
     
     def _start_monitor(self):
+        """Start background monitor thread to supervise agents."""
+        if self._monitor_thread is None:
+            self._monitor_thread = threading.Thread(target=self._monitor_agents_loop, daemon=True)
+            self._monitor_thread.start()
+            logger.info("Agent monitor thread started")
+    
+    def _monitor_agents_loop(self):
+        """Loop that monitors agent processes and restarts if needed."""
+        while not self._stop_monitor.is_set():
+            try:
+                with self._lock:
+                    for agent_id, info in list(self.agents.items()):
+                        proc = info.get("process")
+                        status = info.get("status")
+                        # If process died but agent is marked active, restart
+                        if status == "active":
+                            if proc is None or not proc.is_alive():
+                                logger.warning(f"Agent {agent_id} process not alive. Auto-restart enabled={self.auto_restart}")
+                                if self.auto_restart:
+                                    # Restart the agent process
+                                    try:
+                                        cfg = info.get("config")
+                                        logger.info(f"Restarting agent {agent_id}...")
+                                        new_agent = TradingAgent(**cfg)
+                                        new_proc = multiprocessing.Process(target=new_agent.run, name=f"Agent-{agent_id}")
+                                        new_proc.start()
+                                        info["agent"] = new_agent
+                                        info["process"] = new_proc
+                                        info["started_at"] = datetime.now()
+                                        logger.info(f"Agent {agent_id} restarted (PID: {new_proc.pid})")
+                                        # update storage started_at
+                                        try:
+                                            self.storage.update_status(agent_id, "active")
+                                        except Exception:
+                                            pass
+                                        # persist pid
+                                        try:
+                                            self.storage.update_pid(agent_id, new_proc.pid)
+                                        except Exception:
+                                            pass
+                                    except Exception as e:
+                                        logger.error(f"Failed to restart agent {agent_id}: {e}")
+                
+            except Exception as e:
+                logger.error(f"Error in monitor loop: {e}", exc_info=True)
+            # Sleep before next check
+            time.sleep(5)
+    
+    def _restore_active_agents(self):
+        """Restore agents with status 'active' from storage at startup."""
+        active_agents = self.storage.get_active_agents()
+        restored = 0
+        for a in active_agents:
+            agent_id = a.get("agent_id")
+            # Skip if already in memory
+            if agent_id in self.agents:
+                continue
+            # Enforce max agents — count only in-memory active agents to avoid double-counting DB entries
+            current_active = len([x for x in self.agents.values() if x.get("status") == "active"])
+            if current_active >= self.max_agents:
+                logger.warning(f"Max agents reached; skipping restore of {agent_id}")
+                continue
+            try:
+                cfg = {
+                    "agent_id": agent_id,
+                    "symbol": a.get("symbol"),
+                    "timeframe": a.get("timeframe"),
+                    "strategy": a.get("strategy"),
+                    "params": a.get("params") or {},
+                    "risk_per_trade": a.get("risk_per_trade", 0.02),
+                    "scan_interval_minutes": a.get("scan_interval_minutes", 15)
+                }
+                agent = TradingAgent(**cfg)
+                process = multiprocessing.Process(target=agent.run, name=f"Agent-{agent_id}")
+                process.start()
+                self.agents[agent_id] = {
+                    "agent": agent,
+                    "process": process,
+                    "config": cfg,
+                    "started_at": datetime.now(),
+                    "status": "active"
+                }
+                restored += 1
+                logger.info(f"Restored agent {agent_id} (PID: {process.pid})")
+                # persist pid
+                try:
+                    self.storage.update_pid(agent_id, process.pid)
+                except Exception:
+                    pass
+            def _start_monitor(self):
         """Start background monitor thread to supervise agents."""
         if self._monitor_thread is None:
             self._monitor_thread = threading.Thread(target=self._monitor_agents_loop, daemon=True)
@@ -486,7 +583,7 @@ class AgentOrchestrator:
                         'agent_id': aid,
                         'symbol': a.get('symbol'),
                         'timeframe': a.get('timeframe'),
-                        'strategy': a.get('strategy'),
+                        'strategy': a.get('strategy',
                         'params': a.get('params') or {},
                         'risk_per_trade': a.get('risk_per_trade', 0.02),
                         'scan_interval_minutes': a.get('scan_interval_minutes', 15)
