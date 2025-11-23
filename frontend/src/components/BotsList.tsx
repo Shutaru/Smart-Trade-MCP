@@ -23,53 +23,52 @@ export default function BotsList({ agents, onSelect }: { agents: AgentSummary[];
   const loading = agents === null || agents === undefined
 
   return (
-    <div>
-      <div className="card-panel">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold">Active Bots</h3>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search bots..."
-            className="px-3 py-1 rounded-md border" />
-        </div>
-
-        {loading ? (
-          <div className="space-y-3">
-            <div className="h-16 bg-gray-100 rounded animate-pulse" />
-            <div className="h-16 bg-gray-100 rounded animate-pulse" />
-            <div className="h-16 bg-gray-100 rounded animate-pulse" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-sm small-muted">No active bots</div>
-        ) : (
-          <div className="space-y-3">
-            {filtered.map((a) => (
-              <div
-                key={a.agent_id}
-                className="w-full p-4 border rounded-lg hover:shadow-md transition cursor-pointer flex items-center gap-4"
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelect(a.agent_id)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(a.agent_id) }}
-              >
-                <div style={{ width: 260, height: 66 }} className="rounded overflow-hidden bg-panel/30 p-2 flex-shrink-0">
-                  <MoneyFlowChart series={(a.performance?.equity_series && a.performance.equity_series.length > 0) ? a.performance.equity_series : [{ time: new Date().toISOString(), value: 0 }]} />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate">{a.symbol} <span className="text-sm small-muted">| {a.strategy} ({a.timeframe})</span></div>
-                  <div className="text-sm small-muted truncate">ID: {a.agent_id}</div>
-                </div>
-
-                <div className="text-right w-28 small-muted">
-                  <div className={`px-2 py-1 rounded ${a.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{a.status}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+    <div className="card-panel full-width-list">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-semibold">Active Bots</h3>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search bots..."
+          className="px-3 py-1 rounded-md border" />
       </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          <div className="h-16 bg-gray-100 rounded animate-pulse" />
+          <div className="h-16 bg-gray-100 rounded animate-pulse" />
+          <div className="h-16 bg-gray-100 rounded animate-pulse" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-sm small-muted">No active bots</div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((a) => (
+            <div
+              key={a.agent_id}
+              className="w-full p-4 border rounded-lg hover:shadow-md transition cursor-pointer flex items-center gap-4"
+              role="button"
+              tabIndex={0}
+              title={a.agent_id}
+              onClick={() => onSelect(a.agent_id)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(a.agent_id) }}
+            >
+              <div style={{ width: 280, height: 66 }} className="rounded overflow-hidden bg-panel/30 p-2 flex-shrink-0">
+                <MoneyFlowChart series={(a.performance?.equity_series && a.performance.equity_series.length > 0) ? a.performance.equity_series : [{ time: new Date().toISOString(), value: 0 }]} />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold break-words">{a.symbol} <span className="text-sm small-muted">| {a.strategy} ({a.timeframe})</span></div>
+                <div className="text-sm small-muted break-words">ID: {a.agent_id}</div>
+              </div>
+
+              <div className="text-right w-28 small-muted">
+                <div className={`px-2 py-1 rounded ${a.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{a.status}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -63,11 +63,13 @@ body {
   box-shadow: 0 6px 18px rgba(99,102,241,0.15);
 }
 
-.small-muted {
-  color: var(--muted);
-  font-size: 0.9rem;
-}
+.small-muted { color: var(--muted); font-size: 0.9rem }
 
+.full-width-list { max-height: 70vh; overflow-y: auto; }
+.full-width-list .card-panel { padding: 1rem }
+.full-width-list .card-panel > .space-y-3 > div { background: transparent }
+
+.card-panel .rounded { background-clip: padding-box }
 /* layout */
 .grid-3 {
   display: grid;
