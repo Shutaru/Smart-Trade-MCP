@@ -3,7 +3,7 @@ import BotsList from '../components/BotsList'
 import TradingChart from '../components/TradingChart'
 import MoneyFlowChart from '../components/MoneyFlowChart'
 
-const API = 'http://localhost:8000/api/v1/paper'
+const API = '/api/v1/paper'
 
 export default function PaperDashboard() {
   const [agents, setAgents] = useState<any[]>([])
@@ -26,7 +26,16 @@ export default function PaperDashboard() {
       }
       const data = await res.json()
       console.debug('Fetched agents:', data)
-      setAgents(data.agents || [])
+      // Support different shapes: { agents: [...] } or direct array
+      if (Array.isArray(data)) {
+        setAgents(data)
+      } else if (data && Array.isArray(data.agents)) {
+        setAgents(data.agents)
+      } else if (data && Array.isArray(data.items)) {
+        setAgents(data.items)
+      } else {
+        setAgents([])
+      }
     } catch (e) {
       console.error('Failed to fetch agents', e)
       setAgents([])
