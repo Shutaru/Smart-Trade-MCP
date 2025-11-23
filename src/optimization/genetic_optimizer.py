@@ -7,6 +7,7 @@ Modern implementation using DEAP with Rich CLI dashboard integration.
 Features:
 - DEAP genetic algorithm framework
 - Multi-objective optimization (Sharpe, Win Rate, Max DD)
+- **META-LEARNER INTEGRATION**: SMART vs NAIVE parameter ranges
 - Rich CLI progress dashboard (DISABLED in MCP mode!)
 - Type-safe parameter handling
 - GPU acceleration support (optional)
@@ -50,6 +51,7 @@ if not MCP_MODE:
 from .config import OptimizationConfig
 from .parameter_space import ParameterSpace, ParameterType
 from .fitness_evaluator import FitnessEvaluator, FitnessMetrics
+from .meta_learner import ParameterMetaLearner  # ? NEW
 from ..core.logger import logger
 
 # Fix Windows encoding issues
@@ -71,6 +73,7 @@ class GeneticOptimizer:
     Genetic Algorithm optimizer for trading strategies.
     
     Uses DEAP for GA implementation and Rich for beautiful CLI progress display.
+    **NOW WITH META-LEARNER**: Intelligently narrows parameter ranges based on market regime.
     """
     
     def __init__(
@@ -79,6 +82,9 @@ class GeneticOptimizer:
         strategy_class: Any,
         param_space: ParameterSpace,
         config: Optional[OptimizationConfig] = None,
+        use_smart_ranges: bool = True,  # ? NEW: Enable meta-learner
+        meta_learner_lookback: int = 100,  # ? NEW: Market analysis period
+        progress_callback: Optional[Callable[[int, Dict], None]] = None,  # ? NEW!
     ):
         """
         Initialize genetic optimizer.
@@ -86,16 +92,60 @@ class GeneticOptimizer:
         Args:
             df: OHLCV DataFrame with indicators
             strategy_class: Strategy class to optimize
-            param_space: Parameter space definition
+            param_space: Parameter space definition (NAIVE ranges)
             config: Optimization configuration (uses defaults if None)
+            use_smart_ranges: Use meta-learner to adapt ranges (default: True)
+            meta_learner_lookback: Bars for market regime analysis
+            progress_callback: Optional callback(generation, stats) for progress updates
         """
         if not DEAP_AVAILABLE:
             raise ImportError("DEAP is required for genetic optimization. Install with: pip install deap")
         
         self.df = df
         self.strategy_class = strategy_class
-        self.param_space = param_space
         self.config = config or OptimizationConfig()
+        self.progress_callback = progress_callback  # ? Store callback
+        
+        # ? META-LEARNER INTEGRATION
+        self.use_smart_ranges = use_smart_ranges
+        
+        if use_smart_ranges:
+            logger.info("?? Meta-Learner ENABLED - Using SMART parameter ranges")
+            self.meta_learner = ParameterMetaLearner()
+            
+            # Get strategy name
+            strategy_name = (
+                strategy_class.name 
+                if hasattr(strategy_class, 'name') 
+                else strategy_class.__class__.__name__
+            )
+            
+            # Get SMART ranges
+            try:
+                smart_ranges = self.meta_learner.get_smart_ranges(
+                    strategy_name=strategy_name,
+                    df=df,
+                    lookback=meta_learner_lookback
+                )
+                
+                # Update parameter space with SMART ranges
+                for param_name, (min_val, max_val) in smart_ranges.items():
+                    if param_name in param_space.parameters:
+                        param_space.parameters[param_name].low = min_val
+                        param_space.parameters[param_name].high = max_val
+                
+                logger.info(
+                    f"? Applied SMART ranges: "
+                    f"{len(smart_ranges)} parameters adapted to market regime"
+                )
+                
+            except Exception as e:
+                logger.warning(f"?? Meta-learner failed, using NAIVE ranges: {e}")
+                use_smart_ranges = False
+        else:
+            logger.info("?? Using NAIVE (wide) parameter ranges")
+        
+        self.param_space = param_space
         
         # Fitness evaluator
         self.evaluator = FitnessEvaluator(
@@ -137,7 +187,8 @@ class GeneticOptimizer:
             strategy=strategy_class.name if hasattr(strategy_class, 'name') else strategy_class.__class__.__name__,
             population=self.config.population_size,
             generations=self.config.n_generations,
-            parameters=len(param_space)
+            parameters=len(param_space),
+            smart_ranges=use_smart_ranges
         )
     
     def _setup_deap(self):
@@ -279,6 +330,26 @@ class GeneticOptimizer:
         metrics = self.evaluator.evaluate(params)
         return metrics.to_tuple()
     
+    def _evaluate_population_parallel(self, population: List) -> List[Tuple[float, float, float]]:
+        """
+        Evaluate population (Ray DISABLED - serialization issues).
+        
+        Args:
+            population: List of individuals to evaluate
+            
+        Returns:
+            List of fitness tuples
+        """
+        # ?? RAY DISABLED: Complex serialization issues with FitnessEvaluator
+        # TODO: Future work - implement proper Ray serialization
+        
+        if self.config.use_ray:
+            logger.warning("?? Ray parallel mode requested but disabled (serialization issues)")
+            logger.info("??  Using sequential evaluation instead")
+        
+        # Sequential evaluation (WORKS!)
+        return [self._evaluate_individual(ind) for ind in population]
+    
     def optimize(self) -> Dict[str, Any]:
         """
         Run genetic algorithm optimization.
@@ -298,9 +369,14 @@ class GeneticOptimizer:
             logger.info(f"Population: {self.config.population_size}, Generations: {self.config.n_generations}")
             
             # Evaluate initial population
-            fitnesses = list(map(self.toolbox.evaluate, self.population))
-            for ind, fit in zip(self.population, fitnesses):
-                ind.fitness.values = fit
+            if self.config.use_ray:
+                fitnesses = self._evaluate_population_parallel(self.population)
+                for ind, fit in zip(self.population, fitnesses):
+                    ind.fitness.values = fit
+            else:
+                fitnesses = list(map(self.toolbox.evaluate, self.population))
+                for ind, fit in zip(self.population, fitnesses):
+                    ind.fitness.values = fit
             
             # Track best individual
             best_ind = tools.selBest(self.population, 1)[0]
@@ -332,7 +408,14 @@ class GeneticOptimizer:
                 
                 # Evaluate offspring
                 invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-                fitnesses = list(map(self.toolbox.evaluate, invalid_ind))
+                
+                if self.config.use_ray:
+                    # ? Parallel evaluation with Ray
+                    fitnesses = self._evaluate_population_parallel(invalid_ind)
+                else:
+                    # Sequential evaluation
+                    fitnesses = list(map(self.toolbox.evaluate, invalid_ind))
+                
                 for ind, fit in zip(invalid_ind, fitnesses):
                     ind.fitness.values = fit
                 
@@ -352,6 +435,21 @@ class GeneticOptimizer:
                     best_fitness = self._fitness_to_dict(best_ind.fitness.values)
                 
                 avg_fitness = self._calculate_avg_fitness(self.population)
+                
+                # ? NEW: Call progress callback
+                if self.progress_callback:
+                    try:
+                        self.progress_callback(gen, {
+                            "generation": gen,
+                            "total_generations": self.config.n_generations,
+                            "best_fitness": best_fitness,
+                            "avg_fitness": avg_fitness,
+                            "evaluated": len(invalid_ind),
+                            "elapsed_time": time.time() - start_time,
+                            "gen_time": time.time() - gen_start,
+                        })
+                    except Exception as e:
+                        logger.warning(f"Progress callback failed: {e}")
                 
                 # Log progress every 5 generations
                 if gen % 5 == 0 or gen == self.config.n_generations:
@@ -414,7 +512,14 @@ class GeneticOptimizer:
                         
                         # Evaluate offspring
                         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-                        fitnesses = list(map(self.toolbox.evaluate, invalid_ind))
+                        
+                        if self.config.use_ray:
+                            # ? Parallel evaluation with Ray
+                            fitnesses = self._evaluate_population_parallel(invalid_ind)
+                        else:
+                            # Sequential evaluation
+                            fitnesses = list(map(self.toolbox.evaluate, invalid_ind))
+                        
                         for ind, fit in zip(invalid_ind, fitnesses):
                             ind.fitness.values = fit
                         

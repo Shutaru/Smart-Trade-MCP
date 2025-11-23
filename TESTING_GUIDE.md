@@ -1,283 +1,231 @@
-# ?? GUIA DE TESTES RÁPIDOS
+# ?? GUIA DE TESTES RÁPIDOS - ASYNC JOBS
 
 **Para:** Testes iniciais com Claude Desktop  
-**Scan Interval:** 5 minutos (ajustado para testes)
+**Versão:** 3.0 - Com Async Optimization Jobs ?
 
 ---
 
-## ?? **INPUT INICIAL PARA CLAUDE**
+## ? **SISTEMA DE JOBS ASSÍNCRONOS (ZERO TIMEOUT!)** ?
 
-### **Opção 1: Teste Simples (1 symbol)**
+### **?? COMO FUNCIONA:**
 
 ```
-Claude, vou testar o sistema de trading AI-driven.
+1. START JOB (< 1s)
+   ??> Devolve job_id, optimização corre em background
 
-Faz o seguinte:
+2. CHECK STATUS (< 1s, pode repetir)
+   ??> Vê progresso: "Gen 8/20, Sharpe 1.8"
+
+3. GET RESULTS (< 1s quando completo)
+   ??> Resultados completos da optimização
+```
+
+### **? VANTAGENS:**
+
+- **ZERO timeout** - Jobs correm em background
+- **QUALIDADE MÁXIMA** - pop=50, gen=20 sem problemas  
+- **MONITORIZÁVEL** - Claude vê progresso em tempo real
+- **NÃO BLOQUEANTE** - Claude pode fazer outras coisas
+
+---
+
+## ?? **WORKFLOWS RECOMENDADOS**
+
+### **Opção 1: Teste Simples (1 symbol) - ASYNC** ? **RECOMENDADO**
+
+```
+Claude, testa o sistema de trading AI-driven:
+
 1. Analisa BTC/USDT no timeframe 1h
-2. Detecta o regime de mercado atual
-3. Escolhe as 3 melhores estratégias para esse regime
-4. Compara essas estratégias (backtest)
-5. Otimiza os parâmetros da melhor
-6. Se o Sharpe for > 1.5, lança um bot dedicado com scan a cada 5 minutos
+2. Detecta regime de mercado
+3. Escolhe 3 melhores estratégias para o regime  
+4. Compara estratégias (backtest)
+5. INICIA JOB assíncrono de optimização da melhor:
+   - População: 50
+   - Gerações: 20
+   - Usa: start_optimization_job()
+   
+6. Mostra-me o job_id
 
-Quero ver todo o processo passo a passo.
+7. A cada 30 segundos, verifica progresso com get_optimization_job_status()
+
+8. Quando status="COMPLETED", busca resultados com get_optimization_job_results()
+
+9. Se Sharpe > 1.5, lança bot dedicado
+
+IMPORTANTE: NÃO uses optimize_strategy_parameters() diretamente!
+Usa o sistema de jobs assíncronos.
 ```
 
-### **Opção 2: Teste Médio (3 symbols)**
+### **Opção 2: Teste Médio (3 symbols em paralelo)**
 
 ```
-Claude, quero testar o sistema com 3 símbolos:
-- BTC/USDT
-- ETH/USDT  
-- MATIC/USDT
+Claude, optimiza 3 estratégias EM PARALELO:
 
-Para cada um:
-1. Detecta regime
-2. Escolhe estratégias adequadas
-3. Faz backtest
-4. Otimiza a melhor
+1. BTC/USDT ? Inicia job para cci_extreme_snapback
+2. ETH/USDT ? Inicia job para bollinger_mean_reversion
+3. MATIC/USDT ? Inicia job para ema_cloud_trend
 
-Depois:
-5. Analisa correlações entre os 3
-6. Lança bots apenas se:
-   - Sharpe > 1.5
-   - Boa diversificação (evitar mesma estratégia em pares correlacionados)
+Todos com pop=50, gen=20.
 
-Scan interval: 5 minutos para todos.
+4. Mostra-me os 3 job_ids
+
+5. Verifica progresso dos 3 jobs simultaneamente
+
+6. À medida que completam, mostra resultados
+
+7. Analisa correlações e lança bots nos promissores
+
+QUALIDADE MÁXIMA, zero timeout, tudo em paralelo!
 ```
 
-### **Opção 3: Teste Completo (5 symbols)** ? **RECOMENDADO**
+### **Opção 3: Teste Completo (5 symbols)**
 
 ```
-Claude, vou testar o sistema AI-driven completo.
+Claude, sistema AI-driven completo:
 
-Analisa estes 5 símbolos e lança bots nos promissores:
-BTC/USDT, ETH/USDT, SOL/USDT, MATIC/USDT, LINK/USDT
+Símbolos: BTC/USDT, ETH/USDT, SOL/USDT, MATIC/USDT, LINK/USDT
 
-Workflow completo:
+Workflow:
 1. Análise de correlações entre todos
-2. Para cada símbolo:
-   - Detecta regime (1h)
-   - Compara estratégias adequadas ao regime
-   - Backtest da melhor
-   - Otimização de parâmetros (população 30, gerações 10 para ser rápido)
+2. Detecta regime para cada um
+3. Escolhe melhor estratégia por símbolo
+4. INICIA 5 JOBS de optimização em paralelo
+5. Monitoriza progresso de todos
+6. Quando todos completarem:
+   - Lança bots com Sharpe > 1.5
+   - Evita duplicados (corr > 0.8)
+   - Scan interval: 5 min
 
-3. Decisão de lançamento:
-   - Sharpe > 1.5
-   - Evitar duplicate strategies em pares correlacionados (> 0.8)
-   - Scan interval: 5 minutos
-
-4. Mostra resumo:
-   - Quantos bots lançados
-   - Diversificação score
-   - Sharpe médio esperado
-   - Correlações identificadas
-
-Executa tudo e mostra os resultados!
+Resumo final:
+- Bots lançados
+- Diversificação score
+- Sharpe médio
+- Correlações
 ```
 
 ---
 
-## ?? **O QUE ESPERAR**
+## ?? **FERRAMENTAS DISPONÍVEIS**
 
-### **Claude vai executar (exemplo para BTC):**
+### **ASYNC OPTIMIZATION (SEM TIMEOUT!):**
+
+| Tool | Descrição | Tempo |
+|------|-----------|-------|
+| `start_optimization_job()` | Inicia job em background | < 1s |
+| `get_optimization_job_status()` | Verifica progresso | < 1s |
+| `get_optimization_job_results()` | Busca resultados | < 1s |
+| `list_optimization_jobs()` | Lista todos os jobs | < 1s |
+| `cancel_optimization_job()` | Cancela job | < 1s |
+
+### **OPTIMIZATION SINCR (PODE DAR TIMEOUT!):**
+
+| Tool | Descrição | Tempo |
+|------|-----------|-------|
+| `optimize_strategy_parameters()` | Optimização bloqueante | 2-8 min ?? |
+
+**?? RECOMENDAÇÃO:** Usa sempre os **ASYNC JOBS** para optimizações!
+
+---
+
+## ?? **EXEMPLOS PRÁTICOS**
+
+### **Exemplo 1: Optimização Simples**
 
 ```python
-# 1. Detectar regime
-regime = detect_market_regime(symbol="BTC/USDT", timeframe="1h")
-# ? "TRENDING_UP" ou "RANGING" ou "VOLATILE"
-
-# 2. Comparar estratégias
-strategies = ["ema_cloud_trend", "macd_zero_trend", "adx_trend_filter_plus"]
-comparison = compare_strategies(strategies, "BTC/USDT", "1h")
-# ? Top strategy: "ema_cloud_trend" (Sharpe 1.8)
-
-# 3. Otimizar
-optimized = optimize_strategy_parameters("ema_cloud_trend", "BTC/USDT")
-# ? Best params: {ema_fast: 18, ema_slow: 52, ...}
-# ? Sharpe after optimization: 2.3
-
-# 4. Lançar bot
-agent = launch_trading_agent(
+# 1. START
+job = start_optimization_job(
+    strategy_name="cci_extreme_snapback",
     symbol="BTC/USDT",
     timeframe="1h",
-    strategy="ema_cloud_trend",
-    params={...},
-    scan_interval_minutes=5
+    population_size=50,
+    n_generations=20
 )
-# ? agent_BTC_USDT_1h_ema_abc123 ? LAUNCHED
+# ? {"job_id": "opt_abc123", "estimated_time_minutes": 5}
+
+# 2. CHECK (repetir até status="COMPLETED")
+status = get_optimization_job_status("opt_abc123")
+# ? {"status": "RUNNING", "progress_pct": 45, "best_sharpe": 1.8}
+
+# 3. RESULTS
+results = get_optimization_job_results("opt_abc123")
+# ? Full optimization results
+```
+
+### **Exemplo 2: Múltiplos Jobs Paralelos**
+
+```python
+# Inicia 3 jobs
+job1 = start_optimization_job("cci_extreme_snapback", "BTC/USDT")
+job2 = start_optimization_job("bollinger_mean_reversion", "ETH/USDT")
+job3 = start_optimization_job("ema_cloud_trend", "MATIC/USDT")
+
+# Verifica todos
+jobs = [job1["job_id"], job2["job_id"], job3["job_id"]]
+for job_id in jobs:
+    status = get_optimization_job_status(job_id)
+    print(f"{job_id}: {status['progress_pct']}%")
 ```
 
 ---
 
-## ?? **MONITORAMENTO DOS BOTS**
+## ?? **MONITORAMENTO**
 
-### **Ver bots ativos:**
+### **Ver Jobs Ativos:**
 
-```
-Claude, lista todos os bots ativos
-```
-
-**Claude executará:**
 ```python
-agents = list_active_agents()
+list_optimization_jobs(status="running")
 ```
 
-**Resposta esperada:**
-```
-?? Bots Ativos: 3
+### **Ver Jobs Completos:**
 
-1. agent_BTC_USDT_1h_ema_abc123
-   - Symbol: BTC/USDT 1h
-   - Strategy: ema_cloud_trend
-   - Status: ACTIVE (PID: 12345)
-   - Started: 2025-11-22 18:00:00
-   - Next scan: 18:05:00
-
-2. agent_ETH_USDT_1h_bb_def456
-   - Symbol: ETH/USDT 1h
-   - Strategy: bollinger_mean_reversion
-   - Status: ACTIVE (PID: 12346)
-   - Started: 2025-11-22 18:01:30
-   - Next scan: 18:06:30
-
-3. agent_MATIC_USDT_1h_cci_ghi789
-   - Symbol: MATIC/USDT 1h
-   - Strategy: cci_extreme_snapback
-   - Status: ACTIVE (PID: 12347)
-   - Started: 2025-11-22 18:02:15
-   - Next scan: 18:07:15
-```
-
-### **Ver performance de um bot:**
-
-```
-Claude, mostra performance do bot BTC
-```
-
-**Claude executará:**
 ```python
-perf = get_agent_performance("agent_BTC_USDT_1h_ema_abc123")
-```
-
-**Resposta esperada:**
-```
-?? Performance: agent_BTC_USDT_1h_ema_abc123
-
-Trades: 5
-??? Winning: 3 (60%)
-??? Losing: 2 (40%)
-??? Win Rate: 60%
-
-PnL:
-??? Total: +$123.45
-??? Avg Win: +$52.30
-??? Avg Loss: -$15.20
-??? Profit Factor: 3.44
-
-Risk Metrics:
-??? Sharpe Ratio: 1.8
-??? Max Drawdown: -$25.30 (-2.53%)
-
-Status: ACTIVE ?
-```
-
----
-
-## ?? **PARAR UM BOT (se necessário)**
-
-```
-Claude, para o bot do BTC, está a gerar muitos trades
-```
-
-**Claude executará:**
-```python
-stop_trading_agent("agent_BTC_USDT_1h_ema_abc123", "User requested stop")
-```
-
----
-
-## ?? **REBALANCING MANUAL**
-
-```
-Claude, faz rebalancing do portfolio. 
-Para bots com Sharpe < 1.5 e win rate < 55%
-```
-
-**Claude executará:**
-```python
-result = rebalance_agent_portfolio(
-    target_sharpe=1.5,
-    min_win_rate=0.55
-)
-```
-
----
-
-## ?? **LOGS PARA VERIFICAR**
-
-Os bots geram logs verbose agora:
-
-```
-?? Agent agent_BTC_USDT_1h_ema_abc123 - Starting main loop
-   Scan interval: 5 minutes
-   Strategy: ema_cloud_trend
-   Symbol: BTC/USDT / 1h
-
-============================================================
-?? Agent agent_BTC_USDT_1h_ema_abc123 - Scan #1
-   Time: 2025-11-22 18:00:00
-============================================================
-?? Fetching data for BTC/USDT 1h...
-? Fetched 500 candles
-?? Calculating indicators...
-?? Generating signals with ema_cloud_trend...
-?? Latest signal: HOLD
-?? No action - signal is HOLD
-? Next scan at: 18:05:00
+list_optimization_jobs(status="completed", limit=10)
 ```
 
 ---
 
 ## ? **TESTE DE SUCESSO**
 
-**O teste é bem-sucedido se:**
+**Critérios:**
 
-1. ? Claude executa todos os passos
-2. ? Bots são lançados (verifica com `list_active_agents`)
-3. ? Logs aparecem a cada 5 min
-4. ? Correlações são verificadas
-5. ? Diversificação é respeitada
+1. ? Jobs iniciam em < 1s
+2. ? Status updates aparecem
+3. ? Jobs completam com Sharpe > 0
+4. ? Resultados são recuperáveis
+5. ? Bots são lançados
 
 ---
 
 ## ?? **TROUBLESHOOTING**
 
-### **Bot não aparece na lista:**
-- Verificar logs do orchestrator
-- Verificar se processo foi criado (PID)
+### **Job não aparece nos logs:**
+- **NORMAL!** Jobs correm em threads separadas
+- Usa `get_optimization_job_status()` para monitorizar
 
-### **Bot não gera sinais:**
-- Normal! Muitas vezes não há setup
-- Aguardar próximos scans (5 min cada)
+### **Job demora muito:**
+- Verifica `estimated_time_minutes` no start
+- pop=50, gen=20 ? ~5-8 min esperado
 
-### **Erro ao lançar:**
-- Verificar se estratégia existe
-- Verificar se symbol é válido (formato: "BTC/USDT")
-
----
-
-## ?? **PRÓXIMO PASSO**
-
-**Depois de testar:**
-
-1. Deixar bots rodar por 30-60 min
-2. Verificar performance: `get_agent_performance()`
-3. Ver se geraram algum trade
-4. Testar rebalancing: `rebalance_agent_portfolio()`
+### **Como cancelar job:**
+```python
+cancel_optimization_job("opt_abc123", "Too slow")
+```
 
 ---
 
-**PRONTO PARA COMEÇAR OS TESTES! ??**
+## ?? **MÉTRICAS DE PERFORMANCE**
 
-Use **Opção 3** (5 symbols) para teste completo do sistema!
+| Operação | Tempo Esperado |
+|----------|----------------|
+| start_optimization_job | < 1s |
+| get_job_status | < 1s |
+| get_job_results | < 1s |
+| Job completo (pop=50, gen=20) | 5-8 min |
+| Job rápido (pop=20, gen=8) | 2-3 min |
+
+---
+
+**PRONTO PARA TESTES COM QUALIDADE MÁXIMA! ??**
+
+Usa sempre **ASYNC JOBS** para optimizações pesadas!

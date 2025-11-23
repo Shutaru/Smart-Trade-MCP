@@ -28,10 +28,19 @@ class StrategyMetadata:
 class StrategyRegistry:
     """Registry for managing available trading strategies."""
 
-    def __init__(self):
-        """Initialize strategy registry."""
+    def __init__(self, lazy_load: bool = True):
+        """
+        Initialize strategy registry.
+        
+        Args:
+            lazy_load: If True, don't load generated strategies until needed
+        """
         self._strategies: Dict[str, Type[BaseStrategy]] = {}
         self._metadata: Dict[str, StrategyMetadata] = {}
+        self._lazy_load = lazy_load
+        self._generated_loaded = False
+        
+        # Only register core strategies immediately
         self._register_builtin_strategies()
 
     def _register_builtin_strategies(self) -> None:
@@ -106,13 +115,33 @@ class StrategyRegistry:
             logger.warning("TrendflowSupertrend not available (implementation pending)")
 
         # Auto-register all 38 generated strategies
-        try:
-            from .generated.auto_register import register_all_generated_strategies
-            register_all_generated_strategies(self)
-        except Exception as e:
-            logger.warning(f"Could not auto-register generated strategies: {e}")
+        # ? LAZY LOADING: Only load if explicitly requested
+        if not self._lazy_load:
+            try:
+                from .generated.auto_register import register_all_generated_strategies
+                register_all_generated_strategies(self)
+                self._generated_loaded = True
+            except Exception as e:
+                logger.warning(f"Could not auto-register generated strategies: {e}")
+        else:
+            logger.info("Lazy loading enabled - generated strategies will load on demand")
 
         logger.info(f"Registered {len(self._strategies)} built-in strategies")
+    
+    def _ensure_generated_loaded(self) -> None:
+        """Ensure generated strategies are loaded (lazy loading)"""
+        if self._lazy_load and not self._generated_loaded:
+            logger.info("Loading generated strategies...")
+            try:
+                from .generated.auto_register import register_all_generated_strategies
+                register_all_generated_strategies(self)
+                self._generated_loaded = True
+                logger.info(f"? Loaded {len(self._strategies)} total strategies")
+            except Exception as e:
+                logger.error(f"Failed to load generated strategies: {e}")
+                logger.info(f"Loaded {len(self._strategies)} strategies so far")
+
+        logger.info(f"Total strategies available: {len(self._strategies)}")
 
     def register(
         self,
@@ -165,6 +194,10 @@ class StrategyRegistry:
         Raises:
             KeyError: If strategy not found
         """
+        # ? Lazy load if strategy not found
+        if name not in self._strategies:
+            self._ensure_generated_loaded()
+        
         if name not in self._strategies:
             raise KeyError(f"Strategy not found: {name}")
 
@@ -194,6 +227,9 @@ class StrategyRegistry:
         Returns:
             List of strategy metadata
         """
+        # ? Ensure all strategies loaded before listing
+        self._ensure_generated_loaded()
+        
         strategies = list(self._metadata.values())
         
         if category:
@@ -229,8 +265,8 @@ class StrategyRegistry:
         return self._metadata[name]
 
 
-# Global registry instance
-registry = StrategyRegistry()
+# Global registry instance (LAZY LOAD by default for MCP performance!)
+registry = StrategyRegistry(lazy_load=True)
 
 
 __all__ = ["StrategyRegistry", "StrategyMetadata", "registry"]
