@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { createChart, IChartApi, ISeriesApi } from 'lightweight-charts'
+import createChart from 'lightweight-charts'
+import type { IChartApi, ISeriesApi } from 'lightweight-charts'
 
 export default function MoneyFlowChart({ series }: { series: { time: string; value: number }[] }) {
   const ref = useRef<HTMLDivElement | null>(null)
@@ -12,7 +13,7 @@ export default function MoneyFlowChart({ series }: { series: { time: string; val
     lineRef.current = chartRef.current.addLineSeries({ color: '#2b8efc', lineWidth: 2 })
 
     const data = series.map(s => ({ time: Math.floor(new Date(s.time).getTime() / 1000), value: s.value }))
-    lineRef.current.setData(data)
+    if (lineRef.current) lineRef.current.setData(data)
 
     const ro = new ResizeObserver(() => chartRef.current && chartRef.current.applyOptions({ width: ref.current!.clientWidth }))
     ro.observe(ref.current)
@@ -27,7 +28,7 @@ export default function MoneyFlowChart({ series }: { series: { time: string; val
   useEffect(() => {
     if (!lineRef.current) return
     const data = series.map(s => ({ time: Math.floor(new Date(s.time).getTime() / 1000), value: s.value }))
-    lineRef.current.setData(data)
+    if (lineRef.current) lineRef.current.setData(data)
   }, [series])
 
   return <div ref={ref} style={{ width: '100%' }} />

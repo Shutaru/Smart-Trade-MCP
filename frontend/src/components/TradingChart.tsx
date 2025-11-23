@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { createChart, IChartApi, ISeriesApi } from 'lightweight-charts'
+import createChart from 'lightweight-charts'
+import type { IChartApi, ISeriesApi } from 'lightweight-charts'
 
 interface Trade {
   id: number
@@ -104,7 +105,7 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
           return marks
         })
         markersRef.current = markers
-        candleSeriesRef.current.setMarkers(markers)
+        if (candleSeriesRef.current) candleSeriesRef.current.setMarkers(markers)
       }
 
       // resize observer
@@ -155,7 +156,7 @@ export default function TradingChart({ symbol, timeframe, trades }: { symbol: st
       return marks
     })
     markersRef.current = markers
-    candleSeriesRef.current.setMarkers(markers)
+    if (candleSeriesRef.current) candleSeriesRef.current.setMarkers(markers)
   }, [trades])
 
   return <div ref={containerRef} style={{ width: '100%', height: 400 }} />
