@@ -1,0 +1,653 @@
+﻿"""
+Smart Trade MCP Server
+
+Main MCP server implementation following the Model Context Protocol specification.
+Provides tools, resources, and prompts for autonomous trading operations.
+"""
+
+import asyncio
+from typing import Any, Sequence
+
+from mcp.server import Server
+from mcp.server.models import InitializationOptions
+from mcp.types import (
+    Resource,
+    Tool,
+    TextContent,
+    ImageContent,
+    EmbeddedResource,
+)
+import mcp.server.stdio
+
+from ..core.config import settings
+from ..core.logger import logger
+
+# VERSION TRACKING
+MCP_SERVER_VERSION = "2.0.1-debug"  # Updated for debug logging
+
+
+class SmartTradeMCPServer:
+    """Smart Trade MCP Server."""
+
+    def __init__(self) -> None:
+        """Initialize the MCP server."""
+        self.server = Server(settings.mcp_server_name)
+        self._setup_handlers()
+        logger.info("=" * 80)
+        logger.info("SMART TRADE MCP SERVER - STARTUP")
+        logger.info("=" * 80)
+        logger.info(f"Server Name: {settings.mcp_server_name}")
+        logger.info(f"Server Version: {MCP_SERVER_VERSION}")
+        logger.info(f"Config Version: {settings.mcp_server_version}")
+        logger.info(f"Python Path: {settings.mcp_server_name}")
+        logger.info("=" * 80)
+
+    def _setup_handlers(self) -> None:
+        """Setup MCP protocol handlers."""
+
+        @self.server.list_tools()
+        async def list_tools() -> list[Tool]:
+            """List all available MCP tools."""
+            logger.info("?? list_tools() called - returning 15 tools")
+            return [
+                Tool(
+                    name="get_market_data",
+                    description="Fetch OHLCV market data for a symbol and timeframe",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair symbol (e.g., BTC/USDT)",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe (e.g., 1m, 5m, 1h, 1d)",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of candles to fetch",
+                                "default": 500,
+                            },
+                        },
+                        "required": ["symbol", "timeframe"],
+                    },
+                ),
+                Tool(
+                    name="calculate_indicators",
+                    description="Calculate technical indicators on market data",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair symbol",
+                            },
+                            "indicators": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of indicators to calculate (e.g., ['rsi', 'macd', 'ema'])",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe for calculation",
+                            },
+                        },
+                        "required": ["symbol", "indicators", "timeframe"],
+                    },
+                ),
+                Tool(
+                    name="backtest_strategy",
+                    description="Run backtest for a trading strategy",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to backtest",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair symbol",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe to use",
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": "Start date (YYYY-MM-DD)",
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "End date (YYYY-MM-DD)",
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Initial capital for backtest",
+                                "default": 10000,
+                            },
+                        },
+                        "required": ["strategy_name", "symbol", "timeframe"],
+                    },
+                ),
+                Tool(
+                    name="run_walk_forward_analysis",
+                    description="Validate strategy with Walk-Forward Analysis (WFA) - Critical for detecting overfitting. Divides data into train/test windows and validates out-of-sample performance.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to validate",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair (e.g., BTC/USDT)",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe (1h, 4h, 1d)",
+                                "default": "1h",
+                            },
+                            "train_days": {
+                                "type": "integer",
+                                "description": "Training window size in days",
+                                "default": 180,
+                            },
+                            "test_days": {
+                                "type": "integer",
+                                "description": "Testing window size in days",
+                                "default": 60,
+                            },
+                            "step_days": {
+                                "type": "integer",
+                                "description": "Step size for rolling window",
+                                "default": 30,
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                            "parallel": {
+                                "type": "boolean",
+                                "description": "Execute windows in parallel (faster)",
+                                "default": True,
+                            },
+                            "n_jobs": {
+                                "type": "integer",
+                                "description": "Number of CPU cores (-1 = all)",
+                                "default": -1,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="run_k_fold_validation",
+                    description="Run K-Fold Cross-Validation - Divides data into K folds and tests robustness across different periods. Complementary to Walk-Forward Analysis.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to validate",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "k": {
+                                "type": "integer",
+                                "description": "Number of folds (typically 5 or 10)",
+                                "default": 5,
+                            },
+                            "shuffle": {
+                                "type": "boolean",
+                                "description": "Shuffle data before splitting (not recommended for time series)",
+                                "default": False,
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                            "parallel": {
+                                "type": "boolean",
+                                "description": "Execute folds in parallel",
+                                "default": True,
+                            },
+                            "n_jobs": {
+                                "type": "integer",
+                                "description": "Number of CPU cores (-1 = all)",
+                                "default": -1,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="run_monte_carlo_simulation",
+                    description="Run Monte Carlo Simulation - Randomly resamples trades to generate thousands of equity curves. Helps understand risk and confidence intervals.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to analyze",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "n_simulations": {
+                                "type": "integer",
+                                "description": "Number of simulations (1000-10000)",
+                                "default": 1000,
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                            "parallel": {
+                                "type": "boolean",
+                                "description": "Execute simulations in parallel",
+                                "default": True,
+                            },
+                            "n_jobs": {
+                                "type": "integer",
+                                "description": "Number of CPU cores (-1 = all)",
+                                "default": -1,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="diagnose_strategy_failure",
+                    description="Diagnose why a strategy failed validation - Analyzes strategy behavior and suggests specific fixes. Critical for strategy improvement.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to diagnose",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of candles to analyze",
+                                "default": 1000,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="suggest_parameter_fixes",
+                    description="Get specific parameter value suggestions to fix strategy issues - Provides concrete code changes.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to fix",
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="detect_market_regime",
+                    description="Detect current market regime - Returns regime type and recommended strategies. Critical for strategy selection.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "lookback": {
+                                "type": "integer",
+                                "description": "Number of candles to analyze",
+                                "default": 100,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="detect_historical_regimes",
+                    description="Detect regime changes across historical data - Shows which regimes existed when. Useful for regime-aware backtesting.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of historical candles",
+                                "default": 5000,
+                            },
+                            "window_size": {
+                                "type": "integer",
+                                "description": "Rolling window for detection",
+                                "default": 100,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="get_portfolio_status",
+                    description="Get current portfolio holdings and performance",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                    },
+                ),
+                Tool(
+                    name="list_strategies",
+                    description="List all available trading strategies",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "category": {
+                                "type": "string",
+                                "description": "Filter by category (trend, mean_reversion, breakout, etc.)",
+                            },
+                        },
+                    },
+                ),
+                # NEW OPTIMIZATION TOOLS
+                Tool(
+                    name="optimize_strategy_parameters",
+                    description="Optimize strategy parameters using Genetic Algorithm - Finds best parameter values for maximum performance",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to optimize",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "population_size": {
+                                "type": "integer",
+                                "description": "GA population size",
+                                "default": 50,
+                            },
+                            "n_generations": {
+                                "type": "integer",
+                                "description": "Number of generations",
+                                "default": 20,
+                            },
+                            "use_ray": {
+                                "type": "boolean",
+                                "description": "Use Ray for parallel processing",
+                                "default": False,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="optimize_portfolio",
+                    description="Optimize multi-strategy portfolio allocation - Finds optimal weights for strategy combination",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategies": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of strategy names to include",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "method": {
+                                "type": "string",
+                                "description": "Optimization method",
+                                "enum": ["equal_weight", "risk_parity", "max_sharpe", "min_variance"],
+                                "default": "max_sharpe",
+                            },
+                        },
+                        "required": ["strategies"],
+                    },
+                ),
+                Tool(
+                    name="run_nfold_walk_forward",
+                    description="Run N-Fold Walk-Forward Analysis - Advanced WFA with K-fold cross-validation per window",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to validate",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "n_folds": {
+                                "type": "integer",
+                                "description": "Number of test folds per window",
+                                "default": 3,
+                            },
+                            "train_days": {
+                                "type": "integer",
+                                "description": "Training window size in days",
+                                "default": 180,
+                            },
+                            "test_days": {
+                                "type": "integer",
+                                "description": "Test window size per fold in days",
+                                "default": 60,
+                            },
+                            "use_parallel": {
+                                "type": "boolean",
+                                "description": "Use Ray parallel processing",
+                                "default": True,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+            ]
+
+        @self.server.call_tool()
+        async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+            """Handle tool execution."""
+            logger.info(f"Tool called: {name} with arguments: {arguments}")
+
+            # Import tool implementations
+            from .tools.market_data import get_market_data, calculate_indicators
+            from .tools.backtest import backtest_strategy
+            from .tools.portfolio import get_portfolio_status
+            from .tools.strategies import list_strategies
+            from .tools.validation import (
+                run_walk_forward_analysis,
+                run_k_fold_validation,
+                run_monte_carlo_simulation,
+            )
+            from .tools.strategy_diagnostics import (
+                diagnose_strategy_failure,
+                suggest_parameter_fixes,
+            )
+            from .tools.regime import (
+                detect_market_regime,
+                detect_historical_regimes,
+            )
+            from .tools.optimization import (
+                optimize_strategy_parameters,
+                optimize_portfolio,
+                run_nfold_walk_forward,
+            )
+
+            try:
+                if name == "get_market_data":
+                    result = await get_market_data(**arguments)
+                elif name == "calculate_indicators":
+                    result = await calculate_indicators(**arguments)
+                elif name == "backtest_strategy":
+                    result = await backtest_strategy(**arguments)
+                elif name == "run_walk_forward_analysis":
+                    result = await run_walk_forward_analysis(**arguments)
+                elif name == "run_k_fold_validation":
+                    result = await run_k_fold_validation(**arguments)
+                elif name == "run_monte_carlo_simulation":
+                    result = await run_monte_carlo_simulation(**arguments)
+                elif name == "diagnose_strategy_failure":
+                    result = await diagnose_strategy_failure(**arguments)
+                elif name == "suggest_parameter_fixes":
+                    result = await suggest_parameter_fixes(**arguments)
+                elif name == "detect_market_regime":
+                    result = await detect_market_regime(**arguments)
+                elif name == "detect_historical_regimes":
+                    result = await detect_historical_regimes(**arguments)
+                elif name == "get_portfolio_status":
+                    result = await get_portfolio_status()
+                elif name == "list_strategies":
+                    result = await list_strategies(**arguments)
+                # NEW OPTIMIZATION TOOLS
+                elif name == "optimize_strategy_parameters":
+                    result = await optimize_strategy_parameters(**arguments)
+                elif name == "optimize_portfolio":
+                    result = await optimize_portfolio(**arguments)
+                elif name == "run_nfold_walk_forward":
+                    result = await run_nfold_walk_forward(**arguments)
+                else:
+                    raise ValueError(f"Unknown tool: {name}")
+
+                return [TextContent(type="text", text=str(result))]
+
+            except Exception as e:
+                logger.error(f"Tool execution error: {e}", exc_info=True)
+                return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+        @self.server.list_resources()
+        async def list_resources() -> list[Resource]:
+            """List available MCP resources."""
+            return [
+                Resource(
+                    uri="portfolio://current",
+                    name="Current Portfolio",
+                    description="Real-time portfolio holdings and performance metrics",
+                    mimeType="application/json",
+                ),
+                Resource(
+                    uri="market://status",
+                    name="Market Status",
+                    description="Current market conditions and regime",
+                    mimeType="application/json",
+                ),
+                Resource(
+                    uri="performance://latest",
+                    name="Performance Metrics",
+                    description="Latest trading performance statistics",
+                    mimeType="application/json",
+                ),
+            ]
+
+        @self.server.read_resource()
+        async def read_resource(uri: str) -> str:
+            """Read MCP resource content."""
+            logger.info(f"Resource read: {uri}")
+
+            from .resources.portfolio import get_current_portfolio
+            from .resources.market import get_market_status
+            from .resources.performance import get_performance_metrics
+
+            try:
+                if uri == "portfolio://current":
+                    return await get_current_portfolio()
+                elif uri == "market://status":
+                    return await get_market_status()
+                elif uri == "performance://latest":
+                    return await get_performance_metrics()
+                else:
+                    raise ValueError(f"Unknown resource: {uri}")
+            except Exception as e:
+                logger.error(f"Resource read error: {e}", exc_info=True)
+                raise
+
+    async def run(self) -> None:
+        """Run the MCP server."""
+        logger.info("Starting MCP server...")
+        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+            await self.server.run(
+                read_stream,
+                write_stream,
+                InitializationOptions(
+                    server_name=settings.mcp_server_name,
+                    server_version=settings.mcp_server_version,
+                    capabilities={},
+                ),
+            )
+
+
+def main() -> None:
+    """Main entry point for the MCP server."""
+    server = SmartTradeMCPServer()
+    asyncio.run(server.run())
+
+
+if __name__ == "__main__":
+    main()

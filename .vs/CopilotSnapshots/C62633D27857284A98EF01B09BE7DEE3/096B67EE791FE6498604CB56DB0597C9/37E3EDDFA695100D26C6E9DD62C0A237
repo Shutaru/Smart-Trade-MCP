@@ -1,0 +1,66 @@
+﻿# -*- coding: utf-8 -*-
+"""ANALISE COMPLETA DOS RESULTADOS - 38 ESTRATEGIAS"""
+
+import json
+import pandas as pd
+
+# Load results
+with open("backtest_1year_results.json", "r") as f:
+    data = json.load(f)
+
+results = data["results"]
+df = pd.DataFrame(results)
+
+print("=" * 100)
+print("ANALISE COMPLETA - BACKTEST 1 ANO - 38 ESTRATEGIAS")
+print("=" * 100)
+print()
+
+# ============================================================================
+# CATEGORIAS
+# ============================================================================
+
+categories = {
+    "Mean Reversion": ["bollinger_mean_reversion", "rsi_band_reversion", "cci_extreme_snapback", 
+                       "mfi_divergence_reversion", "stoch_signal_reversal"],
+    "Trend Following": ["ema_cloud_trend", "donchian_continuation", "macd_zero_trend", 
+                        "adx_trend_filter_plus", "trendflow_supertrend"],
+    "Breakout": ["bollinger_squeeze_breakout", "keltner_expansion", "donchian_volatility_breakout",
+                 "atr_expansion_breakout", "channel_squeeze_plus", "volatility_weighted_breakout",
+                 "london_breakout_atr", "vwap_breakout"],
+    "Momentum": ["ema_stack_momentum", "mfi_impulse_momentum", "triple_momentum_confluence",
+                 "rsi_supertrend_flip", "multi_oscillator_confluence", "obv_trend_confirmation",
+                 "trend_volume_combo", "ema_stack_regime_flip"],
+    "Hybrid": ["vwap_institutional_trend", "vwap_mean_reversion", "vwap_band_fade_pro",
+               "order_flow_momentum_vwap", "keltner_pullback_continuation", "ema200_tap_reversion"],
+    "Advanced": ["double_donchian_pullback", "pure_price_action_donchian", 
+                 "obv_confirmation_breakout_plus", "ny_session_fade", 
+                 "regime_adaptive_core", "complete_system_5x"],
+}
+
+def get_category(strategy):
+    for cat, strats in categories.items():
+        if strategy in strats:
+            return cat
+    return "Unknown"
+
+df['category'] = df['strategy'].apply(get_category)
+
+# ============================================================================
+# ESTATISTICAS POR CATEGORIA
+# ============================================================================
+
+print("ESTATISTICAS POR CATEGORIA:")
+print("-" * 100)
+
+for cat in categories.keys():
+    cat_df = df[df['category'] == cat]
+    profitable = (cat_df['return'] > 0).sum()
+    avg_return = cat_df['return'].mean()
+    avg_trades = cat_df['trades'].mean()
+    avg_winrate = cat_df['win_rate'].mean()
+    
+    print(f"{cat:20s}: {len(cat_df)} estrategias | Lucrativas: {profitable}/{len(cat_df)} | "
+          f"Avg Return: {avg_return:+6.2f}% | Avg Trades: {avg_trades:5.1f} | Avg WR: {avg_winrate:5.1f}%")
+
+print()

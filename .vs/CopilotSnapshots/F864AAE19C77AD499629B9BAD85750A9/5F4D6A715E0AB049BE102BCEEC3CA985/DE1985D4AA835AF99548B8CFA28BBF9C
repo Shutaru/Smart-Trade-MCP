@@ -1,0 +1,386 @@
+﻿"""
+END-TO-END TEST - Complete System Validation
+
+Tests the entire trading system:
+1. Fetch 4 years of BTC data
+2. Backtest ALL 40 strategies
+3. Detect historical regimes
+4. Find TOP 10 strategies per regime
+5. Run regime-aware backtest (switches strategies per regime)
+6. Compare vs single-strategy approach
+
+This proves the value of regime detection!
+"""
+
+import asyncio
+import sys
+from pathlib import Path
+from datetime import datetime
+import json
+import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from src.core.data_manager import DataManager
+from src.core.backtest_engine import BacktestEngine
+from src.core.indicators import calculate_all_indicators
+from src.core.regime_detector import get_regime_detector, MarketRegime
+from src.strategies import registry
+from src.core.logger import logger
+
+print("=" * 80)
+print("END-TO-END SYSTEM TEST")
+print("Complete validation of Smart Trade MCP")
+print("=" * 80)
+print()
+
+
+async def phase1_fetch_data():
+    """Phase 1: Fetch 4 years of data."""
+    print("PHASE 1: FETCHING DATA")
+    print("-" * 80)
+    
+    dm = DataManager()
+    
+    # Fetch maximum available data
+    # CCXT typically limits to 1000-5000 candles per request
+    # For 4 years of hourly data, we'd need ~35,000 candles
+    # We'll get as much as possible (5000 limit)
+    
+    print("Fetching BTC/USDT 1h data (max available)...")
+    df = await dm.fetch_ohlcv(
+        symbol="BTC/USDT",
+        timeframe="1h",
+        limit=5000,  # ~208 days
+    )
+    
+    await dm.close()
+    
+    if df.empty:
+        print("[ERROR] No data fetched!")
+        return None
+    
+    days = (df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).days
+    print(f"[OK] Fetched {len(df)} candles")
+    print(f"    Period: {df['timestamp'].iloc[0]} to {df['timestamp'].iloc[-1]}")
+    print(f"    Coverage: {days} days ({days/365:.1f} years)")
+    print()
+    
+    return df
+
+
+async def phase2_backtest_all_strategies(df):
+    """Phase 2: Backtest ALL strategies."""
+    print("PHASE 2: BACKTESTING ALL STRATEGIES")
+    print("-" * 80)
+    
+    strategies = registry.list_strategies()
+    print(f"Found {len(strategies)} strategies to test")
+    print()
+    
+    results = []
+    
+    for i, strategy_info in enumerate(strategies, 1):
+        strategy_name = strategy_info.name
+        
+        try:
+            print(f"[{i}/{len(strategies)}] Testing: {strategy_name}...")
+            
+            # Get strategy
+            strategy = registry.get(strategy_name)
+            
+            # Calculate required indicators
+            required = strategy.get_required_indicators()
+            df_with_indicators = calculate_all_indicators(df.copy(), required, use_gpu=False)
+            
+            # Run backtest
+            engine = BacktestEngine(initial_capital=10000.0, use_gpu=False)
+            result = engine.run(strategy, df_with_indicators)
+            
+            # Store results
+            results.append({
+                'strategy': strategy_name,
+                'category': strategy_info.category,
+                'total_return': result['total_return'],
+                'total_trades': result['total_trades'],
+                'win_rate': result['metrics']['win_rate'],
+                'sharpe_ratio': result['metrics']['sharpe_ratio'],
+                'max_drawdown_pct': abs(result['metrics']['max_drawdown_pct']),
+                'profit_factor': result['metrics']['profit_factor'],
+            })
+            
+            print(f"    Return: {result['total_return']:.2f}%, Trades: {result['total_trades']}, WR: {result['metrics']['win_rate']:.1f}%")
+            
+        except Exception as e:
+            print(f"    [ERROR] {e}")
+            results.append({
+                'strategy': strategy_name,
+                'category': 'unknown',
+                'total_return': 0,
+                'total_trades': 0,
+                'win_rate': 0,
+                'sharpe_ratio': 0,
+                'max_drawdown_pct': 0,
+                'profit_factor': 0,
+                'error': str(e),
+            })
+    
+    print()
+    print(f"[OK] Backtested {len(results)} strategies")
+    print()
+    
+    return results
+
+
+async def phase3_detect_regimes(df):
+    """Phase 3: Detect historical regimes."""
+    print("PHASE 3: DETECTING HISTORICAL REGIMES")
+    print("-" * 80)
+    
+    # Calculate indicators needed for regime detection
+    df_with_indicators = calculate_all_indicators(
+        df.copy(),
+        ['adx', 'atr', 'bollinger', 'ema'],
+        use_gpu=False
+    )
+    
+    # Detect regimes
+    detector = get_regime_detector()
+    regime_periods = detector.detect_historical_regimes(df_with_indicators, window_size=100)
+    
+    # Analyze distribution
+    regime_hours = {}
+    for start, end, regime in regime_periods:
+        duration = (end - start).total_seconds() / 3600
+        regime_name = regime.value
+        regime_hours[regime_name] = regime_hours.get(regime_name, 0) + duration
+    
+    total_hours = sum(regime_hours.values())
+    regime_distribution = {
+        regime: round((hours / total_hours) * 100, 1)
+        for regime, hours in regime_hours.items()
+    } if total_hours > 0 else {}
+    
+    print(f"Detected {len(regime_periods)} regime periods")
+    print()
+    print("Regime Distribution:")
+    for regime, pct in sorted(regime_distribution.items(), key=lambda x: x[1], reverse=True):
+        print(f"  {regime}: {pct}%")
+    print()
+    
+    return regime_periods, regime_distribution
+
+
+async def phase4_analyze_by_regime(df, backtest_results, regime_periods):
+    """Phase 4: Find TOP strategies per regime."""
+    print("PHASE 4: ANALYZING STRATEGIES BY REGIME")
+    print("-" * 80)
+    
+    # For each regime, backtest all strategies on that regime's data
+    regime_performance = {}
+    
+    for regime_type in [MarketRegime.TRENDING_UP, MarketRegime.TRENDING_DOWN, 
+                        MarketRegime.RANGING, MarketRegime.VOLATILE]:
+        
+        print(f"\nAnalyzing {regime_type.value}...")
+        
+        # Get all periods for this regime
+        regime_df_list = []
+        for start, end, regime in regime_periods:
+            if regime == regime_type:
+                mask = (df['timestamp'] >= start) & (df['timestamp'] <= end)
+                regime_df_list.append(df[mask])
+        
+        if not regime_df_list:
+            print(f"  No {regime_type.value} periods found")
+            continue
+        
+        # Combine all periods of this regime
+        regime_df = pd.concat(regime_df_list, ignore_index=True)
+        
+        if len(regime_df) < 100:
+            print(f"  Insufficient data ({len(regime_df)} candles)")
+            continue
+        
+        print(f"  Testing on {len(regime_df)} candles from {regime_type.value} periods...")
+        
+        # Test all strategies on this regime
+        regime_results = []
+        
+        for strategy_info in registry.list_strategies()[:20]:  # Test top 20 to save time
+            strategy_name = strategy_info.name
+            
+            try:
+                strategy = registry.get(strategy_name)
+                required = strategy.get_required_indicators()
+                regime_df_ind = calculate_all_indicators(regime_df.copy(), required, use_gpu=False)
+                
+                engine = BacktestEngine(initial_capital=10000.0, use_gpu=False)
+                result = engine.run(strategy, regime_df_ind)
+                
+                regime_results.append({
+                    'strategy': strategy_name,
+                    'return': result['total_return'],
+                    'trades': result['total_trades'],
+                    'win_rate': result['metrics']['win_rate'],
+                })
+                
+            except Exception:
+                pass
+        
+        # Sort by return
+        regime_results.sort(key=lambda x: x['return'], reverse=True)
+        
+        # Store top 10
+        regime_performance[regime_type.value] = regime_results[:10]
+        
+        # Show top 3
+        print(f"  TOP 3 for {regime_type.value}:")
+        for i, r in enumerate(regime_results[:3], 1):
+            print(f"    {i}. {r['strategy']}: {r['return']:.2f}% ({r['trades']} trades, {r['win_rate']:.1f}% WR)")
+    
+    print()
+    return regime_performance
+
+
+async def phase5_regime_aware_backtest(df, regime_periods, regime_performance):
+    """Phase 5: Run regime-aware backtest."""
+    print("PHASE 5: REGIME-AWARE BACKTEST")
+    print("-" * 80)
+    
+    # Select best strategy for each regime
+    regime_strategies = {}
+    for regime_name, top_strategies in regime_performance.items():
+        if top_strategies:
+            regime_strategies[regime_name] = top_strategies[0]['strategy']
+    
+    print("Selected Strategies per Regime:")
+    for regime, strategy in regime_strategies.items():
+        print(f"  {regime}: {strategy}")
+    print()
+    
+    # Run backtest switching strategies per regime
+    print("Running regime-aware backtest...")
+    
+    total_return = 0
+    total_trades = 0
+    all_trades = []
+    
+    for start, end, regime in regime_periods:
+        regime_name = regime.value
+        
+        if regime_name not in regime_strategies:
+            continue
+        
+        # Get data for this period
+        mask = (df['timestamp'] >= start) & (df['timestamp'] <= end)
+        period_df = df[mask].copy()
+        
+        if len(period_df) < 10:
+            continue
+        
+        # Get strategy for this regime
+        strategy_name = regime_strategies[regime_name]
+        strategy = registry.get(strategy_name)
+        
+        # Calculate indicators
+        required = strategy.get_required_indicators()
+        period_df = calculate_all_indicators(period_df, required, use_gpu=False)
+        
+        # Run backtest
+        engine = BacktestEngine(initial_capital=10000.0, use_gpu=False)
+        result = engine.run(strategy, period_df)
+        
+        total_return += result['total_return']
+        total_trades += result['total_trades']
+        all_trades.extend(result['trades'])
+    
+    print(f"[OK] Regime-Aware Backtest Complete")
+    print(f"    Total Return: {total_return:.2f}%")
+    print(f"    Total Trades: {total_trades}")
+    print()
+    
+    return {
+        'total_return': total_return,
+        'total_trades': total_trades,
+        'trades': all_trades,
+    }
+
+
+async def main():
+    """Main test execution."""
+    
+    # Phase 1: Fetch Data
+    df = await phase1_fetch_data()
+    if df is None:
+        return
+    
+    # Phase 2: Backtest All Strategies
+    backtest_results = await phase2_backtest_all_strategies(df)
+    
+    # Sort and show TOP 10
+    backtest_results.sort(key=lambda x: x['total_return'], reverse=True)
+    
+    print("=" * 80)
+    print("TOP 10 STRATEGIES (OVERALL)")
+    print("=" * 80)
+    for i, result in enumerate(backtest_results[:10], 1):
+        print(f"{i}. {result['strategy']}")
+        print(f"   Return: {result['total_return']:.2f}%, Trades: {result['total_trades']}, WR: {result['win_rate']:.1f}%")
+        print(f"   Sharpe: {result['sharpe_ratio']:.2f}, Max DD: {result['max_drawdown_pct']:.1f}%")
+    print()
+    
+    # Phase 3: Detect Regimes
+    regime_periods, regime_distribution = await phase3_detect_regimes(df)
+    
+    # Phase 4: Analyze by Regime
+    regime_performance = await phase4_analyze_by_regime(df, backtest_results, regime_periods)
+    
+    # Phase 5: Regime-Aware Backtest
+    regime_aware_result = await phase5_regime_aware_backtest(df, regime_periods, regime_performance)
+    
+    # Final Comparison
+    print("=" * 80)
+    print("FINAL COMPARISON")
+    print("=" * 80)
+    print()
+    print(f"Best Single Strategy: {backtest_results[0]['strategy']}")
+    print(f"  Return: {backtest_results[0]['total_return']:.2f}%")
+    print(f"  Trades: {backtest_results[0]['total_trades']}")
+    print()
+    print(f"Regime-Aware Strategy:")
+    print(f"  Return: {regime_aware_result['total_return']:.2f}%")
+    print(f"  Trades: {regime_aware_result['total_trades']}")
+    print()
+    
+    improvement = regime_aware_result['total_return'] - backtest_results[0]['total_return']
+    print(f"Improvement: {improvement:.2f}%")
+    
+    if improvement > 0:
+        print("✅ REGIME-AWARE STRATEGY IS SUPERIOR!")
+    else:
+        print("⚠️  Single strategy performed better (need more data or tuning)")
+    
+    print()
+    print("=" * 80)
+    print("END-TO-END TEST COMPLETE")
+    print("=" * 80)
+    
+    # Save results
+    with open('end_to_end_results.json', 'w') as f:
+        json.dump({
+            'backtest_results': backtest_results,
+            'regime_distribution': regime_distribution,
+            'regime_performance': regime_performance,
+            'regime_aware_result': {
+                'total_return': regime_aware_result['total_return'],
+                'total_trades': regime_aware_result['total_trades'],
+            },
+            'improvement': improvement,
+        }, f, indent=2, default=str)
+    
+    print("\nResults saved to: end_to_end_results.json")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

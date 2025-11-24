@@ -1,0 +1,348 @@
+﻿# -*- coding: utf-8 -*-
+"""
+Parameter Space Definitions
+
+Type-safe parameter space definitions for strategy optimization.
+"""
+
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal, Union, List, Dict, Any
+from enum import Enum
+
+
+class ParameterType(str, Enum):
+    """Parameter types"""
+    INT = "int"
+    FLOAT = "float"
+    CHOICE = "choice"
+    BOOL = "bool"
+
+
+class ParameterDefinition(BaseModel):
+    """Definition of a single parameter"""
+    
+    name: str = Field(description="Parameter name")
+    type: ParameterType = Field(description="Parameter type")
+    
+    # For int/float
+    low: Union[int, float, None] = Field(default=None, description="Minimum value")
+    high: Union[int, float, None] = Field(default=None, description="Maximum value")
+    
+    # For choice
+    choices: Union[List[Any], None] = Field(default=None, description="List of valid choices")
+    
+    # For bool
+    default: Union[bool, None] = Field(default=None, description="Default value for bool")
+    
+    # Metadata
+    description: str = Field(default="", description="Parameter description")
+    
+    @field_validator("low", "high")
+    @classmethod
+    def validate_numeric_bounds(cls, v, info):
+        """Validate numeric parameters"""
+        param_type = info.data.get("type")
+        if param_type in [ParameterType.INT, ParameterType.FLOAT] and v is None:
+            raise ValueError(f"{info.field_name} must be provided for {param_type} parameters")
+        return v
+    
+    @field_validator("choices")
+    @classmethod
+    def validate_choices(cls, v, info):
+        """Validate choice parameters"""
+        param_type = info.data.get("type")
+        if param_type == ParameterType.CHOICE and (v is None or len(v) == 0):
+            raise ValueError("choices must be provided and non-empty for choice parameters")
+        return v
+    
+    def sample(self) -> Any:
+        """Sample a random value from this parameter's range"""
+        import random
+        
+        if self.type == ParameterType.INT:
+            return random.randint(int(self.low), int(self.high))
+        
+        elif self.type == ParameterType.FLOAT:
+            return random.uniform(float(self.low), float(self.high))
+        
+        elif self.type == ParameterType.CHOICE:
+            return random.choice(self.choices)
+        
+        elif self.type == ParameterType.BOOL:
+            return random.choice([True, False])
+        
+        else:
+            raise ValueError(f"Unknown parameter type: {self.type}")
+    
+    def validate_value(self, value: Any) -> bool:
+        """Check if a value is valid for this parameter"""
+        if self.type == ParameterType.INT:
+            return isinstance(value, int) and self.low <= value <= self.high
+        
+        elif self.type == ParameterType.FLOAT:
+            return isinstance(value, (int, float)) and self.low <= value <= self.high
+        
+        elif self.type == ParameterType.CHOICE:
+            return value in self.choices
+        
+        elif self.type == ParameterType.BOOL:
+            return isinstance(value, bool)
+        
+        return False
+
+
+class ParameterSpace(BaseModel):
+    """Complete parameter space for a strategy"""
+    
+    parameters: Dict[str, ParameterDefinition] = Field(
+        description="Dictionary of parameter definitions"
+    )
+    
+    strategy_name: str = Field(
+        default="unknown",
+        description="Name of strategy this space belongs to"
+    )
+    
+    def __len__(self) -> int:
+        """Number of parameters"""
+        return len(self.parameters)
+    
+    def __getitem__(self, key: str) -> ParameterDefinition:
+        """Get parameter by name"""
+        return self.parameters[key]
+    
+    def __iter__(self):
+        """Iterate over parameter names"""
+        return iter(self.parameters.keys())
+    
+    def sample(self) -> Dict[str, Any]:
+        """Sample a random parameter set"""
+        return {name: param.sample() for name, param in self.parameters.items()}
+    
+    def validate_params(self, params: Dict[str, Any]) -> bool:
+        """Validate a parameter dictionary"""
+        if set(params.keys()) != set(self.parameters.keys()):
+            return False
+        
+        return all(
+            self.parameters[name].validate_value(value)
+            for name, value in params.items()
+        )
+    
+    @classmethod
+    def from_dict(cls, param_dict: Dict[str, Dict[str, Any]], strategy_name: str = "unknown"):
+        """Create ParameterSpace from dictionary"""
+        parameters = {}
+        
+        for name, definition in param_dict.items():
+            parameters[name] = ParameterDefinition(
+                name=name,
+                **definition
+            )
+        
+        return cls(parameters=parameters, strategy_name=strategy_name)
+    
+    @classmethod
+    def from_strategy_instance(cls, strategy_instance, strategy_name: str = "unknown", range_mult: float = 0.5):
+        """
+        ? AUTO-GENERATE parameter space from strategy instance!
+        
+        Extracts parameters from strategy's __init__ and creates sensible ranges:
+        - For numeric params: [value * (1 - range_mult), value * (1 + range_mult)]
+        - For bool params: True/False
+        - Skips universal params: sl_atr_mult, tp_rr_mult
+        
+        Args:
+            strategy_instance: Instantiated strategy object
+            strategy_name: Name of strategy
+            range_mult: Range multiplier (0.5 = ±50%)
+            
+        Returns:
+            ParameterSpace with sensible defaults
+            
+        Example:
+            >>> strategy = CciExtremeSnapback()
+            >>> space = ParameterSpace.from_strategy_instance(strategy, "cci_extreme_snapback")
+            >>> # Creates ranges like: cci_period [int: 14-26], cci_oversold [int: -300 to -100], etc.
+        """
+        import inspect
+        
+        parameters = {}
+        
+        # Get all attributes that look like parameters
+        for attr_name in dir(strategy_instance):
+            # Skip private, methods, and universal params
+            if attr_name.startswith('_') or attr_name in ['config', 'sl_atr_mult', 'tp_rr_mult']:
+                continue
+            
+            # Skip methods
+            attr_value = getattr(strategy_instance, attr_name, None)
+            if callable(attr_value):
+                continue
+            
+            # Only include simple types
+            if not isinstance(attr_value, (int, float, bool, str)):
+                continue
+            
+            # Create parameter definition
+            if isinstance(attr_value, int):
+                # Integer parameter
+                low = max(1, int(attr_value * (1 - range_mult)))  # Min 1
+                high = int(attr_value * (1 + range_mult))
+                
+                parameters[attr_name] = ParameterDefinition(
+                    name=attr_name,
+                    type=ParameterType.INT,
+                    low=low,
+                    high=high,
+                    description=f"Auto-generated from default: {attr_value}"
+                )
+            
+            elif isinstance(attr_value, float):
+                # Float parameter
+                low = max(0.1, attr_value * (1 - range_mult))  # Min 0.1
+                high = attr_value * (1 + range_mult)
+                
+                parameters[attr_name] = ParameterDefinition(
+                    name=attr_name,
+                    type=ParameterType.FLOAT,
+                    low=low,
+                    high=high,
+                    description=f"Auto-generated from default: {attr_value:.2f}"
+                )
+            
+            elif isinstance(attr_value, bool):
+                # Boolean parameter
+                parameters[attr_name] = ParameterDefinition(
+                    name=attr_name,
+                    type=ParameterType.BOOL,
+                    default=attr_value,
+                    description=f"Auto-generated from default: {attr_value}"
+                )
+        
+        if not parameters:
+            raise ValueError(f"Could not extract parameters from {strategy_name}")
+        
+        return cls(parameters=parameters, strategy_name=strategy_name)
+
+
+# Common parameter spaces for built-in strategies
+class CommonParameterSpaces:
+    """Pre-defined parameter spaces for common strategies"""
+    
+    @staticmethod
+    def rsi_strategy() -> ParameterSpace:
+        """Parameter space for RSI strategy"""
+        return ParameterSpace.from_dict({
+            "rsi_period": {
+                "type": ParameterType.INT,
+                "low": 7,
+                "high": 21,
+                "description": "RSI calculation period"
+            },
+            "oversold_level": {
+                "type": ParameterType.INT,
+                "low": 20,
+                "high": 35,
+                "description": "Oversold threshold"
+            },
+            "overbought_level": {
+                "type": ParameterType.INT,
+                "low": 65,
+                "high": 80,
+                "description": "Overbought threshold"
+            },
+            "sl_atr_mult": {
+                "type": ParameterType.FLOAT,
+                "low": 1.5,
+                "high": 3.0,
+                "description": "Stop-loss ATR multiplier"
+            },
+            "tp_rr_mult": {
+                "type": ParameterType.FLOAT,
+                "low": 1.5,
+                "high": 3.0,
+                "description": "Take-profit risk-reward multiplier"
+            }
+        }, strategy_name="rsi")
+    
+    @staticmethod
+    def macd_strategy() -> ParameterSpace:
+        """Parameter space for MACD strategy"""
+        return ParameterSpace.from_dict({
+            "fast_period": {
+                "type": ParameterType.INT,
+                "low": 8,
+                "high": 15,
+                "description": "Fast EMA period"
+            },
+            "slow_period": {
+                "type": ParameterType.INT,
+                "low": 20,
+                "high": 30,
+                "description": "Slow EMA period"
+            },
+            "signal_period": {
+                "type": ParameterType.INT,
+                "low": 7,
+                "high": 12,
+                "description": "Signal line period"
+            },
+            "sl_atr_mult": {
+                "type": ParameterType.FLOAT,
+                "low": 1.5,
+                "high": 3.0,
+                "description": "Stop-loss ATR multiplier"
+            },
+            "tp_rr_mult": {
+                "type": ParameterType.FLOAT,
+                "low": 1.5,
+                "high": 3.0,
+                "description": "Take-profit risk-reward multiplier"
+            }
+        }, strategy_name="macd")
+    
+    @staticmethod
+    def volume_shooter_strategy() -> ParameterSpace:
+        """Parameter space for Volume Shooter strategy"""
+        return ParameterSpace.from_dict({
+            "volume_factor": {
+                "type": ParameterType.FLOAT,
+                "low": 1.5,
+                "high": 3.0,
+                "description": "Volume spike multiplier"
+            },
+            "volume_period": {
+                "type": ParameterType.INT,
+                "low": 30,
+                "high": 100,
+                "description": "Volume SMA period"
+            },
+            "take_profit_pct": {
+                "type": ParameterType.FLOAT,
+                "low": 50.0,
+                "high": 150.0,
+                "description": "Take profit percentage"
+            },
+            "stop_loss_pct": {
+                "type": ParameterType.FLOAT,
+                "low": 5.0,
+                "high": 20.0,
+                "description": "Stop loss percentage"
+            },
+        }, strategy_name="volume_shooter")
+    
+    @staticmethod
+    def generic_strategy(n_params: int = 5) -> ParameterSpace:
+        """Generic parameter space for testing"""
+        params = {}
+        
+        for i in range(n_params):
+            params[f"param_{i}"] = {
+                "type": ParameterType.FLOAT,
+                "low": 0.0,
+                "high": 100.0,
+                "description": f"Generic parameter {i}"
+            }
+        
+        return ParameterSpace.from_dict(params, strategy_name="generic")

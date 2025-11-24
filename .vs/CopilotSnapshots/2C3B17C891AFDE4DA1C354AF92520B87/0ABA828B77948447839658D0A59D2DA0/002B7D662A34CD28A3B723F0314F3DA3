@@ -1,0 +1,140 @@
+﻿"""
+SuperTrend + ADX momentum with pullback entries
+"""
+
+from typing import List
+import pandas as pd
+import numpy as np
+
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
+
+
+class TrendflowSupertrend(BaseStrategy):
+    """
+    TrendflowSupertrend - SuperTrend + ADX momentum with pullback entries
+    
+    Category: trend_following
+    Indicators: supertrend, adx, ema, rsi, atr
+    
+    Logic:
+    - LONG: SuperTrend bullish + ADX >= 22 + (breakout OR pullback to EMA20)
+    - SHORT: SuperTrend bearish + ADX >= 22 + (breakdown OR pullback to EMA20)
+    """
+
+    def __init__(self, config: StrategyConfig = None):
+        """Initialize TrendflowSupertrend strategy."""
+        super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.st_period = self.config.get("st_period", 10)
+        self.st_multiplier = self.config.get("st_multiplier", 3.0)
+        self.adx_threshold = self.config.get("adx_threshold", 25)
+        self.rsi_pullback_min = self.config.get("rsi_pullback_min", 40)
+        self.rsi_pullback_max = self.config.get("rsi_pullback_max", 60)
+        self.ema_period = self.config.get("ema_period", 20)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
+    def get_required_indicators(self) -> List[str]:
+        """Required indicators for this strategy."""
+        return ["supertrend", "adx", "ema", "rsi", "atr"]
+    
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        """
+        Generate trading signals.
+        
+        Args:
+            df: DataFrame with OHLCV and indicator data
+            
+        Returns:
+            List of trading signals
+        """
+        signals = []
+        
+        # Verify required columns exist
+        required = ["close", "high", "low", "adx", "rsi"]
+        if not all(col in df.columns for col in required):
+            logger.warning(f"Missing required columns for TrendflowSupertrend")
+            return signals
+        
+        position = None  # Track position state
+        
+        for i in range(1, len(df)):
+            row = df.iloc[i]
+            prev_row = df.iloc[i - 1]
+            
+            close = row["close"]
+            high = row["high"]
+            low = row["low"]
+            adx = row.get("adx", 0)
+            rsi = row.get("rsi", 50)
+            # ✅ USE ema_period parameter
+            ema_trend = row.get(f"ema_{self.ema_period}", close)
+            atr = row.get("atr", close * 0.02)
+            
+            # Get SuperTrend indicator
+            st_trend = row.get("supertrend_trend", 0)
+            st_trend_prev = prev_row.get("supertrend_trend", 0)
+            
+            # SuperTrend flip detection
+            supertrend_flip_bull = st_trend > 0 and st_trend_prev <= 0
+            supertrend_flip_bear = st_trend < 0 and st_trend_prev >= 0
+            
+            timestamp = row["timestamp"]
+            
+            # ✅ USE adx_threshold parameter
+            if position is None and adx >= self.adx_threshold:
+                # ✅ USE rsi_pullback_min and rsi_pullback_max parameters
+                if supertrend_flip_bull and self.rsi_pullback_min < rsi < self.rsi_pullback_max:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(
+                        type=SignalType.LONG,
+                        timestamp=timestamp,
+                        price=close,
+                        confidence=min(1.0, adx / 40),
+                        stop_loss=sl,
+                        take_profit=tp,
+                        metadata={"adx": adx, "rsi": rsi, "reason": "SuperTrend flip bull"},
+                    ))
+                    position = "LONG"
+            
+            # ✅ USE parameters for SHORT
+            elif position is None and adx >= self.adx_threshold:
+                if supertrend_flip_bear and self.rsi_pullback_min < rsi < self.rsi_pullback_max:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(
+                        type=SignalType.SHORT,
+                        timestamp=timestamp,
+                        price=close,
+                        confidence=min(1.0, adx / 40),
+                        stop_loss=sl,
+                        take_profit=tp,
+                        metadata={"adx": adx, "rsi": rsi, "reason": "SuperTrend flip bear"},
+                    ))
+                    position = "SHORT"
+            
+            # Exit on SuperTrend reverse
+            elif position == "LONG" and st_trend < 0:
+                signals.append(Signal(
+                    type=SignalType.CLOSE_LONG,
+                    timestamp=timestamp,
+                    price=close,
+                    metadata={"reason": "SuperTrend reversed"},
+                ))
+                position = None
+            
+            elif position == "SHORT" and st_trend > 0:
+                signals.append(Signal(
+                    type=SignalType.CLOSE_SHORT,
+                    timestamp=timestamp,
+                    price=close,
+                    metadata={"reason": "SuperTrend reversed"},
+                ))
+                position = None
+        
+        logger.info(f"TrendflowSupertrend generated {len(signals)} signals")
+        return signals
+
+
+__all__ = ["TrendflowSupertrend"]

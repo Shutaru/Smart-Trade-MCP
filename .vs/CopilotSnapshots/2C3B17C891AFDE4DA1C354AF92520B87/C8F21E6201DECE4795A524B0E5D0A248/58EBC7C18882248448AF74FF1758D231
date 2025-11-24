@@ -1,0 +1,482 @@
+﻿# ?? TESTE NO CLAUDE DESKTOP - Guia Completo
+
+**Objetivo:** Diagnosticar e resolver o problema dos 6 dias no backtest MCP
+
+---
+
+## ? **PRÉ-REQUISITOS**
+
+Antes de começar, confirma que:
+
+- [x] Testes locais passaram (`test_data_manager.py` + `test_mcp_tool_direct.py`)
+- [x] Código atualizado para versão `2.0.1-debug`
+- [x] Claude Desktop instalado
+- [ ] Claude Desktop está FECHADO (vamos reiniciar)
+
+---
+
+## ?? **PASSO 1: REINICIAR CLAUDE DESKTOP**
+
+### **Opção A: Restart Completo (Recomendado)**
+
+1. **Fechar Claude Desktop completamente:**
+   - Clique direito no ícone da bandeja (system tray)
+   - Selecionar "Exit" ou "Quit"
+   - OU via Task Manager:
+     ```
+     Ctrl + Shift + Esc
+     ? Procurar processos "Claude" ou "python"
+     ? End Task
+     ```
+
+2. **Abrir Claude Desktop novamente:**
+   - Duplo clique no ícone
+   - Aguardar carregamento completo (~5 segundos)
+
+3. **Verificar que MCP Server carregou:**
+   - Abrir uma nova conversa
+   - O ícone de ferramentas (??) deve aparecer
+   - Ou ver indicação "Smart-Trade" nas ferramentas disponíveis
+
+---
+
+### **Opção B: Verificar Config (Se Opção A não funcionar)**
+
+1. **Abrir configuração do Claude Desktop:**
+   ```powershell
+   notepad "%APPDATA%\Claude\claude_desktop_config.json"
+   ```
+
+2. **Verificar conteúdo:**
+   ```json
+   {
+     "mcpServers": {
+       "smart-trade": {
+         "command": "python",
+         "args": ["-m", "src.mcp_server.server"],
+         "cwd": "C:\\Users\\shuta\\source\\repos\\Smart-Trade-MCP",
+         "env": {
+           "PYTHONPATH": "C:\\Users\\shuta\\source\\repos\\Smart-Trade-MCP",
+           "SMART_TRADE_ENV": "production"
+         }
+       }
+     }
+   }
+   ```
+
+3. **Se diferente, substituir com o conteúdo acima e reiniciar Claude Desktop**
+
+---
+
+## ?? **PASSO 2: TESTE SIMPLES (Verificar Conexão)**
+
+No Claude Desktop, enviar:
+
+```
+Please list all available trading strategies.
+```
+
+**Resultado Esperado:**
+- Lista de 42+ estratégias
+- Categorias: breakout, trend, mean_reversion, etc.
+
+**Se FALHAR:**
+- MCP Server não carregou
+- Ver PASSO 4 (Logs) para diagnóstico
+
+---
+
+## ?? **PASSO 3: TESTE PRINCIPAL (Backtest com Debug)**
+
+No Claude Desktop, enviar **EXATAMENTE** este prompt:
+
+```
+Please backtest the atr_expansion_breakout strategy on BTC/USDT 1h timeframe.
+
+DO NOT specify start_date or end_date parameters - let it auto-fetch 1 year of data.
+
+Return these fields:
+- tool_version
+- days_tested
+- candles_tested
+- total_trades
+- total_return
+- win_rate
+```
+
+---
+
+## ?? **RESULTADOS POSSÍVEIS**
+
+### **CENÁRIO A: SUCESSO ?**
+
+```
+tool_version: 2.0.1-debug
+days_tested: 364
+candles_tested: 8760
+total_trades: 21
+total_return: 2.39%
+win_rate: 57.1%
+```
+
+**Ação:**
+- ? PROBLEMA RESOLVIDO!
+- Atualizar `Heritage.md` ? Issue fechada
+- Avançar para Fase 2 (Backend API)
+
+---
+
+### **CENÁRIO B: AINDA SÓ 6 DIAS ?**
+
+```
+tool_version: 2.0.1-debug  ? Versão correta
+days_tested: 6             ? PROBLEMA PERSISTE
+candles_tested: ~150
+total_trades: 1
+```
+
+**Ação:**
+- ? Prosseguir para PASSO 4 (Analisar Logs)
+- O problema está na integração MCP
+
+---
+
+### **CENÁRIO C: VERSÃO ANTIGA ??**
+
+```
+tool_version: 2.0.0-auto-fetch  ? Versão antiga!
+days_tested: 6
+```
+
+**Ação:**
+- MCP Server não recarregou código novo
+- Reiniciar Claude Desktop completamente
+- Verificar que não há processos Python órfãos:
+  ```powershell
+  Get-Process python | Where-Object {$_.Path -like "*Smart-Trade-MCP*"} | Stop-Process
+  ```
+
+---
+
+### **CENÁRIO D: ERRO ?**
+
+```
+Error: ...
+```
+
+**Ação:**
+- Copiar mensagem de erro completa
+- Ver PASSO 4 (Logs) para stack trace
+- Pode ser problema de dependências ou imports
+
+---
+
+## ?? **PASSO 4: ANALISAR LOGS**
+
+### **Localização dos Logs:**
+
+```powershell
+# Windows
+$env:APPDATA\Claude\logs\mcp-server-smart-trade.log
+```
+
+### **Ver Últimas 100 Linhas:**
+
+```powershell
+Get-Content "$env:APPDATA\Claude\logs\mcp-server-smart-trade.log" -Tail 100
+```
+
+### **Procurar por Secção de Debug:**
+
+```powershell
+Select-String -Path "$env:APPDATA\Claude\logs\mcp-server-smart-trade.log" -Pattern "BACKTEST TOOL - DETAILED DEBUG LOG" -Context 0,20
+```
+
+---
+
+## ?? **O QUE PROCURAR NOS LOGS**
+
+### **1. Startup Logging:**
+
+```
+================================================================================
+SMART TRADE MCP SERVER - STARTUP
+================================================================================
+Server Name: smart-trade
+Server Version: 2.0.1-debug  ? DEVE SER ESTA VERSÃO!
+...
+================================================================================
+```
+
+**Se não aparecer `2.0.1-debug`:**
+- Código não foi recarregado
+- Reiniciar Claude Desktop
+- Verificar que não há processos Python antigos
+
+---
+
+### **2. Tool Call Logging:**
+
+```
+Tool called: backtest_strategy with arguments: {...}
+```
+
+**Verificar:**
+- `arguments` deve mostrar os parâmetros recebidos
+- Especialmente `start_date` e `end_date`
+
+---
+
+### **3. Debug Logging Detalhado:**
+
+```
+================================================================================
+BACKTEST TOOL - DETAILED DEBUG LOG
+================================================================================
+Tool Version: 2.0.1-debug
+Strategy: atr_expansion_breakout
+Symbol: BTC/USDT
+Timeframe: 1h
+Initial Capital: 10000.0
+--------------------------------------------------------------------------------
+RAW PARAMETERS RECEIVED:
+  start_date: None (type: NoneType)  ? DEVE SER NONE OU ""
+  end_date: None (type: NoneType)
+================================================================================
+```
+
+**CRÍTICO:**
+Verificar o que aparece em `start_date` e `end_date`:
+
+- `None (type: NoneType)` ? OK, fix já implementado
+- `'' (type: str)` ? OK, fix já implementado  
+- `'some_value' (type: str)` ? Problema! Claude está a enviar valor inesperado
+
+---
+
+### **4. Data Fetch Results:**
+
+```
+DATA FETCH RESULTS:
+  ? Fetched 8760 candles  ? DEVE SER ~8760
+  ?? Actual period: 364 days
+  ...
+  ? Data coverage: 99.7% of requested period
+```
+
+**Se aparecer:**
+```
+  ? Fetched 150 candles  ? PROBLEMA!
+  ?? Actual period: 6 days
+```
+
+Então o problema está na `DataManager.fetch_historical()` quando chamado via MCP.
+
+---
+
+## ??? **PASSO 5: AÇÕES BASEADAS NOS LOGS**
+
+### **Se logs mostram `start_date: 'YYYY-MM-DD'` (string não vazia):**
+
+**Problema:** Claude está a enviar data explícita em vez de deixar vazio.
+
+**Fix:** Modificar `backtest.py` para ignorar datas recentes:
+
+```python
+# Se data é muito recente (< 30 dias atrás), usar 1 ano
+if start_date and start_date != "":
+    start_dt = datetime.fromisoformat(start_date)
+    if (datetime.now() - start_dt).days < 30:
+        logger.warning(f"start_date too recent ({start_date}), using 1 year")
+        start_dt = datetime.now() - timedelta(days=365)
+```
+
+---
+
+### **Se logs mostram fetch de 150 candles mesmo com datas corretas:**
+
+**Problema:** CCXT ou cache está a retornar poucos dados.
+
+**Fix:**
+
+1. **Limpar cache:**
+   ```powershell
+   Remove-Item "data\market\binance\BTC_USDT_1h.db" -Force
+   ```
+
+2. **Verificar `data_manager.py` tem retry logic**
+
+3. **Testar fetch direto novamente:**
+   ```powershell
+   python test_data_manager.py
+   ```
+
+---
+
+### **Se logs não aparecem:**
+
+**Problema:** Logging não está a chegar ao ficheiro.
+
+**Fix:**
+
+1. **Verificar permissões da pasta de logs:**
+   ```powershell
+   Test-Path "$env:APPDATA\Claude\logs\" -PathType Container
+   ```
+
+2. **Verificar `logger.py` está configurado corretamente**
+
+3. **Adicionar print() statements além de logger:**
+   ```python
+   print(f"BACKTEST CALLED: {strategy_name}", flush=True)
+   logger.info(f"BACKTEST CALLED: {strategy_name}")
+   ```
+
+---
+
+## ?? **PASSO 6: REPORTAR RESULTADOS**
+
+### **Informação a Recolher:**
+
+1. **Resultado do teste no Claude Desktop:**
+   - Tool version mostrada
+   - Days tested
+   - Candles tested
+   - Total trades
+
+2. **Secção relevante dos logs:**
+   ```powershell
+   Get-Content "$env:APPDATA\Claude\logs\mcp-server-smart-trade.log" -Tail 200 > logs_debug.txt
+   ```
+
+3. **Screenshot (opcional):**
+   - Resposta do Claude Desktop
+   - Indicação de ferramentas disponíveis
+
+---
+
+## ? **CHECKLIST DE VALIDAÇÃO**
+
+Antes de considerar problema resolvido:
+
+- [ ] Claude Desktop reiniciado
+- [ ] Tool version = `2.0.1-debug` na resposta
+- [ ] Logs mostram "BACKTEST TOOL - DETAILED DEBUG LOG"
+- [ ] Logs mostram `start_date: None` ou `start_date: ""`
+- [ ] Days tested ? 350
+- [ ] Candles tested ? 8000
+- [ ] Total trades ? 10
+- [ ] Data coverage ? 90%
+
+---
+
+## ?? **TROUBLESHOOTING**
+
+### **Problema: Ferramentas não aparecem no Claude Desktop**
+
+**Soluções:**
+1. Verificar `claude_desktop_config.json` está correto
+2. Reiniciar Claude Desktop completamente
+3. Verificar que Python está no PATH
+4. Testar MCP server manualmente:
+   ```powershell
+   cd C:\Users\shuta\source\repos\Smart-Trade-MCP
+   python -m src.mcp_server.server
+   ```
+   (Deve ficar à espera de input via stdin)
+
+---
+
+### **Problema: "Module not found" error**
+
+**Soluções:**
+1. Verificar PYTHONPATH na config:
+   ```json
+   "env": {
+     "PYTHONPATH": "C:\\Users\\shuta\\source\\repos\\Smart-Trade-MCP"
+   }
+   ```
+
+2. Instalar dependências:
+   ```powershell
+   cd C:\Users\shuta\source\repos\Smart-Trade-MCP
+   pip install -e .
+   ```
+
+---
+
+### **Problema: Server crashes imediatamente**
+
+**Soluções:**
+1. Ver logs de erro:
+   ```powershell
+   Get-Content "$env:APPDATA\Claude\logs\mcp-server-smart-trade.log" -Tail 50
+   ```
+
+2. Testar imports:
+   ```powershell
+   python -c "from src.mcp_server.server import SmartTradeMCPServer; print('OK')"
+   ```
+
+3. Verificar dependências instaladas:
+   ```powershell
+   pip list | Select-String "mcp|ccxt|pandas|numpy"
+   ```
+
+---
+
+## ?? **PRÓXIMOS PASSOS APÓS TESTE**
+
+### **Se PASSOU (364 days):**
+1. ? Marcar issue como resolvida em `Heritage.md`
+2. ? Commit changes: `git commit -m "fix: 6-day backtest issue resolved"`
+3. ? Avançar para Fase 2: Backend API
+4. ? Documentar solução final
+
+### **Se FALHOU (ainda 6 days):**
+1. ? Analisar logs detalhadamente
+2. ? Identificar causa raiz baseada nos logs
+3. ? Aplicar fix específico
+4. ? Reiniciar Claude Desktop
+5. ? Testar novamente
+
+---
+
+## ?? **TEMPLATE DE REPORTE**
+
+Usa este template para reportar resultados:
+
+```markdown
+## Teste no Claude Desktop - Resultado
+
+**Data:** YYYY-MM-DD HH:MM
+
+**Prompt Usado:**
+```
+[Cole o prompt exato que usaste]
+```
+
+**Resultado:**
+- tool_version: X.X.X
+- days_tested: XXX
+- candles_tested: XXXX
+- total_trades: XX
+
+**Status:** ? PASSOU / ? FALHOU
+
+**Logs Relevantes:**
+```
+[Cole secção relevante dos logs]
+```
+
+**Observações:**
+- [Qualquer comportamento estranho]
+- [Mensagens de erro]
+- [Diferenças do esperado]
+```
+
+---
+
+**Boa sorte! ??**
+
+Se o teste passar, teremos resolvido o problema #1 CRÍTICO do projeto!

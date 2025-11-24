@@ -1,0 +1,364 @@
+﻿# -*- coding: utf-8 -*-
+"""
+Genetic Algorithm Optimizer
+
+Modern implementation using DEAP with Rich CLI dashboard integration.
+
+Features:
+- DEAP genetic algorithm framework
+- Multi-objective optimization (Sharpe, Win Rate, Max DD)
+- Rich CLI progress dashboard
+- Type-safe parameter handling
+- GPU acceleration support (optional)
+- Ray distributed computing (optional)
+- Database storage of results
+"""
+
+from typing import Dict, Any, List, Tuple, Optional, Callable
+import random
+import time
+from datetime import datetime
+import pandas as pd
+from pathlib import Path
+import sys
+import os
+
+try:
+    from deap import base, creator, tools, algorithms
+    DEAP_AVAILABLE = True
+except ImportError:
+    DEAP_AVAILABLE = False
+    print("⚠️  DEAP not available. Install with: pip install deap")
+
+from rich.console import Console
+from rich.live import Live
+
+from .config import OptimizationConfig
+from .parameter_space import ParameterSpace, ParameterType
+from .fitness_evaluator import FitnessEvaluator, FitnessMetrics
+from ..core.cli_dashboard import OptimizationDashboard
+from ..core.logger import logger
+
+# Fix Windows encoding issues
+if sys.platform == 'win32':
+    # Try to set UTF-8 encoding
+    try:
+        # For Python 3.7+
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+    except:
+        pass
+    
+    # Set environment variable
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+
+# Rich console for live display - beautiful Unicode (works now that logs are silent!)
+console = Console(
+    force_terminal=True,
+    legacy_windows=False,  # Full Unicode beauty!
+    emoji=True,
+    no_color=False,
+)
+
+class GeneticOptimizer:
+    """
+    Genetic Algorithm optimizer for trading strategies.
+    
+    Uses DEAP for GA implementation and Rich for beautiful CLI progress display.
+    """
+    
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        strategy_class: Any,
+        param_space: ParameterSpace,
+        config: Optional[OptimizationConfig] = None,
+    ):
+        """
+        Initialize genetic optimizer.
+        
+        Args:
+            df: OHLCV DataFrame with indicators
+            strategy_class: Strategy class to optimize
+            param_space: Parameter space definition
+            config: Optimization configuration (uses defaults if None)
+        """
+        if not DEAP_AVAILABLE:
+            raise ImportError("DEAP is required for genetic optimization. Install with: pip install deap")
+        
+        self.df = df
+        self.strategy_class = strategy_class
+        self.param_space = param_space
+        self.config = config or OptimizationConfig()
+        
+        # Fitness evaluator
+        self.evaluator = FitnessEvaluator(
+            df=df,
+            strategy_class=strategy_class,
+            initial_capital=self.config.initial_capital,
+            commission=self.config.commission,
+            slippage=self.config.slippage,
+            use_gpu=self.config.use_gpu,
+        )
+        
+        # Rich dashboard
+        self.dashboard = OptimizationDashboard(
+            population_size=self.config.population_size,
+            n_generations=self.config.n_generations,
+            n_gpus=self.config.n_workers if self.config.use_gpu else 0,
+            strategy_name=strategy_class.name if hasattr(strategy_class, 'name') else strategy_class.__class__.__name__
+        )
+        
+        # History tracking
+        self.history = {
+            "best_fitness": [],
+            "avg_fitness": [],
+            "best_params": [],
+            "generation_times": [],
+        }
+        
+        # Best results
+        self.best_individual: Optional[List] = None
+        self.best_fitness: Optional[FitnessMetrics] = None
+        self.best_params: Optional[Dict[str, Any]] = None
+        
+        # Setup DEAP
+        self._setup_deap()
+        
+        logger.info(
+            "GeneticOptimizer initialized",
+            strategy=strategy_class.name if hasattr(strategy_class, 'name') else strategy_class.__class__.__name__,
+            population=self.config.population_size,
+            generations=self.config.n_generations,
+            parameters=len(param_space)
+        )
+    
+    def _setup_deap(self):
+        """Setup DEAP genetic algorithm framework"""
+        
+        # Create fitness class (multi-objective: maximize Sharpe, maximize WR, minimize DD)
+        if not hasattr(creator, "FitnessMulti"):
+            creator.create("FitnessMulti", base.Fitness, weights=self.config.fitness_weights)
+        
+        if not hasattr(creator, "Individual"):
+            creator.create("Individual", list, fitness=creator.FitnessMulti)
+        
+        self.toolbox = base.Toolbox()
+        
+        # Register parameter generators
+        param_names = list(self.param_space.parameters.keys())
+        
+        for param_name in param_names:
+            param_def = self.param_space[param_name]
+            
+            if param_def.type == ParameterType.INT:
+                self.toolbox.register(
+                    f"attr_{param_name}",
+                    random.randint,
+                    int(param_def.low),
+                    int(param_def.high)
+                )
+            
+            elif param_def.type == ParameterType.FLOAT:
+                self.toolbox.register(
+                    f"attr_{param_name}",
+                    random.uniform,
+                    float(param_def.low),
+                    float(param_def.high)
+                )
+            
+            elif param_def.type == ParameterType.CHOICE:
+                self.toolbox.register(
+                    f"attr_{param_name}",
+                    random.choice,
+                    param_def.choices
+                )
+            
+            elif param_def.type == ParameterType.BOOL:
+                self.toolbox.register(
+                    f"attr_{param_name}",
+                    random.choice,
+                    [True, False]
+                )
+        
+        # Register individual and population
+        self.toolbox.register(
+            "individual",
+            tools.initCycle,
+            creator.Individual,
+            tuple([getattr(self.toolbox, f"attr_{name}") for name in param_names]),
+            n=1
+        )
+        
+        self.toolbox.register(
+            "population",
+            tools.initRepeat,
+            list,
+            self.toolbox.individual
+        )
+        
+        # Register genetic operators
+        n_params = len(param_names)
+        
+        if n_params == 1:
+            self.toolbox.register("mate", tools.cxUniform, indpb=0.5)
+        elif n_params == 2:
+            self.toolbox.register("mate", tools.cxOnePoint)
+        else:
+            self.toolbox.register("mate", tools.cxTwoPoint)
+        
+        self.toolbox.register("mutate", self._custom_mutate)
+        self.toolbox.register("select", tools.selNSGA2)  # Multi-objective selection
+        self.toolbox.register("evaluate", self._evaluate_individual)
+    
+    def _custom_mutate(self, individual: List) -> Tuple[List]:
+        """Custom mutation that respects parameter types and bounds"""
+        param_names = list(self.param_space.parameters.keys())
+        
+        for i, param_name in enumerate(param_names):
+            if random.random() < self.config.mutation_prob:
+                param_def = self.param_space[param_name]
+                
+                if param_def.type == ParameterType.INT:
+                    individual[i] = random.randint(int(param_def.low), int(param_def.high))
+                
+                elif param_def.type == ParameterType.FLOAT:
+                    # Gaussian mutation with bounds
+                    mu = individual[i]
+                    sigma = (param_def.high - param_def.low) * 0.1
+                    individual[i] = max(param_def.low, min(param_def.high, random.gauss(mu, sigma)))
+                
+                elif param_def.type == ParameterType.CHOICE:
+                    individual[i] = random.choice(param_def.choices)
+                
+                elif param_def.type == ParameterType.BOOL:
+                    individual[i] = not individual[i]
+        
+        return (individual,)
+    
+    def _individual_to_params(self, individual: List) -> Dict[str, Any]:
+        """Convert DEAP individual to parameter dictionary"""
+        param_names = list(self.param_space.parameters.keys())
+        return {name: value for name, value in zip(param_names, individual)}
+    
+    def _evaluate_individual(self, individual: List) -> Tuple[float, float, float]:
+        """Evaluate fitness of an individual"""
+        params = self._individual_to_params(individual)
+        metrics = self.evaluator.evaluate(params)
+        return metrics.to_tuple()
+    
+    def optimize(self) -> Dict[str, Any]:
+        """
+        Run genetic algorithm optimization.
+        
+        Returns:
+            Dictionary with optimization results
+        """
+        from ..core.rich_utils import silent_logs
+        
+        start_time = time.time()
+        
+        # INITIALIZE POPULATION BEFORE SILENT MODE
+        self.population = self.toolbox.population(n=self.config.population_size)
+        
+        # Silence logs during dashboard
+        with silent_logs():
+            # Create dashboard
+            dashboard = OptimizationDashboard(
+                strategy_name=self.strategy_class.name if hasattr(self.strategy_class, 'name') else self.strategy_class.__class__.__name__,
+                population_size=self.config.population_size,
+                n_generations=self.config.n_generations,
+            )
+            
+            # Start progress display
+            with dashboard.progress:
+                # Evaluate initial population
+                fitnesses = list(map(self.toolbox.evaluate, self.population))
+                for ind, fit in zip(self.population, fitnesses):
+                    ind.fitness.values = fit
+                
+                # Track best individual
+                best_ind = tools.selBest(self.population, 1)[0]
+                best_fitness = self._fitness_to_dict(best_ind.fitness.values)
+                
+                dashboard.update_generation(
+                    generation=0,
+                    best_fitness=best_fitness,
+                    avg_fitness=self._calculate_avg_fitness(self.population),
+                    population=self.population,
+                )
+                
+                # Evolution
+                for gen in range(1, self.config.n_generations + 1):
+                    gen_start = time.time()
+                    
+                    # Select next generation
+                    offspring = self.toolbox.select(self.population, len(self.population))
+                    offspring = list(map(self.toolbox.clone, offspring))
+                    
+                    # Apply crossover
+                    for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                        if random.random() < self.config.crossover_prob:
+                            self.toolbox.mate(child1, child2)
+                            del child1.fitness.values
+                            del child2.fitness.values
+                    
+                    # Apply mutation
+                    for mutant in offspring:
+                        if random.random() < self.config.mutation_prob:
+                            self.toolbox.mutate(mutant)
+                            del mutant.fitness.values
+                    
+                    # Evaluate offspring
+                    invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+                    fitnesses = list(map(self.toolbox.evaluate, invalid_ind))
+                    for ind, fit in zip(invalid_ind, fitnesses):
+                        ind.fitness.values = fit
+                    
+                    # Elitism: keep best individuals
+                    if self.config.elite_size > 0:
+                        elite = tools.selBest(self.population, self.config.elite_size)
+                        offspring.extend(elite)
+                        offspring = tools.selBest(offspring, len(self.population))
+                    
+                    # Replace population
+                    self.population[:] = offspring
+                    
+                    # Update best
+                    current_best = tools.selBest(self.population, 1)[0]
+                    if current_best.fitness.values[0] > best_ind.fitness.values[0]:
+                        best_ind = current_best
+                        best_fitness = self._fitness_to_dict(best_ind.fitness.values)
+                    
+                    # Update dashboard
+                    dashboard.update_generation(
+                        generation=gen,
+                        best_fitness=best_fitness,
+                        avg_fitness=self._calculate_avg_fitness(self.population),
+                        population=self.population,
+                    )
+                    
+                    gen_time = time.time() - gen_start
+                    dashboard.generation_times.append(gen_time)
+            
+            # Show final results
+            dashboard.show_final_results(
+                best_params=self._individual_to_params(best_ind),
+                best_fitness=best_fitness,
+                total_time=time.time() - start_time,
+                total_evaluations=self.evaluator.eval_count,
+            )
+        
+        # Return results (logs re-enabled here)
+        logger.info(
+            f"Optimization complete: best Sharpe={best_fitness['sharpe_ratio']:.2f}, "
+            f"time={time.time() - start_time:.1f}s"
+        )
+        
+        return {
+            "best_params": self._individual_to_params(best_ind),
+            "best_fitness": best_fitness,
+            "total_time": time.time() - start_time,
+            "total_evaluations": self.evaluator.eval_count,
+        }

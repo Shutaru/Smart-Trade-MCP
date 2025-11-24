@@ -1,0 +1,279 @@
+﻿# 🗺️ Smart-Trade MCP - Development Roadmap
+
+**Version:** 3.0.0  
+**Last Updated:** 2025-11-21  
+**Status:** Active Development
+
+---
+
+## 📋 **Table of Contents**
+
+1. [Completed Features](#completed-features)
+2. [Current Sprint](#current-sprint-sprint-1)
+3. [Upcoming Sprints](#upcoming-sprints)
+4. [Future Enhancements](#future-enhancements)
+5. [Priority Matrix](#priority-matrix)
+6. [Milestones](#milestones)
+
+---
+
+## ✅ **COMPLETED FEATURES**
+
+### **Phase 1: Core Platform (v1.0.0 - v2.0.0)**
+- [x] **42+ Trading Strategies** - Breakout, Trend, Mean Reversion, Momentum, Hybrid, Advanced
+- [x] **Strategy Registry** - Auto-registration system
+- [x] **Backtest Engine** - GPU/CPU accelerated execution
+- [x] **Data Manager** - CCXT integration + SQLite caching
+- [x] **Risk Manager** - Position sizing and risk management
+- [x] **Technical Indicators** - TA-Lib wrapper with 50+ indicators
+
+### **Phase 2: MCP Integration (v2.0.0)**
+- [x] **MCP Server** - Model Context Protocol implementation
+- [x] **16 MCP Tools** - Complete Claude Desktop integration
+- [x] **Batch Processing** - 20-30x faster multi-strategy comparison
+- [x] **Response Optimization** - 3KB vs 500KB (166x smaller)
+- [x] **Full Year Data Fetch** - 364 days, 8760 candles verified
+- [x] **System Prompts** - Optimized Claude Desktop interaction
+
+### **Phase 3: FastAPI Backend (v3.0.0)** ⭐ **CURRENT**
+- [x] **FastAPI Application** - Production-grade REST API
+- [x] **11 REST Endpoints** - Strategies, Backtest, Optimization, Market, Portfolio
+- [x] **Pydantic Models** - Type-safe request/response validation
+- [x] **OpenAPI Documentation** - Interactive Swagger UI
+- [x] **CORS Middleware** - Frontend-ready
+- [x] **Error Handling** - Comprehensive exception management
+- [x] **Code Reuse** - Zero duplication with MCP server
+
+### **Optimization & Validation**
+- [x] **Genetic Algorithm** - Parameter optimization
+- [x] **Walk-Forward Analysis** - Time-series validation
+- [x] **K-Fold Validation** - Cross-validation
+- [x] **Monte Carlo Simulation** - Risk analysis
+- [x] **Portfolio Optimization** - Equal Weight, Risk Parity, Max Sharpe, Min Variance
+- [x] **Market Regime Detection** - Trending, Ranging, Volatile, Quiet
+
+---
+
+## 🚀 **CURRENT SPRINT: Sprint 1 - Real-Time Trading Foundation**
+
+**Duration:** Week 1 (Nov 21-28, 2025)  
+**Goal:** Enable real-time signal generation and tracking
+
+### **1. Signal Scanner** ⭐⭐⭐⭐⭐ **HIGHEST PRIORITY**
+
+**Objective:** Scan multiple symbols for active trading signals in real-time.
+
+**Why:** Enables actual trading immediately!
+
+**Features:**
+- [ ] Multi-symbol scanning (10-50 symbols)
+- [ ] Strategy-agnostic (works with all 42+ strategies)
+- [ ] Real-time signals (latest 500 candles)
+- [ ] Signal strength (confidence 0-1)
+- [ ] Entry/SL/TP calculations
+- [ ] JSON export
+- [ ] REST API endpoint (`POST /api/v1/scanner/scan`)
+
+**Estimate:** 6-8 hours  
+**Status:** 🎯 Ready to start!
+
+---
+
+### **2. Experiment Manager** ⭐⭐⭐⭐
+
+**Objective:** Track and organize all backtesting experiments.
+
+**Why:** Essential for systematic research and comparison.
+
+**Features:**
+- [ ] Experiment configuration (YAML/JSON)
+- [ ] Database schema (SQLite)
+- [ ] Run management
+- [ ] Comparison tools
+- [ ] Export results (CSV/JSON)
+- [ ] REST API endpoints
+
+**Estimate:** 8-10 hours  
+**Status:** Ready after Signal Scanner
+
+---
+
+### **3. Strategy Templates + CLI** ⭐⭐⭐
+
+**Objective:** Streamline strategy development.
+
+**Why:** Reduce friction for creating new strategies.
+
+**Features:**
+- [ ] CLI command (`smarttrade new-strategy`)
+- [ ] 4 base templates
+- [ ] Auto-registration
+- [ ] Parameter hints
+- [ ] Test generation
+
+**Estimate:** 4-6 hours  
+**Status:** Nice to have (if time permits)
+
+---
+
+## 📅 **UPCOMING SPRINTS**
+
+### **Sprint 2: Frontend & Visualization (Week 2)**
+
+**Duration:** Nov 28 - Dec 5, 2025  
+**Goal:** Visual dashboard for strategy analysis
+
+**Tasks:**
+1. Connect React Frontend (4-6h)
+2. Strategy Scoreboard (4-5h)
+3. Backtest Results Viewer (5-6h)
+4. Signal Dashboard (3-4h)
+
+**Estimate:** 15-20 hours
+
+---
+
+### **Sprint 3: Paper Trading Engine (Week 3)**
+
+**Duration:** Dec 5-12, 2025  
+**Goal:** Simulate live trading without risk
+
+**Tasks:**
+1. Paper Trading Core (8-10h)
+2. Execution Simulator (6-8h)
+3. Performance Tracking (4-5h)
+4. API Integration (2-3h)
+
+**Estimate:** 20-25 hours
+
+---
+
+### **Sprint 4: Production Hardening (Week 4)**
+
+**Duration:** Dec 12-19, 2025  
+**Goal:** Deploy-ready system
+
+**Tasks:**
+1. Database Migration (PostgreSQL) (5-6h)
+2. Logging & Monitoring (4-5h)
+3. Testing (CI/CD) (4-5h)
+4. Docker & Deployment (2-4h)
+
+**Estimate:** 15-20 hours
+
+---
+
+## 🔮 **FUTURE ENHANCEMENTS**
+
+### **Phase 4: Advanced Features (Q1 2026)**
+- [ ] TradingView Integration (10-12h)
+- [ ] Telegram Bot (8-10h)
+- [ ] Multi-Exchange Support (15-20h)
+- [ ] Advanced Risk Management (12-15h)
+
+### **Phase 5: Machine Learning (Q2 2026)**
+- [ ] Strategy Generator (30-40h)
+- [ ] Signal Prediction (40-50h)
+- [ ] Regime Prediction (20-25h)
+
+### **Phase 6: On-Chain / DEX (Q3 2026)**
+- [ ] DEX Data Adapters (25-30h)
+- [ ] On-Chain Metrics (15-20h)
+- [ ] MEV Strategies (40-50h)
+
+---
+
+## 📊 **PRIORITY MATRIX**
+
+```
+High Impact ↑
+│
+│  ⭐⭐⭐⭐⭐              │  ⭐⭐⭐⭐
+│  Signal Scanner          │  Experiment Manager
+│  Paper Trading           │  Frontend Dashboard
+│                          │
+│─────────────────────────┼─────────────────────────→
+│                          │     High Effort
+│  ⭐⭐⭐                   │  ⭐⭐
+│  TradingView Webhooks    │  Machine Learning
+│  Telegram Bot             │  DEX Integration
+│
+Low Impact ↓
+```
+
+**Focus Order:**
+1. ⭐⭐⭐⭐⭐ Signal Scanner (Start NOW!)
+2. ⭐⭐⭐⭐ Experiment Manager
+3. ⭐⭐⭐⭐⭐ Paper Trading
+4. ⭐⭐⭐⭐ Frontend Dashboard
+5. Everything else
+
+---
+
+## 🎯 **MILESTONES**
+
+### **M1: Real-Time Foundation** (Sprint 1) - ✅ Week 1
+- Signal Scanner
+- Experiment Manager
+- Strategy Templates
+
+### **M2: Visual Dashboard** (Sprint 2) - Week 2
+- React Frontend
+- Strategy Scoreboard
+- Signal Dashboard
+
+### **M3: Paper Trading** (Sprint 3) - Week 3
+- Live Simulation
+- Performance Tracking
+- WebSocket Streaming
+
+### **M4: Production Ready** (Sprint 4) - Week 4
+- PostgreSQL
+- Docker
+- CI/CD
+
+### **M5: Advanced** (Q1 2026)
+- TradingView
+- Telegram
+- Multi-Exchange
+
+### **M6: AI/ML** (Q2 2026)
+- Strategy Generator
+- Predictions
+
+### **M7: On-Chain** (Q3 2026)
+- DEX Integration
+- MEV
+
+---
+
+## 📝 **DEVELOPMENT PRINCIPLES**
+
+1. **Production-grade always** - No experimental code
+2. **Test before merge** - Unit + integration tests
+3. **Document everything** - Code + markdown
+4. **Reuse code** - DRY (MCP + FastAPI share core)
+5. **Optimize later** - Work first, fast second
+
+---
+
+## 🔄 **STATUS TRACKING**
+
+### **This Week (Sprint 1):**
+- [ ] Signal Scanner - 🎯 IN PROGRESS
+- [ ] Experiment Manager - ⏳ NEXT
+- [ ] Strategy Templates - 🔜 IF TIME
+
+### **Next Week (Sprint 2):**
+- [ ] Frontend Connection
+- [ ] Visual Dashboards
+
+### **This Month:**
+- [ ] Paper Trading
+- [ ] Production Deployment
+
+---
+
+**Ready to start? Let's build the Signal Scanner! 🚀**
+
+**Next Action:** Implement `src/scanner/signal_scanner.py`

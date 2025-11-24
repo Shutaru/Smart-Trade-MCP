@@ -1,0 +1,327 @@
+﻿# -*- coding: utf-8 -*-
+"""
+Paper Trading API Router
+
+Provides endpoints to start/stop/list paper trading bots and a WebSocket
+for realtime updates. Uses AgentOrchestrator and AgentStorage already
+present in the project for process management and persistence.
+"""
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from typing import Dict, Any, Optional
+from datetime import datetime
+import asyncio
+
+from ...agent.orchestrator import AgentOrchestrator
+from ...paper.broadcaster import get_broadcaster
+
+router = APIRouter()
+
+# Single global orchestrator for the API
+_orchestrator = AgentOrchestrator()
+
+# ---- Models are simple dict bodies for now
+
+@router.post("/bots")
+async def start_bot(payload: Dict[str, Any]):
+    """Start a new paper trading bot.
+
+    Expected payload keys:
+    - symbol (str)
+    - timeframe (str)
+    - strategy (str)
+    - params (dict, optional)
+    - risk_per_trade (float, optional)
+    - scan_interval_minutes (int, optional)
+    """
+    symbol = payload.get("symbol")
+    timeframe = payload.get("timeframe")
+    strategy = payload.get("strategy")
+    params = payload.get("params", {})
+    risk = float(payload.get("risk_per_trade", 0.02))
+    scan = int(payload.get("scan_interval_minutes", 15))
+
+    if not symbol or not timeframe or not strategy:
+        raise HTTPException(status_code=400, detail="symbol, timeframe and strategy are required")
+
+    try:
+        agent_id = await _orchestrator.launch_agent(
+            symbol=symbol,
+            timeframe=timeframe,
+            strategy=strategy,
+            params=params,
+            risk_per_trade=risk,
+            scan_interval_minutes=scan
+        )
+
+        info = _orchestrator.get_agent_info(agent_id)
+
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "started_at": info.get("started_at"),
+            "pid": info.get("pid"),
+            "status": info.get("status")
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{agent_id}/stop")
+async def stop_bot(agent_id: str, payload: Optional[Dict[str, Any]] = None):
+    reason = None
+    if payload:
+        reason = payload.get("reason")
+
+    try:
+        _orchestrator.stop_agent(agent_id, reason=reason)
+        return {"success": True, "agent_id": agent_id, "status": "stopped"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bots")
+async def list_bots():
+    try:
+        agents = _orchestrator.get_all_agents()
+        normalized = []
+        for a in agents:
+            perf = {}
+            try:
+                perf = _orchestrator.get_agent_performance(a.get("agent_id")) or {}
+            except Exception:
+                perf = {}
+
+            normalized.append({
+                "agent_id": a.get("agent_id"),
+                "symbol": a.get("symbol"),
+                "timeframe": a.get("timeframe"),
+                "strategy": a.get("strategy"),
+                "status": a.get("status"),
+                "pid": a.get("pid"),
+                "started_at": a.get("started_at"),
+                "is_alive": a.get("is_alive", False),
+                "total_trades": a.get("total_trades", 0),
+                "total_pnl": a.get("total_pnl", 0),
+                "performance": perf,
+            })
+
+        return {"success": True, "total": len(normalized), "agents": normalized}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bots/active")
+async def list_active_bots():
+    """Return only active agents (including DB-active even if not in-memory)."""
+    try:
+        agents = _orchestrator.get_all_agents()
+        # Be robust to status casing or different representations
+        active = [a for a in agents if str(a.get("status", "")).lower() == "active"]
+        # Normalize to expected frontend shape and include performance
+        normalized = []
+        for a in active:
+            perf = {}
+            try:
+                perf = _orchestrator.get_agent_performance(a.get("agent_id")) or {}
+            except Exception:
+                perf = {}
+
+            normalized.append({
+                "agent_id": a.get("agent_id"),
+                "symbol": a.get("symbol"),
+                "timeframe": a.get("timeframe"),
+                "strategy": a.get("strategy"),
+                "status": a.get("status"),
+                "pid": a.get("pid"),
+                "started_at": a.get("started_at"),
+                "is_alive": a.get("is_alive", False),
+                "total_trades": a.get("total_trades", 0),
+                "total_pnl": a.get("total_pnl", 0),
+                "performance": perf,
+            })
+
+        return {"success": True, "total": len(normalized), "agents": normalized}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bots/diagnostics")
+async def bots_diagnostics():
+    """Return diagnostics to help debug agent liveness and DB vs memory mismatches."""
+    try:
+        storage = _orchestrator.storage
+        in_memory = list(_orchestrator.agents.keys())
+        db_active = storage.get_active_agents()
+        db_stopped = storage.get_stopped_agents()
+        all_agents = _orchestrator.get_all_agents()
+
+        # compute simple mismatches
+        db_active_ids = {a.get('agent_id') for a in db_active}
+        memory_ids = set(in_memory)
+        missing_in_memory = list(db_active_ids - memory_ids)
+
+        return {
+            'in_memory_count': len(in_memory),
+            'db_active_count': len(db_active),
+            'db_stopped_count': len(db_stopped),
+            'agents_via_orchestrator_count': len(all_agents),
+            'missing_in_memory': missing_in_memory,
+            'in_memory': in_memory,
+            'db_active_ids': list(db_active_ids)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bots/diagnostics-info")
+async def bots_diagnostics_info():
+    """Non-conflicting diagnostics endpoint for debugging DB vs memory state."""
+    try:
+        storage = _orchestrator.storage
+        in_memory = list(_orchestrator.agents.keys())
+        db_active = storage.get_active_agents()
+        db_stopped = storage.get_stopped_agents()
+        all_agents = _orchestrator.get_all_agents()
+
+        db_active_ids = {a.get('agent_id') for a in db_active}
+        memory_ids = set(in_memory)
+        missing_in_memory = list(db_active_ids - memory_ids)
+
+        return {
+            'in_memory_count': len(in_memory),
+            'db_active_count': len(db_active),
+            'db_stopped_count': len(db_stopped),
+            'agents_via_orchestrator_count': len(all_agents),
+            'missing_in_memory': missing_in_memory,
+            'in_memory': in_memory,
+            'db_active_ids': list(db_active_ids),
+            'all_agents_overview': all_agents
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/restore")
+async def restore_active_agents():
+    """Force orchestrator to restore active agents from DB. Useful for debugging without restart."""
+    try:
+        before = set(_orchestrator.agents.keys())
+        # Call the internal restore method
+        _orchestrator._restore_active_agents()
+        after = set(_orchestrator.agents.keys())
+        restored = list(after - before)
+        return {"success": True, "restored": restored, "count_restored": len(restored), "in_memory_count": len(after)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bots/{agent_id}")
+async def get_bot(agent_id: str):
+    try:
+        info = _orchestrator.get_agent_info(agent_id)
+        perf = _orchestrator.get_agent_performance(agent_id)
+        return {"success": True, "agent": info, "performance": perf}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{agent_id}/params")
+async def update_bot_params(agent_id: str, payload: Dict[str, Any]):
+    """Update agent parameters on-the-fly."""
+    try:
+        params = payload.get("params") if payload else None
+        if not isinstance(params, dict):
+            raise HTTPException(status_code=400, detail="params must be an object")
+
+        # Try orchestrator update first
+        try:
+            _orchestrator.update_agent_params(agent_id, params)
+        except Exception:
+            # Fallback to storage
+            try:
+                _orchestrator.storage.update_params(agent_id, params)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        return {"success": True, "agent_id": agent_id, "updated_params": params}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bots/{agent_id}/logs")
+async def get_bot_logs(agent_id: str, limit: int = 200):
+    """Return recent events and trades for an agent."""
+    try:
+        events = _orchestrator.storage.get_agent_events(agent_id, limit=limit)
+        trades = _orchestrator.storage.get_agent_trades(agent_id)
+        return {"success": True, "agent_id": agent_id, "events": events, "trades": trades}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.websocket("/ws/paper/{agent_id}")
+async def ws_paper_updates(websocket: WebSocket, agent_id: str):
+    """WebSocket endpoint that streams agent updates.
+
+    The implementation uses broadcaster to stream events/updates to
+    connected clients.
+    """
+    await websocket.accept()
+    broadcaster = get_broadcaster()
+    queue = broadcaster.subscribe(agent_id)
+    try:
+        # Send initial snapshot
+        info = _orchestrator.get_agent_info(agent_id)
+        perf = _orchestrator.get_agent_performance(agent_id)
+        trades = _orchestrator.storage.get_agent_trades(agent_id)
+        snapshot = {"type": "snapshot", "timestamp": datetime.utcnow().isoformat(), "agent": info, "performance": perf, "trades": trades}
+        await websocket.send_json(snapshot)
+
+        while True:
+            # wait for next event from broadcaster queue
+            ev = await queue.get()
+            try:
+                await websocket.send_json({"type": "event", "event": ev})
+            except Exception:
+                # client likely disconnected
+                break
+
+    except WebSocketDisconnect:
+        return
+    finally:
+        broadcaster.unsubscribe(agent_id, queue)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@router.get("/debug")
+async def debug_info():
+    """Debug endpoint: returns storage DB path and raw agents from DB and orchestrator."""
+    try:
+        storage = _orchestrator.storage
+        db_path = str(storage.db_path)
+        active_db = storage.get_active_agents()
+        stopped_db = storage.get_stopped_agents()
+        # orchestrator in-memory agents
+        in_memory = list(_orchestrator.agents.keys())
+        all_via_orch = _orchestrator.get_all_agents()
+        return {
+            "db_path": db_path,
+            "active_db_count": len(active_db),
+            "stopped_db_count": len(stopped_db),
+            "in_memory_agents": in_memory,
+            "agents_via_orchestrator_count": len(all_via_orch),
+            "active_db": active_db,
+            "stopped_db": stopped_db,
+            "agents_via_orchestrator": all_via_orch,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,0 +1,274 @@
+﻿"""
+Smart-Trade MCP Agent with GPT-4o-mini
+
+Hybrid solution:
+- Uses GPT-4o-mini (CHEAP! ~$2/month)
+- Connects to local MCP server
+- Full tool calling support
+- Cost tracking built-in
+
+Cost estimate: ~$0.15 per 1M tokens = ~$2-5/month for heavy use
+"""
+
+import os
+from typing import List, Dict, Any
+from langchain_openai import ChatOpenAI
+from langchain.tools import Tool
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain.prompts import PromptTemplate
+import requests
+
+
+class SmartTradeMCPTools:
+    """Tools que conectam ao MCP server local"""
+    
+    def __init__(self, mcp_url: str = "http://localhost:8765"):
+        self.mcp_url = mcp_url
+    
+    def list_strategies(self, category: str = "") -> str:
+        """List all available trading strategies"""
+        try:
+            response = requests.post(
+                f"{self.mcp_url}/tools/list_strategies",
+                json={"category": category if category else None},
+                timeout=30
+            )
+            result = response.json()
+            
+            if result['success']:
+                strategies = result['result']
+                output = f"Total: {strategies['total']} strategies\n\n"
+                for s in strategies['strategies'][:15]:
+                    output += f"- {s['name']} ({s['category']}): {s['description']}\n"
+                return output
+            return "Error listing strategies"
+        except Exception as e:
+            return f"Error: {str(e)}"
+    
+    def backtest_strategy(self, input_str: str) -> str:
+        """
+        Run backtest for a strategy.
+        Input format: 'strategy_name,symbol,timeframe'
+        Example: 'atr_expansion_breakout,BTC/USDT,1h'
+        """
+        try:
+            parts = input_str.split(',')
+            strategy_name = parts[0].strip()
+            symbol = parts[1].strip() if len(parts) > 1 else "BTC/USDT"
+            timeframe = parts[2].strip() if len(parts) > 2 else "1h"
+            
+            response = requests.post(
+                f"{self.mcp_url}/tools/backtest_strategy",
+                json={
+                    "strategy_name": strategy_name,
+                    "symbol": symbol,
+                    "timeframe": timeframe
+                },
+                timeout=120
+            )
+            result = response.json()
+            
+            if result['success']:
+                bt = result['result']
+                output = f"""
+Strategy: {bt['strategy']}
+Symbol: {bt['symbol']} {bt['timeframe']}
+Period: {bt['start_date']} to {bt['end_date']}
+Days Tested: {bt['days_tested']}
+Candles: {bt['candles_tested']}
+
+Performance:
+- Total Return: {bt['total_return']:.2f}%
+- Total Trades: {bt['total_trades']}
+- Win Rate: {bt['metrics']['win_rate']:.1f}%
+- Sharpe Ratio: {bt['metrics']['sharpe_ratio']:.3f}
+- Max Drawdown: {bt['metrics']['max_drawdown_pct']:.2f}%
+- Profit Factor: {bt['metrics']['profit_factor']:.2f}
+
+Tool Version: {bt.get('tool_version', 'unknown')}
+"""
+                return output
+            return "Error running backtest"
+        except Exception as e:
+            return f"Error: {str(e)}"
+    
+    def detect_regime(self, input_str: str = "BTC/USDT,1h") -> str:
+        """
+        Detect market regime.
+        Input format: 'symbol,timeframe'
+        Example: 'BTC/USDT,1h'
+        """
+        try:
+            parts = input_str.split(',')
+            symbol = parts[0].strip() if parts else "BTC/USDT"
+            timeframe = parts[1].strip() if len(parts) > 1 else "1h"
+            
+            response = requests.post(
+                f"{self.mcp_url}/tools/detect_regime",
+                json={
+                    "symbol": symbol,
+                    "timeframe": timeframe
+                },
+                timeout=60
+            )
+            result = response.json()
+            
+            if result['success']:
+                regime = result['result']
+                output = f"""
+MARKET REGIME ANALYSIS
+{'='*60}
+Regime: {regime['regime']}
+Confidence: {regime['confidence']*100:.1f}%
+
+Recommended Strategies:
+"""
+                for s in regime['recommended_strategies']:
+                    output += f"  + {s}\n"
+                
+                output += "\nAvoid:\n"
+                for s in regime['avoid_strategies']:
+                    output += f"  - {s}\n"
+                
+                return output
+            return "Error detecting regime"
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+
+def create_agent(openai_api_key: str):
+    """Create LangChain agent with MCP tools"""
+    
+    # Initialize MCP tools
+    mcp_tools = SmartTradeMCPTools()
+    
+    # Create LangChain tools
+    tools = [
+        Tool(
+            name="list_strategies",
+            func=mcp_tools.list_strategies,
+            description="List all available trading strategies (42+ strategies). Input: optional category filter (breakout, trend, mean_reversion, momentum)"
+        ),
+        Tool(
+            name="backtest_strategy",
+            func=mcp_tools.backtest_strategy,
+            description="Run backtest for a trading strategy. Input format: 'strategy_name,symbol,timeframe' (e.g., 'atr_expansion_breakout,BTC/USDT,1h')"
+        ),
+        Tool(
+            name="detect_regime",
+            func=mcp_tools.detect_regime,
+            description="Detect current market regime. Input format: 'symbol,timeframe' (e.g., 'BTC/USDT,1h')"
+        ),
+    ]
+    
+    # Create GPT-4o-mini LLM
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0,
+        api_key=openai_api_key,
+        max_tokens=2000
+    )
+    
+    # Create prompt
+    template = """You are a professional trading strategy analyst with access to Smart-Trade MCP tools.
+
+You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: {input}
+Thought: {agent_scratchpad}"""
+    
+    prompt = PromptTemplate.from_template(template)
+    
+    # Create agent
+    agent = create_react_agent(llm, tools, prompt)
+    
+    # Create executor
+    agent_executor = AgentExecutor(
+        agent=agent,
+        tools=tools,
+        verbose=True,
+        handle_parsing_errors=True,
+        max_iterations=5
+    )
+    
+    return agent_executor
+
+
+def main():
+    """Main interactive loop"""
+    print("="*80)
+    print("SMART-TRADE MCP AGENT (GPT-4o-mini)")
+    print("="*80)
+    print("\nCost: ~$0.15 per 1M tokens (~$2-5/month for heavy use)")
+    print("\nMake sure:")
+    print("1. MCP server is running (python mcp_sse_server.py)")
+    print("2. Set OPENAI_API_KEY environment variable")
+    print("\n" + "="*80 + "\n")
+    
+    # Get API key
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        api_key = input("Enter your OpenAI API key: ").strip()
+    
+    # Create agent
+    print("Initializing agent...")
+    agent = create_agent(api_key)
+    print("Ready!\n")
+    
+    # Interactive loop
+    while True:
+        try:
+            query = input("\nYou: ").strip()
+            
+            if not query:
+                continue
+            
+            if query.lower() in ['exit', 'quit', 'bye']:
+                print("Goodbye!")
+                break
+            
+            # Run agent
+            response = agent.invoke({"input": query})
+            print(f"\nAgent: {response['output']}\n")
+            
+        except KeyboardInterrupt:
+            print("\n\nGoodbye!")
+            break
+        except Exception as e:
+            print(f"\nError: {e}\n")
+
+
+if __name__ == "__main__":
+    # Example non-interactive usage
+    import sys
+    
+    if len(sys.argv) > 1:
+        # Command-line query
+        query = " ".join(sys.argv[1:])
+        api_key = os.getenv("OPENAI_API_KEY")
+        
+        if not api_key:
+            print("ERROR: Set OPENAI_API_KEY environment variable")
+            sys.exit(1)
+        
+        agent = create_agent(api_key)
+        response = agent.invoke({"input": query})
+        print(response['output'])
+    else:
+        # Interactive mode
+        main()

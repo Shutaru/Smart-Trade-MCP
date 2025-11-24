@@ -1,0 +1,496 @@
+﻿# ?? PRÓXIMOS PASSOS - Smart Trade MCP
+
+**Última Atualização:** 2025-11-21  
+**Status do Projeto:** Production Ready com Issue Crítico
+
+---
+
+## ?? VISÃO GERAL
+
+Este documento define os próximos passos para evolução do **Smart-Trade-MCP** de forma estruturada e priorizada.
+
+---
+
+## ?? **FASE 1: ESTABILIZAÇÃO CRÍTICA** (URGENTE)
+
+### 1.1 FIX: Problema dos 6 Dias no Backtest MCP ??
+
+**Status:** ?? Em Investigação  
+**Prioridade:** ?? CRÍTICA  
+**Tempo Estimado:** 2-4 horas
+
+**Problema:**
+- MCP backtest fetches apenas 6 dias em vez de 1 ano
+- Fetch direto funciona (8760 candles)
+- Tool version correto: `2.0.0-auto-fetch`
+
+**Ações:**
+1. ? Documentação criada: `DEBUG_6DAY_ISSUE.md`
+2. ? Adicionar logging detalhado em `backtest.py`
+3. ? Testar localmente (`test_mcp_tool_direct.py`)
+4. ? Testar via Claude Desktop (verificar logs)
+5. ? Aplicar fix baseado na hipótese confirmada
+
+**Critério de Sucesso:**
+- ? `days_tested: ~364`
+- ? `candles_tested: ~8760`
+- ? `total_trades: 20+`
+
+---
+
+### 1.2 Completar Documentação Principal
+
+**Status:** ?? Em Progresso  
+**Prioridade:** ?? Alta  
+**Tempo Estimado:** 1 hora
+
+**Ações:**
+- [x] `PROXIMOS_PASSOS.md` (ESTE ARQUIVO)
+- [ ] `ROADMAP.md` - Roadmap de longo prazo
+- [ ] `DASHBOARD_FINAL_INSTRUCTIONS.md` - Setup do frontend
+
+---
+
+## ?? **FASE 2: BACKEND API SERVER** (Alta Prioridade)
+
+### 2.1 Criar FastAPI Backend
+
+**Status:** ?? Planejado  
+**Prioridade:** ?? Alta  
+**Tempo Estimado:** 4-6 horas
+
+**Objetivo:**
+Criar REST API para servir dados ao frontend React.
+
+**Endpoints Necessários:**
+```
+GET  /api/strategies/top/{n}        # Top N strategies por performance
+GET  /api/stats                     # Estatísticas gerais
+GET  /api/comparison                # Comparação best single vs regime-aware
+GET  /api/regime/distribution       # Distribuição de regimes
+GET  /api/backtest/{strategy_name}  # Backtest result
+POST /api/backtest                  # Run new backtest
+GET  /api/strategies                # List all strategies
+```
+
+**Implementação:**
+```python
+# src/api/server.py
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="Smart Trade API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/api/strategies/top/{n}")
+async def get_top_strategies(n: int = 10):
+    # Implementação
+    pass
+```
+
+**Dependências:**
+```toml
+# pyproject.toml
+[tool.poetry.dependencies]
+fastapi = "^0.104.0"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+```
+
+---
+
+### 2.2 Implementar Cache de Resultados
+
+**Status:** ?? Planejado  
+**Prioridade:** ?? Média  
+**Tempo Estimado:** 2-3 horas
+
+**Objetivo:**
+Evitar re-calcular backtests toda vez que frontend recarrega.
+
+**Implementação:**
+```python
+# src/api/cache.py
+from functools import lru_cache
+import json
+from pathlib import Path
+
+CACHE_DIR = Path("cache/api")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+def cache_result(key: str, data: dict):
+    """Save result to cache"""
+    cache_file = CACHE_DIR / f"{key}.json"
+    cache_file.write_text(json.dumps(data, default=str))
+
+def get_cached_result(key: str, max_age_hours: int = 24):
+    """Get cached result if not expired"""
+    cache_file = CACHE_DIR / f"{key}.json"
+    
+    if not cache_file.exists():
+        return None
+    
+    # Check age
+    import time
+    age = time.time() - cache_file.stat().st_mtime
+    if age > max_age_hours * 3600:
+        return None
+    
+    return json.loads(cache_file.read_text())
+```
+
+---
+
+## ?? **FASE 3: FRONTEND ENHANCEMENT** (Média Prioridade)
+
+### 3.1 Conectar Frontend ao Backend
+
+**Status:** ?? Planejado  
+**Prioridade:** ?? Média  
+**Tempo Estimado:** 2 horas
+
+**Ações:**
+1. Atualizar `API_URL` em `frontend/src/App.tsx`
+2. Adicionar loading states
+3. Adicionar error handling
+4. Testar integração completa
+
+---
+
+### 3.2 Adicionar Gráficos de Performance
+
+**Status:** ?? Ideia  
+**Prioridade:** ?? Baixa  
+**Tempo Estimado:** 4-6 horas
+
+**Bibliotecas Sugeridas:**
+- **Recharts** (simples, React-friendly)
+- **Chart.js** (popular, feature-rich)
+- **TradingView Lightweight Charts** (profissional)
+
+**Gráficos a Adicionar:**
+```typescript
+// Equity Curve
+<LineChart data={equityData}>
+  <Line dataKey="equity" stroke="#10b981" />
+  <Line dataKey="drawdown" stroke="#ef4444" />
+</LineChart>
+
+// Strategy Comparison
+<BarChart data={strategyComparison}>
+  <Bar dataKey="return" fill="#3b82f6" />
+  <Bar dataKey="sharpe" fill="#8b5cf6" />
+</BarChart>
+
+// Regime Distribution
+<PieChart>
+  <Pie data={regimeData} dataKey="percentage" />
+</PieChart>
+```
+
+---
+
+### 3.3 Adicionar Backtest On-Demand
+
+**Status:** ?? Ideia  
+**Prioridade:** ?? Baixa  
+**Tempo Estimado:** 3-4 horas
+
+**Feature:**
+Permitir user rodar backtests via UI (em vez de apenas via MCP/Claude).
+
+**UI Mockup:**
+```
+???????????????????????????????????????????????
+? Run Backtest                                ?
+???????????????????????????????????????????????
+? Strategy:  [Dropdown: 42 strategies]        ?
+? Symbol:    [Input: BTC/USDT]                ?
+? Timeframe: [Select: 1h / 4h / 1d]          ?
+? Period:    [Date Range Picker]              ?
+?                                             ?
+?        [Run Backtest] [Cancel]              ?
+???????????????????????????????????????????????
+```
+
+---
+
+## ?? **FASE 4: ESTRATÉGIAS AVANÇADAS** (Longo Prazo)
+
+### 4.1 Machine Learning Strategy Generator
+
+**Status:** ?? Conceito  
+**Prioridade:** ?? Baixa  
+**Tempo Estimado:** 20-40 horas
+
+**Objetivo:**
+Usar ML para descobrir estratégias automaticamente.
+
+**Abordagens:**
+1. **Genetic Programming** - Evoluir árvores de decisão
+2. **Reinforcement Learning** - Agente aprende via trial/error
+3. **Neural Architecture Search** - Descobrir arquiteturas ótimas
+
+**Bibliotecas:**
+- `gplearn` - Genetic Programming
+- `stable-baselines3` - RL algorithms
+- `optuna` - Hyperparameter optimization
+
+---
+
+### 4.2 Sentiment Analysis Integration
+
+**Status:** ?? Conceito  
+**Prioridade:** ?? Baixa  
+**Tempo Estimado:** 10-15 horas
+
+**Fontes de Dados:**
+- Twitter/X sentiment (via API)
+- Reddit r/cryptocurrency
+- News headlines (CryptoPanic API)
+- Fear & Greed Index
+
+**Implementação:**
+```python
+# src/sentiment/analyzer.py
+from transformers import pipeline
+
+sentiment_analyzer = pipeline("sentiment-analysis", 
+                               model="ProsusAI/finbert")
+
+def get_market_sentiment(symbol: str) -> dict:
+    """
+    Returns:
+        {
+            'score': -1.0 to 1.0,
+            'label': 'bullish' | 'bearish' | 'neutral',
+            'confidence': 0.0 to 1.0
+        }
+    """
+    pass
+```
+
+---
+
+## ?? **FASE 5: LIVE TRADING** (?? Muito Cuidado!)
+
+### 5.1 Paper Trading Mode
+
+**Status:** ?? Planejado  
+**Prioridade:** ?? Alta  
+**Tempo Estimado:** 6-8 horas
+
+**Objetivo:**
+Testar estratégias em tempo real SEM arriscar dinheiro.
+
+**Features:**
+- Simular execução com dados live
+- Tracking de performance em tempo real
+- Validação de estratégias em mercado atual
+
+**Implementação:**
+```python
+# src/trading/paper_trader.py
+class PaperTrader:
+    def __init__(self, strategy, initial_capital=10000):
+        self.strategy = strategy
+        self.capital = initial_capital
+        self.positions = {}
+    
+    async def run_live(self):
+        while True:
+            # Fetch latest candle
+            latest = await self.fetch_latest_candle()
+            
+            # Generate signal
+            signal = self.strategy.generate_signals(latest)
+            
+            # Execute (simulated)
+            if signal:
+                self.execute_paper_trade(signal)
+            
+            await asyncio.sleep(60)  # 1 minute
+```
+
+---
+
+### 5.2 Real Trading (?? EXTREMO CUIDADO!)
+
+**Status:** ? NÃO IMPLEMENTAR SEM:**
+1. ? Validação extensa em paper trading (4-8 semanas)
+2. ? Risk management robusto
+3. ? Kill switches implementados
+4. ? Position sizing seguro
+5. ? Testes em conta testnet
+
+**Features de Segurança OBRIGATÓRIAS:**
+```python
+# src/trading/safety.py
+class SafetyManager:
+    MAX_POSITION_SIZE = 0.05  # 5% of capital
+    MAX_DAILY_LOSS = 0.02     # 2% daily loss limit
+    MAX_DRAWDOWN = 0.10       # 10% max drawdown
+    
+    def can_trade(self, signal) -> bool:
+        # Check all safety limits
+        pass
+    
+    def emergency_stop(self):
+        # Close all positions immediately
+        pass
+```
+
+---
+
+## ??? **MELHORIAS TÉCNICAS**
+
+### Otimizações de Performance
+
+**1. Ray Parallelization (Já implementado, mas não usado)**
+```python
+# Ativar Ray para WFA:
+results = engine.walk_forward_analysis(
+    ...,
+    use_ray=True,
+    n_workers=8
+)
+```
+
+**2. GPU Acceleration (Já implementado, mas opcional)**
+```python
+# Ativar GPU para backtests:
+df = calculate_all_indicators(df, indicators, use_gpu=True)
+engine = BacktestEngine(use_gpu=True)
+```
+
+**3. Caching Agressivo**
+```python
+# Cache indicator calculations:
+@lru_cache(maxsize=128)
+def calculate_indicators_cached(df_hash, indicators):
+    return calculate_all_indicators(df, indicators)
+```
+
+---
+
+### Testing & CI/CD
+
+**1. Testes Automatizados**
+```bash
+# Criar testes unitários
+pytest tests/
+pytest tests/ --cov=src  # Com coverage
+```
+
+**2. GitHub Actions CI**
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - run: pip install poetry
+      - run: poetry install
+      - run: poetry run pytest
+```
+
+---
+
+## ?? **TIMELINE SUGERIDA**
+
+### Semana 1: Estabilização
+- [ ] Fix: 6-day issue (2-4h)
+- [ ] Documentação completa (2h)
+- [ ] Backend API básico (6h)
+
+### Semana 2: Frontend
+- [ ] Conectar frontend ? backend (2h)
+- [ ] Cache de resultados (3h)
+- [ ] Gráficos básicos (6h)
+
+### Semana 3: Paper Trading
+- [ ] Implementar paper trader (8h)
+- [ ] Validação de estratégias live (4h)
+- [ ] Dashboard live monitoring (6h)
+
+### Semana 4+: Advanced Features
+- [ ] ML strategy generator (20h+)
+- [ ] Sentiment analysis (10h+)
+- [ ] Portfolio rebalancing (8h)
+
+---
+
+## ?? **RECURSOS DE APRENDIZADO**
+
+### Para entender o projeto:
+1. `Heritage.md` - Documentação completa do sistema
+2. `docs/MCP_INTEGRATION.md` - MCP setup
+3. `docs/VALIDATION.md` - Metodologia de validação
+4. `examples/walk_forward_example.py` - WFA prática
+
+### Para contribuir:
+1. `src/strategies/base.py` - Como criar estratégias
+2. `src/optimization/parameter_space.py` - Parameter spaces
+3. `src/mcp_server/tools/` - MCP tools
+
+---
+
+## ?? **SUPORTE**
+
+**Issues Conhecidos:**
+- Ver `DEBUG_6DAY_ISSUE.md`
+- Verificar `Heritage.md` ? Known Issues
+
+**Logs:**
+```bash
+# MCP Server logs:
+%APPDATA%/Claude/logs/mcp-server-smart-trade.log
+
+# Python logs:
+logs/smart_trade.log
+```
+
+**Comunidade:**
+- GitHub Issues: https://github.com/Shutaru/Smart-Trade-MCP/issues
+- Discussions: https://github.com/Shutaru/Smart-Trade-MCP/discussions
+
+---
+
+## ? **CHECKLIST DE PRÓXIMAS AÇÕES**
+
+### IMEDIATO (Hoje):
+- [ ] Ler `DEBUG_6DAY_ISSUE.md`
+- [ ] Adicionar logging em `backtest.py`
+- [ ] Rodar `test_mcp_tool_direct.py`
+- [ ] Verificar logs do MCP server
+
+### ESTA SEMANA:
+- [ ] Fix do 6-day issue
+- [ ] Backend API server
+- [ ] Cache de resultados
+- [ ] Frontend conectado
+
+### PRÓXIMO MÊS:
+- [ ] Paper trading mode
+- [ ] Gráficos avançados
+- [ ] Walk-Forward com otimização
+- [ ] Portfolio rebalancing
+
+---
+
+**Última Atualização:** 2025-11-21  
+**Próxima Revisão:** Após fix do 6-day issue
+
+**Vamos juntos! ??**

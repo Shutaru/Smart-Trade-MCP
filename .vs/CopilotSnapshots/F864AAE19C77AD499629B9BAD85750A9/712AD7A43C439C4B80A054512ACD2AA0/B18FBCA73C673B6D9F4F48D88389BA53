@@ -1,0 +1,203 @@
+﻿#!/usr/bin/env python
+"""
+MCP SSE Server for Open WebUI Integration
+
+Exposes Smart-Trade MCP tools via Server-Sent Events (SSE)
+for integration with Open WebUI.
+
+Based on: https://medium.com/@filipzupancic123/supercharge-your-llms-connect-your-custom-mcp-server-with-open-webui-and-ollama-f39c34d5b21a
+"""
+
+import asyncio
+import json
+from typing import Dict, Any
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+# Import MCP tools
+from src.mcp_server.tools.strategies import list_strategies
+from src.mcp_server.tools.backtest import backtest_strategy
+from src.mcp_server.tools.regime import detect_market_regime
+
+app = FastAPI(title="Smart-Trade MCP SSE Server")
+
+# Enable CORS for Open WebUI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {
+        "name": "Smart-Trade MCP SSE Server",
+        "version": "1.0.0",
+        "status": "running",
+        "tools": ["list_strategies", "backtest_strategy", "detect_regime"]
+    }
+
+
+@app.get("/sse")
+async def sse_endpoint(request: Request):
+    """
+    SSE endpoint for MCP tool calls.
+    
+    Open WebUI connects here to call MCP tools.
+    """
+    
+    async def event_generator():
+        # Send initial connection message
+        yield f"data: {json.dumps({'type': 'connected', 'message': 'Smart-Trade MCP Connected'})}\n\n"
+        
+        while True:
+            # Check if client disconnected
+            if await request.is_disconnected():
+                break
+            
+            # Keep-alive ping every 30 seconds
+            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+            await asyncio.sleep(30)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
+@app.post("/tools/list_strategies")
+async def tool_list_strategies(params: Dict[str, Any] = None):
+    """List all available trading strategies"""
+    if params is None:
+        params = {}
+    
+    category = params.get("category")
+    result = await list_strategies(category=category)
+    
+    return {
+        "success": True,
+        "result": result
+    }
+
+
+@app.post("/tools/backtest_strategy")
+async def tool_backtest_strategy(params: Dict[str, Any]):
+    """Run backtest for a trading strategy"""
+    result = await backtest_strategy(
+        strategy_name=params.get("strategy_name"),
+        symbol=params.get("symbol", "BTC/USDT"),
+        timeframe=params.get("timeframe", "1h"),
+    )
+    
+    return {
+        "success": True,
+        "result": result
+    }
+
+
+@app.post("/tools/detect_regime")
+async def tool_detect_regime(params: Dict[str, Any] = None):
+    """Detect current market regime"""
+    if params is None:
+        params = {}
+    
+    result = await detect_market_regime(
+        symbol=params.get("symbol", "BTC/USDT"),
+        timeframe=params.get("timeframe", "1h"),
+    )
+    
+    return {
+        "success": True,
+        "result": result
+    }
+
+
+@app.get("/tools")
+async def list_tools():
+    """List all available tools (MCP spec)"""
+    return {
+        "tools": [
+            {
+                "name": "list_strategies",
+                "description": "List all available trading strategies (42+ strategies)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "description": "Optional category filter (breakout, trend, mean_reversion, momentum)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "backtest_strategy",
+                "description": "Run backtest for a trading strategy (auto-fetches 1 year of data)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "strategy_name": {
+                            "type": "string",
+                            "description": "Strategy to test (e.g., 'atr_expansion_breakout')"
+                        },
+                        "symbol": {
+                            "type": "string",
+                            "description": "Trading pair (default: BTC/USDT)"
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Candle timeframe (default: 1h)"
+                        }
+                    },
+                    "required": ["strategy_name"]
+                }
+            },
+            {
+                "name": "detect_regime",
+                "description": "Detect current market regime and get strategy recommendations",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "Trading pair (default: BTC/USDT)"
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Candle timeframe (default: 1h)"
+                        }
+                    }
+                }
+            }
+        ]
+    }
+
+
+if __name__ == "__main__":
+    print("="*80)
+    print("SMART-TRADE MCP SSE SERVER")
+    print("="*80)
+    print("\nStarting server on http://localhost:8765")
+    print("\nSSE Endpoint: http://localhost:8765/sse")
+    print("Tools Endpoint: http://localhost:8765/tools")
+    print("\nFor Open WebUI integration:")
+    print("  1. Add this URL to Open WebUI MCP settings")
+    print("  2. URL: http://localhost:8765")
+    print("\n" + "="*80 + "\n")
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8765,
+        log_level="info"
+    )

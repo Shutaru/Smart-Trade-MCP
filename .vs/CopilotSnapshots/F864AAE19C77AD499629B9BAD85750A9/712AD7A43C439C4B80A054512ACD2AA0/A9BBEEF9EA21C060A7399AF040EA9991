@@ -1,0 +1,185 @@
+﻿# 🚀 Open WebUI + MCP Server Integration Guide
+
+## 🎯 **Problema Resolvido!**
+
+O Open WebUI **NÃO suporta Functions/Tools diretamente** como pensávamos!
+
+Ele precisa de um **MCP Server externo** rodando via **SSE (Server-Sent Events)**.
+
+Baseado em: https://medium.com/@filipzupancic123/supercharge-your-llms-connect-your-custom-mcp-server-with-open-webui-and-ollama-f39c34d5b21a
+
+---
+
+## ✅ **SOLUÇÃO CORRETA:**
+
+### **Arquitetura:**
+
+```
+┌─────────────────┐         ┌──────────────────┐         ┌─────────────────┐
+│   Open WebUI    │ ◄─────► │  MCP SSE Server  │ ◄─────► │  Smart-Trade    │
+│   (Frontend)    │   HTTP  │  (Port 8765)     │         │  MCP Tools      │
+└─────────────────┘         └──────────────────┘         └─────────────────┘
+        │                            │
+        │                            │
+        └────────► Ollama ◄──────────┘
+                (qwen2.5:7b)
+```
+
+---
+
+## 🔧 **SETUP (5 minutos):**
+
+### **PASSO 1: Instala dependências**
+
+```bash
+pip install fastapi uvicorn
+```
+
+### **PASSO 2: Inicia MCP SSE Server**
+
+```bash
+cd C:\Users\shuta\source\repos\Smart-Trade-MCP
+python mcp_sse_server.py
+```
+
+Deves ver:
+
+```
+================================================================================
+SMART-TRADE MCP SSE SERVER
+================================================================================
+
+Starting server on http://localhost:8765
+
+SSE Endpoint: http://localhost:8765/sse
+Tools Endpoint: http://localhost:8765/tools
+
+For Open WebUI integration:
+  1. Add this URL to Open WebUI MCP settings
+  2. URL: http://localhost:8765
+
+================================================================================
+```
+
+### **PASSO 3: Configura Open WebUI**
+
+No Open WebUI:
+
+1. **Settings** → **Admin Settings**
+2. **Connections** tab
+3. Procura por **"External Connections"** ou **"MCP Servers"**
+4. Adiciona:
+   - **Name:** Smart-Trade MCP
+   - **URL:** `http://localhost:8765`
+   - **Type:** MCP / SSE
+
+### **PASSO 4: Testa!**
+
+No chat do Open WebUI, pergunta:
+
+```
+List all trading strategies available
+```
+
+ou
+
+```
+Backtest the atr_expansion_breakout strategy on BTC/USDT 1h
+```
+
+---
+
+## 🎯 **FERRAMENTAS DISPONÍVEIS:**
+
+### **1. list_strategies**
+Lista todas as 42+ estratégias disponíveis.
+
+**Uso:**
+```
+List all breakout strategies
+```
+
+### **2. backtest_strategy**
+Roda backtest com auto-fetch de 1 ano de dados.
+
+**Uso:**
+```
+Backtest atr_expansion_breakout on BTC/USDT 1h
+```
+
+### **3. detect_regime**
+Detecta regime de mercado atual.
+
+**Uso:**
+```
+Detect market regime for BTC/USDT and recommend strategies
+```
+
+---
+
+## 🐛 **TROUBLESHOOTING:**
+
+### ❌ **Server não inicia:**
+
+```bash
+# Verifica se porta 8765 está livre
+netstat -ano | findstr :8765
+
+# Se estiver ocupada, muda a porta em mcp_sse_server.py:
+# port=8765 → port=8766
+```
+
+### ❌ **Open WebUI não vê as tools:**
+
+1. Verifica se o server está rodando:
+   ```bash
+   curl http://localhost:8765/tools
+   ```
+
+2. Deve retornar JSON com lista de tools
+
+3. Reinicia Open WebUI (Docker):
+   ```bash
+   docker restart open-webui
+   ```
+
+### ❌ **Tools chamadas mas sem resposta:**
+
+Verifica logs do MCP server no terminal onde está rodando.
+
+---
+
+## 📊 **ENDPOINTS DISPONÍVEIS:**
+
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/` | GET | Health check |
+| `/sse` | GET | SSE stream para Open WebUI |
+| `/tools` | GET | Lista todas as tools (MCP spec) |
+| `/tools/list_strategies` | POST | Executa list_strategies |
+| `/tools/backtest_strategy` | POST | Executa backtest |
+| `/tools/detect_regime` | POST | Detecta regime |
+
+---
+
+## 🎉 **PRONTO!**
+
+Agora tens um **MCP Server completo** que:
+
+✅ Roda standalone (não depende de Open WebUI internals)
+✅ Expõe tools via SSE (padrão MCP)
+✅ Funciona com qualquer client MCP-compatible
+✅ Open WebUI pode chamar as tools nativamente
+
+---
+
+## 🚀 **PRÓXIMOS PASSOS:**
+
+1. ✅ Inicia `python mcp_sse_server.py`
+2. ✅ Configura URL no Open WebUI
+3. ✅ Testa com Qwen 2.5 7B
+4. ✅ Enjoy! 🎊
+
+---
+
+**Feito com 💎 por Smart-Trade-MCP**

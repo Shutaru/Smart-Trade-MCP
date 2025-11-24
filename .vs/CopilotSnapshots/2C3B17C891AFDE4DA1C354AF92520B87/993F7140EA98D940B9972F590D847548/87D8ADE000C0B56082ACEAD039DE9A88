@@ -1,0 +1,100 @@
+﻿"""
+ATR Expansion Breakout
+"""
+
+from typing import List
+import pandas as pd
+
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
+
+
+class AtrExpansionBreakout(BaseStrategy):
+    """
+    AtrExpansionBreakout - ATR expansion signals volatility breakout
+    
+    Category: breakout
+    Indicators: atr, ema, rsi, supertrend, adx
+    """
+
+    def __init__(self, config: StrategyConfig = None):
+        """Initialize AtrExpansionBreakout strategy."""
+        super().__init__(config)
+        
+        # ✅ OPTIMIZABLE PARAMETERS (connected to parameter space)
+        self.atr_period = self.config.get("atr_period", 14)
+        self.atr_multiplier = self.config.get("atr_multiplier", 1.25)  # Relaxed from 1.5
+        
+        # ✅ Risk management - NOW OPTIMIZABLE
+        self.config.stop_loss_atr_mult = self.config.get("stop_loss_atr_mult", 2.2)
+        self.config.take_profit_rr_ratio = self.config.get("take_profit_rr_ratio", 2.4)
+        
+    def get_required_indicators(self) -> List[str]:
+        """Required indicators for this strategy."""
+        return ["atr", "ema", "supertrend", "adx"]
+    
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        """
+        Generate trading signals.
+        
+        Args:
+            df: DataFrame with OHLCV and indicator data
+            
+        Returns:
+            List of trading signals
+        """
+        signals, pos = [], None
+        
+        for i in range(20, len(df)):
+            r = df.iloc[i]
+            close = r["close"]
+            atr = r.get("atr", close*0.02)
+            
+            # ✅ USE self.atr_period parameter
+            lookback = min(20, i)  # Ensure we have enough data
+            atr_avg = df["atr"].iloc[i-lookback:i].mean() if "atr" in df.columns else atr
+            
+            # ✅ USE self.atr_multiplier parameter
+            atr_expanding = atr > atr_avg * self.atr_multiplier
+            
+            st_trend = r.get("supertrend_trend", 0)
+            prev_high, prev_low = df.iloc[i-1]["high"], df.iloc[i-1]["low"]
+            
+            if pos is None and atr_expanding:
+                # Entry logic: SuperTrend + breakout
+                if st_trend > 0 and close > prev_high:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(
+                        SignalType.LONG, r["timestamp"], close, 0.8, sl, tp,
+                        {"atr_ratio": atr/atr_avg, "atr_period": self.atr_period}
+                    ))
+                    pos = "LONG"
+                    
+                elif st_trend < 0 and close < prev_low:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(
+                        SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp,
+                        {"atr_ratio": atr/atr_avg, "atr_period": self.atr_period}
+                    ))
+                    pos = "SHORT"
+            
+            # Exit logic: SuperTrend reversal
+            elif pos == "LONG" and st_trend < 0:
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, r["timestamp"], close,
+                    metadata={"reason": "SuperTrend reversed"}
+                ))
+                pos = None
+            
+            elif pos == "SHORT" and st_trend > 0:
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, r["timestamp"], close,
+                    metadata={"reason": "SuperTrend reversed"}
+                ))
+                pos = None
+                
+        logger.info(f"AtrExpansionBreakout: {len(signals)} signals")
+        return signals
+
+
+__all__ = ["AtrExpansionBreakout"]

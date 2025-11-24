@@ -1,0 +1,181 @@
+﻿# Smart-Trade Agent - GPT-4o-mini Solution
+
+## Why This Solution?
+
+- **CHEAP:** ~$2-5/month (vs $15+ for Claude)
+- **ROBUST:** Real tool calling (vs Qwen simulation)
+- **LOCAL MCP:** Uses your local MCP server (no data leaves your machine except LLM calls)
+- **UNLIMITED:** No rate limits like Claude free tier
+
+---
+
+## Cost Breakdown
+
+| Service | Cost | Usage |
+|---------|------|-------|
+| **GPT-4o-mini Input** | $0.15 / 1M tokens | ~10M tokens = $1.50 |
+| **GPT-4o-mini Output** | $0.60 / 1M tokens | ~2M tokens = $1.20 |
+| **Total/month** | ~$2-5 | Heavy personal use |
+
+**Compare to:**
+- Claude: $15-25/month
+- GPT-4: $30-60/month
+- Qwen: Free but no tool calling
+
+---
+
+## Setup (5 minutes)
+
+### 1. Install dependencies
+
+```bash
+pip install langchain langchain-openai requests
+```
+
+### 2. Get OpenAI API Key
+
+1. Go to https://platform.openai.com/api-keys
+2. Create new API key
+3. Copy it
+
+### 3. Set environment variable
+
+**Windows (PowerShell):**
+```powershell
+$env:OPENAI_API_KEY = "sk-..."
+```
+
+**Permanent (Windows):**
+```powershell
+[System.Environment]::SetEnvironmentVariable('OPENAI_API_KEY', 'sk-...', 'User')
+```
+
+### 4. Start MCP server
+
+```bash
+python mcp_sse_server.py
+```
+
+### 5. Run agent
+
+**Interactive mode:**
+```bash
+python smart_trade_agent.py
+```
+
+**Single query:**
+```bash
+python smart_trade_agent.py "List all breakout strategies"
+```
+
+---
+
+## Usage Examples
+
+### Interactive Mode
+
+```
+$ python smart_trade_agent.py
+
+SMART-TRADE MCP AGENT (GPT-4o-mini)
+================================================================================
+
+Cost: ~$0.15 per 1M tokens (~$2-5/month for heavy use)
+
+Make sure:
+1. MCP server is running (python mcp_sse_server.py)
+2. Set OPENAI_API_KEY environment variable
+
+================================================================================
+
+Ready!
+
+You: List all trading strategies
+
+Agent: Total: 42 strategies
+
+- atr_expansion_breakout (breakout): ATR expansion breakout
+- donchian_volatility_breakout (breakout): Donchian channel breakout
+- channel_squeeze_plus (breakout): Channel squeeze breakout
+...
+```
+
+### Command Line
+
+```bash
+# List strategies
+python smart_trade_agent.py "List all momentum strategies"
+
+# Run backtest
+python smart_trade_agent.py "Backtest atr_expansion_breakout on BTC/USDT 1h"
+
+# Detect regime
+python smart_trade_agent.py "What's the current market regime for BTC/USDT?"
+```
+
+---
+
+## Features
+
+- **Natural Language:** Ask questions normally
+- **Tool Calling:** Automatic tool selection
+- **Error Handling:** Robust error recovery
+- **Cost Tracking:** Monitor your usage
+- **Streaming:** See agent thinking in real-time
+
+---
+
+## Cost Optimization Tips
+
+1. **Use system prompts wisely:** Clear, concise questions = fewer tokens
+2. **Batch queries:** Ask multiple things at once
+3. **Monitor usage:** Check https://platform.openai.com/usage
+4. **Set limits:** OpenAI allows monthly spending limits
+
+---
+
+## Advanced: Web UI
+
+Want a web interface? Add Gradio:
+
+```bash
+pip install gradio
+```
+
+Then wrap the agent in Gradio UI (I can create this if you want!)
+
+---
+
+## Comparison Table
+
+| Feature | Claude Desktop | GPT-4o-mini Agent | Qwen Local |
+|---------|----------------|-------------------|------------|
+| **Cost** | $15-25/month | $2-5/month | Free |
+| **MCP Support** | Native | Via LangChain | No |
+| **Rate Limits** | Strict | Generous | None |
+| **Tool Calling** | Yes | Yes | No |
+| **Privacy** | API calls | API calls | 100% local |
+| **Setup Effort** | Easy | Medium | Hard |
+| **Reliability** | High | High | Medium |
+
+---
+
+## Recommendation
+
+**For You:**
+**GPT-4o-mini Agent** - Best balance of cost, features, and reliability!
+
+- Much cheaper than Claude ($2 vs $15/month)
+- Real tool calling (unlike Qwen)
+- Uses your local MCP server
+- Reliable and fast
+
+---
+
+Ready to try it? Just:
+
+1. Get API key from OpenAI
+2. Set environment variable
+3. Run `python smart_trade_agent.py`
+
+**Total cost: ~$2-5/month for HEAVY use!**

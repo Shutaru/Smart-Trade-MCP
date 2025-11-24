@@ -1,0 +1,225 @@
+﻿# ?? Using Smart-Trade MCP with OpenAI API
+
+## ?? **Why GPT-4o-mini?**
+
+- ? **SUPER CHEAP:** $0.15 per 1M input tokens, $0.60 per 1M output
+- ? **Fast:** Much faster than GPT-4
+- ? **Smart enough:** Handles MCP tools perfectly
+- ? **No rate limits:** (for paid accounts)
+
+Estimated cost for heavy usage: **~$2-5/month**
+
+---
+
+## ?? **Setup with Python Client:**
+
+### **1. Install OpenAI SDK:**
+
+```bash
+pip install openai
+```
+
+### **2. Create Chat Client with MCP:**
+
+```python
+# chat_with_mcp.py
+import os
+import json
+import subprocess
+from openai import OpenAI
+
+# Initialize OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Start MCP server
+mcp_process = subprocess.Popen(
+    ["python", "-m", "src.mcp_server.server"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+    cwd=r"C:\Users\shuta\source\repos\Smart-Trade-MCP"
+)
+
+# Available MCP tools
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "backtest_strategy",
+            "description": "Run backtest for trading strategy with auto-fetch of 1 year data",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy_name": {"type": "string"},
+                    "symbol": {"type": "string"},
+                    "timeframe": {"type": "string"},
+                },
+                "required": ["strategy_name", "symbol", "timeframe"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_strategies",
+            "description": "List all 42+ available trading strategies",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string"}
+                }
+            }
+        }
+    },
+    # Add more tools as needed...
+]
+
+def call_mcp_tool(tool_name: str, arguments: dict):
+    """Call MCP server tool"""
+    request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": tool_name,
+            "arguments": arguments
+        }
+    }
+    
+    mcp_process.stdin.write(json.dumps(request) + "\n")
+    mcp_process.stdin.flush()
+    
+    response = mcp_process.stdout.readline()
+    return json.loads(response)
+
+def chat(message: str):
+    """Chat with GPT-4o-mini using MCP tools"""
+    messages = [
+        {"role": "system", "content": "You are a trading strategy expert with access to Smart-Trade MCP tools."},
+        {"role": "user", "content": message}
+    ]
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        tools=TOOLS,
+        tool_choice="auto"
+    )
+    
+    # Handle tool calls
+    if response.choices[0].message.tool_calls:
+        for tool_call in response.choices[0].message.tool_calls:
+            function_name = tool_call.function.name
+            arguments = json.loads(tool_call.function.arguments)
+            
+            print(f"?? Calling: {function_name}({arguments})")
+            
+            # Call MCP server
+            result = call_mcp_tool(function_name, arguments)
+            
+            print(f"? Result: {result}")
+            
+            # Send result back to GPT
+            messages.append({
+                "role": "function",
+                "name": function_name,
+                "content": json.dumps(result)
+            })
+            
+            # Get final response
+            final_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages
+            )
+            
+            return final_response.choices[0].message.content
+    
+    return response.choices[0].message.content
+
+# Example usage
+if __name__ == "__main__":
+    result = chat("Backtest the atr_expansion_breakout strategy on BTC/USDT 1h. Show me Sharpe, Win Rate, and days tested.")
+    print(result)
+```
+
+### **3. Set API Key:**
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."
+```
+
+### **4. Run:**
+
+```bash
+python chat_with_mcp.py
+```
+
+---
+
+## ?? **ALTERNATIVA: Open WebUI (BEST!)**
+
+Open WebUI supports MCP natively AND works with:
+- ? Ollama (local, free)
+- ? OpenAI API
+- ? Any OpenAI-compatible API
+
+### **Setup:**
+
+1. **Install Docker Desktop** (if not installed)
+
+2. **Run Open WebUI:**
+```bash
+docker run -d -p 3000:8080 \
+  -v open-webui:/app/backend/data \
+  --name open-webui \
+  --restart always \
+  ghcr.io/open-webui/open-webui:main
+```
+
+3. **Access:** http://localhost:3000
+
+4. **Configure:**
+   - Go to Settings ? Connections
+   - Add OpenAI API key OR
+   - Connect to Ollama (if running locally)
+
+5. **Add MCP Server:**
+   - Settings ? Functions ? Add MCP Server
+   - URL: Your MCP server endpoint
+
+---
+
+## ?? **MY RECOMMENDATION:**
+
+### **For Development (FREE):**
+**Ollama + llama3.1:70b** - runs locally, no costs!
+
+### **For Production (CHEAP):**
+**GPT-4o-mini via API** - $2-5/month for heavy usage
+
+### **Best User Experience:**
+**Open WebUI** - works with both options!
+
+---
+
+## ?? **Cost Comparison:**
+
+| Option | Cost/Month | Speed | Quality | Privacy |
+|--------|-----------|-------|---------|---------|
+| **Ollama (local)** | $0 | Medium | Good | 100% |
+| **GPT-4o-mini API** | $2-5 | Fast | Excellent | API |
+| **Claude API** | $15+ | Fast | Excellent | API |
+| **Claude Desktop** | Limited free | Fast | Excellent | API |
+
+---
+
+## ? **NEXT STEPS:**
+
+1. Choose your option:
+   - **FREE & LOCAL:** Install Ollama + Open WebUI
+   - **CHEAP & FAST:** Get OpenAI API key + use GPT-4o-mini
+
+2. I can help you set up whichever you choose!
+
+**Qual preferes?** ??

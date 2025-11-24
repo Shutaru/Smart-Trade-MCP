@@ -1,0 +1,171 @@
+﻿import { useEffect, useRef } from 'react'
+import { createChart } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi } from 'lightweight-charts'
+
+interface Trade {
+  id: number
+  entry_time: string
+  exit_time?: string
+  entry_price: number
+  exit_price?: number
+  direction: string
+  pnl?: number
+}
+
+export default function TradingChart({ symbol, timeframe, trades }: { symbol: string; timeframe: string; trades: Trade[] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+
+  // Fetch candles from API
+  async function fetchCandles() {
+    try {
+      const qs = `symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=500`
+      const res = await fetch(`/api/v1/market/candles?${qs}`)
+      if (!res.ok) return []
+      const data = await res.json()
+      return data.candles || []
+    } catch (e) {
+      console.warn('Failed to fetch candles', e)
+      return []
+    }
+  }
+
+  useEffect(() => {
+    let mounted = true
+    let ro: ResizeObserver | null = null
+    let drawTimeout: any = null
+
+    async function init() {
+      if (!containerRef.current) return
+
+      // derive colors from CSS variables
+      const cs = getComputedStyle(document.documentElement)
+      const textColor = (cs.getPropertyValue('--text') || '#333').trim()
+      const bg = (cs.getPropertyValue('--panel') || '#fff').trim()
+      const grid = 'rgba(0,0,0,0.06)'
+
+      chartRef.current = createChart(containerRef.current, {
+        width: containerRef.current.clientWidth,
+        height: 400,
+        layout: { background: { color: bg }, textColor: textColor },
+        grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+        rightPriceScale: { borderColor: '#eee' },
+        timeScale: { borderColor: '#eee' }
+      }) as IChartApi
+
+      candleSeriesRef.current = chartRef.current.addCandlestickSeries({
+        upColor: '#16a34a',
+        downColor: '#ef4444',
+        borderVisible: false,
+        wickUpColor: '#16a34a',
+        wickDownColor: '#ef4444'
+      }) as ISeriesApi<'Candlestick'>
+
+      const candles = await fetchCandles()
+      if (!mounted) return
+
+      const formatted = candles.map((c: any) => {
+        let time: number | string = c.time
+        if (typeof time === 'string' && isNaN(Number(time))) {
+          time = Math.floor(new Date(time).getTime() / 1000)
+        }
+        return {
+          time,
+          open: Number(c.open),
+          high: Number(c.high),
+          low: Number(c.low),
+          close: Number(c.close)
+        }
+      })
+
+      // simple draw animation: set partial data then full
+      if (candleSeriesRef.current) {
+        const half = Math.max(1, Math.floor(formatted.length * 0.25))
+        candleSeriesRef.current.setData(formatted.slice(0, half))
+        drawTimeout = setTimeout(() => {
+          candleSeriesRef.current?.setData(formatted)
+        }, 300)
+      }
+
+      // markers from trades
+      if (trades && trades.length > 0) {
+        const markers = trades.flatMap((t: any) => {
+          const marks: any[] = []
+          try {
+            const entryTs = Math.floor(new Date(t.entry_time).getTime() / 1000)
+            marks.push({
+              time: entryTs,
+              position: t.direction === 'long' ? 'belowBar' : 'aboveBar',
+              color: t.direction === 'long' ? 'green' : 'red',
+              shape: 'arrowUp',
+              text: `Entry ${t.entry_price}`
+            })
+            if (t.exit_time) {
+              const exitTs = Math.floor(new Date(t.exit_time).getTime() / 1000)
+              marks.push({
+                time: exitTs,
+                position: t.direction === 'long' ? 'aboveBar' : 'belowBar',
+                color: t.pnl && t.pnl > 0 ? 'lime' : 'red',
+                shape: 'arrowDown',
+                text: `Exit ${t.exit_price} (${t.pnl ? t.pnl.toFixed(2) : ''})`
+              })
+            }
+          } catch (e) {}
+          return marks
+        })
+        if (candleSeriesRef.current) candleSeriesRef.current.setMarkers(markers)
+      }
+
+      ro = new ResizeObserver(() => {
+        if (containerRef.current && chartRef.current) {
+          chartRef.current.applyOptions({ width: containerRef.current.clientWidth })
+        }
+      })
+      ro.observe(containerRef.current)
+
+      return () => {
+        mounted = false
+        if (ro && containerRef.current) ro.disconnect()
+        if (drawTimeout) clearTimeout(drawTimeout)
+        chartRef.current?.remove()
+        chartRef.current = null
+      }
+    }
+
+    init()
+    return () => { mounted = false }
+  }, [symbol, timeframe])
+
+  useEffect(() => {
+    if (!candleSeriesRef.current) return
+    if (!trades) return
+    const markers = trades.flatMap((t: any) => {
+      const marks: any[] = []
+      try {
+        const entryTs = Math.floor(new Date(t.entry_time).getTime() / 1000)
+        marks.push({
+          time: entryTs,
+          position: t.direction === 'long' ? 'belowBar' : 'aboveBar',
+          color: t.direction === 'long' ? 'green' : 'red',
+          shape: 'arrowUp',
+          text: `Entry ${t.entry_price}`
+        })
+        if (t.exit_time) {
+          const exitTs = Math.floor(new Date(t.exit_time).getTime() / 1000)
+          marks.push({
+            time: exitTs,
+            position: t.direction === 'long' ? 'aboveBar' : 'belowBar',
+            color: t.pnl && t.pnl > 0 ? 'lime' : 'red',
+            shape: 'arrowDown',
+            text: `Exit ${t.exit_price} (${t.pnl ? t.pnl.toFixed(2) : ''})`
+          })
+        }
+      } catch (e) {}
+      return marks
+    })
+    if (candleSeriesRef.current) candleSeriesRef.current.setMarkers(markers)
+  }, [trades])
+
+  return <div ref={containerRef} style={{ width: '100%', height: 400 }} />
+}

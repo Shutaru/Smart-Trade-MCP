@@ -1,0 +1,285 @@
+﻿"""
+Validation Tools for MCP
+
+Provides advanced validation methods for trading strategies:
+- Walk-Forward Analysis
+- K-Fold Cross-Validation
+- Monte Carlo Simulation
+
+These tools are exposed via MCP protocol for AI agent access.
+"""
+
+from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
+
+from ...core.logger import logger
+from ...core.backtest_engine import BacktestEngine
+from ...core.data_manager import DataManager
+from ...core.indicators import calculate_all_indicators
+from ...strategies import registry
+
+
+async def run_walk_forward_analysis(
+    strategy_name: str,
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    train_days: int = 180,
+    test_days: int = 60,
+    step_days: int = 30,
+    initial_capital: float = 10000.0,
+    parallel: bool = True,
+    n_jobs: int = -1,
+) -> Dict[str, Any]:
+    """
+    Run Walk-Forward Analysis on a trading strategy.
+    
+    Walk-Forward Analysis (WFA) is the gold standard for validating trading
+    strategies. It divides historical data into multiple train/test windows
+    and validates strategy performance out-of-sample.
+    
+    Critical for detecting overfitting - if a strategy performs well in-sample
+    but poorly out-of-sample, it's likely overfitted and won't work in production.
+    
+    Args:
+        strategy_name: Name of strategy to validate (from registry)
+        symbol: Trading pair (e.g., "BTC/USDT", "ETH/USDT")
+        timeframe: Candle timeframe ("1h", "4h", "1d")
+        train_days: Size of training window in days
+        test_days: Size of testing window in days
+        step_days: Step size for rolling window (smaller = more windows)
+        initial_capital: Starting capital for backtest
+        parallel: Execute windows in parallel (faster)
+        n_jobs: Number of CPU cores to use (-1 = all)
+        
+    Returns:
+        Dictionary with WFA results:
+        {
+            "strategy": str,
+            "symbol": str,
+            "n_windows": int,
+            "stability_ratio": float,  # out_sample / in_sample (>0.7 is good)
+            "consistency": float,      # % profitable windows (>70% is good)
+            "avg_in_sample_return": float,
+            "avg_out_sample_return": float,
+            "windows": List[Dict],     # Individual window results
+            "recommendation": str,     # PASS/MARGINAL/FAIL
+        }
+        
+    Example (AI Agent usage):
+        >>> result = await run_walk_forward_analysis(
+        ...     strategy_name="cci_extreme_snapback",
+        ...     symbol="BTC/USDT",
+        ...     train_days=180,
+        ...     test_days=60
+        ... )
+        >>> if result['recommendation'] == "PASS":
+        ...     print("Strategy validated! Ready for optimization.")
+    """
+    logger.info(
+        f"WFA Tool: {strategy_name} on {symbol} {timeframe}, "
+        f"train={train_days}d, test={test_days}d"
+    )
+    
+    try:
+        # Get strategy from registry
+        strategy = registry.get(strategy_name)
+        
+        # Calculate how much data we need
+        # Need enough data for multiple windows
+        min_windows = 3  # At least 3 windows for meaningful analysis
+        days_needed = train_days + (test_days * min_windows) + (step_days * min_windows)
+        
+        # Fetch historical data
+        dm = DataManager()
+        
+        # For 1h timeframe, ~24 candles per day
+        # For 4h timeframe, ~6 candles per day
+        # For 1d timeframe, 1 candle per day
+        candles_per_day = {
+            "1h": 24,
+            "4h": 6,
+            "1d": 1,
+            "15m": 96,
+            "5m": 288,
+        }
+        
+        limit = days_needed * candles_per_day.get(timeframe, 24)
+        
+        logger.info(f"Fetching {limit} candles ({days_needed} days) from exchange")
+        
+        df = await dm.fetch_ohlcv(
+            symbol=symbol,
+            timeframe=timeframe,
+            limit=min(limit, 1000),  # CCXT limit
+        )
+        
+        await dm.close()
+        
+        if df.empty:
+            return {
+                "error": "No market data available",
+                "strategy": strategy_name,
+                "symbol": symbol,
+            }
+        
+        # Log actual data range
+        actual_days = (df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).days
+        logger.info(
+            f"Fetched {len(df)} candles covering {actual_days} days "
+            f"({df['timestamp'].iloc[0]} to {df['timestamp'].iloc[-1]})"
+        )
+        
+        # Calculate required indicators
+        required_indicators = strategy.get_required_indicators()
+        logger.info(f"Calculating indicators: {required_indicators}")
+        df = calculate_all_indicators(df, required_indicators)
+        
+        # Run Walk-Forward Analysis
+        logger.info("Starting Walk-Forward Analysis...")
+        engine = BacktestEngine(initial_capital=initial_capital)
+        
+        results = engine.walk_forward_analysis(
+            strategy=strategy,
+            df=df,
+            train_days=train_days,
+            test_days=test_days,
+            step_days=step_days,
+            optimize_func=None,  # No optimization for now (Phase 2)
+            parallel=parallel,
+            n_jobs=n_jobs,
+        )
+        
+        # Add metadata
+        results['strategy'] = strategy_name
+        results['symbol'] = symbol
+        results['timeframe'] = timeframe
+        results['data_period_days'] = actual_days
+        
+        # Log summary
+        logger.info(
+            f"WFA Complete: {strategy_name}\n"
+            f"  Stability Ratio: {results['stability_ratio']:.2f}\n"
+            f"  Consistency: {results['consistency']:.1f}%\n"
+            f"  In-Sample Avg: {results['avg_in_sample_return']:.2f}%\n"
+            f"  Out-Sample Avg: {results['avg_out_sample_return']:.2f}%\n"
+            f"  Recommendation: {results['recommendation']}"
+        )
+        
+        return results
+        
+    except KeyError as e:
+        logger.error(f"Strategy not found: {e}")
+        return {
+            "error": f"Strategy '{strategy_name}' not found in registry",
+            "available_strategies": [s.name for s in registry.list_strategies()],
+        }
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        return {
+            "error": str(e),
+            "strategy": strategy_name,
+            "symbol": symbol,
+        }
+    except Exception as e:
+        logger.error(f"WFA error: {e}", exc_info=True)
+        raise
+
+
+async def run_k_fold_validation(
+    strategy_name: str,
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    k: int = 5,
+    shuffle: bool = False,
+    initial_capital: float = 10000.0,
+    parallel: bool = True,
+    n_jobs: int = -1,
+) -> Dict[str, Any]:
+    """
+    Run K-Fold Cross-Validation on a trading strategy.
+    
+    K-Fold validation divides data into K equal parts, trains on K-1 parts
+    and tests on the remaining part. Repeats K times with different test sets.
+    
+    Complementary to Walk-Forward Analysis. WFA preserves time order (important
+    for trading), while K-Fold tests robustness across different data periods.
+    
+    Args:
+        strategy_name: Strategy to validate
+        symbol: Trading pair
+        timeframe: Candle timeframe
+        k: Number of folds (typically 5 or 10)
+        shuffle: Shuffle data before splitting (not recommended for time series)
+        initial_capital: Starting capital
+        parallel: Execute folds in parallel
+        n_jobs: Number of CPU cores
+        
+    Returns:
+        Dictionary with K-Fold results
+        
+    Note:
+        For time series data (trading), shuffle=False is recommended to
+        preserve temporal ordering within each fold.
+    """
+    logger.info(f"K-Fold Validation: {strategy_name}, k={k}, shuffle={shuffle}")
+    
+    # TODO: Implement K-Fold validation
+    # Similar structure to WFA but different data splitting
+    
+    return {
+        "error": "K-Fold validation not yet implemented",
+        "status": "Coming in next update"
+    }
+
+
+async def run_monte_carlo_simulation(
+    strategy_name: str,
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    n_simulations: int = 1000,
+    initial_capital: float = 10000.0,
+    parallel: bool = True,
+    n_jobs: int = -1,
+) -> Dict[str, Any]:
+    """
+    Run Monte Carlo Simulation on strategy trade sequences.
+    
+    Monte Carlo simulation randomly resamples historical trades to generate
+    thousands of possible equity curves. Helps understand risk and confidence
+    intervals for strategy performance.
+    
+    Args:
+        strategy_name: Strategy to analyze
+        symbol: Trading pair
+        timeframe: Candle timeframe
+        n_simulations: Number of random simulations (1000-10000)
+        initial_capital: Starting capital
+        parallel: Execute simulations in parallel
+        n_jobs: Number of CPU cores
+        
+    Returns:
+        Dictionary with Monte Carlo results including:
+        - median_return: Median simulated return
+        - confidence_intervals: 95%, 90%, 75% intervals
+        - risk_of_ruin: Probability of >20% drawdown
+        - simulated_equity_curves: Sample curves for visualization
+    """
+    logger.info(f"Monte Carlo Simulation: {strategy_name}, n={n_simulations}")
+    
+    # TODO: Implement Monte Carlo simulation
+    # 1. Run backtest to get trade sequence
+    # 2. Resample trades randomly
+    # 3. Calculate equity curves
+    # 4. Analyze distribution
+    
+    return {
+        "error": "Monte Carlo simulation not yet implemented",
+        "status": "Coming in next update"
+    }
+
+
+__all__ = [
+    "run_walk_forward_analysis",
+    "run_k_fold_validation",
+    "run_monte_carlo_simulation",
+]

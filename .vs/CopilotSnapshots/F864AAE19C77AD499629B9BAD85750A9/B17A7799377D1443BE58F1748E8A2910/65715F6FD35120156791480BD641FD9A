@@ -1,0 +1,362 @@
+﻿import { useEffect, useState } from 'react'
+import { TrendingUp, Activity, BarChart3, AlertCircle } from 'lucide-react'
+import './App.css'
+
+interface Strategy {
+  strategy: string
+  total_return: number
+  total_trades: number
+  win_rate: number
+  sharpe_ratio: number
+  max_drawdown_pct: number
+}
+
+interface Stats {
+  total_strategies: number
+  regime_periods: number
+  total_candles: number
+  data_coverage_days: number
+}
+
+interface Comparison {
+  best_single: {
+    strategy: string
+    total_return: number
+    total_trades: number
+    win_rate: number
+  }
+  regime_aware: {
+    total_return: number
+    total_trades: number
+  }
+  improvement: number
+}
+
+const API_URL = 'http://localhost:8000/api'
+
+function App() {
+  const [strategies, setStrategies] = useState<Strategy[]>([])
+  const [stats, setStats] = useState<Stats | null>(null)
+  const [comparison, setComparison] = useState<Comparison | null>(null)
+  const [regimeDistribution, setRegimeDistribution] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [strategiesRes, statsRes, comparisonRes, regimeRes] = await Promise.all([
+          fetch(`${API_URL}/strategies/top/10`),
+          fetch(`${API_URL}/stats`),
+          fetch(`${API_URL}/comparison`),
+          fetch(`${API_URL}/regime/distribution`)
+        ])
+
+        if (!strategiesRes.ok) throw new Error('Failed to fetch strategies')
+
+        setStrategies(await strategiesRes.json())
+        setStats(await statsRes.json())
+        setComparison(await comparisonRes.json())
+        setRegimeDistribution(await regimeRes.json())
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load data')
+        console.error('Error fetching data:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="text-white text-xl font-semibold">Loading Dashboard...</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
+        <div className="glass-card max-w-md w-full p-8 text-center">
+          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-4">Connection Error</h2>
+          <p className="text-gray-300 mb-2">{error}</p>
+          <p className="text-sm text-gray-400 mb-6">Make sure the backend API is running on port 8000</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="btn-primary w-full"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <header className="glass-card p-8 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 to-pink-600/20"></div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-2">
+              <BarChart3 className="w-10 h-10 text-purple-400" />
+              <h1 className="text-4xl md:text-5xl font-bold text-white">Smart Trade MCP</h1>
+            </div>
+            <p className="text-purple-200 text-lg">Professional Algorithmic Trading Dashboard</p>
+          </div>
+        </header>
+
+        {/* Stats Grid */}
+        {stats && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard 
+              icon={<Activity className="w-6 h-6" />}
+              label="Strategies Tested" 
+              value={stats.total_strategies}
+              gradient="from-blue-500 to-cyan-500"
+            />
+            <StatCard 
+              icon={<TrendingUp className="w-6 h-6" />}
+              label="Data Coverage" 
+              value={stats.data_coverage_days} 
+              unit="days"
+              gradient="from-purple-500 to-pink-500"
+            />
+            <StatCard 
+              icon={<BarChart3 className="w-6 h-6" />}
+              label="Total Candles" 
+              value={stats.total_candles.toLocaleString()}
+              gradient="from-green-500 to-emerald-500"
+            />
+            <StatCard 
+              icon={<Activity className="w-6 h-6" />}
+              label="Regime Periods" 
+              value={stats.regime_periods}
+              gradient="from-orange-500 to-red-500"
+            />
+          </div>
+        )}
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* TOP 10 Strategies - Takes 2 columns */}
+          <div className="lg:col-span-2 glass-card p-6">
+            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+              <TrendingUp className="w-6 h-6 text-green-400" />
+              TOP 10 Performance Leaders
+            </h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-purple-500/30">
+                    <th className="px-4 py-3 text-left text-purple-300 font-semibold">Rank</th>
+                    <th className="px-4 py-3 text-left text-purple-300 font-semibold">Strategy</th>
+                    <th className="px-4 py-3 text-right text-purple-300 font-semibold">Return</th>
+                    <th className="px-4 py-3 text-right text-purple-300 font-semibold">Trades</th>
+                    <th className="px-4 py-3 text-right text-purple-300 font-semibold">Win Rate</th>
+                    <th className="px-4 py-3 text-right text-purple-300 font-semibold">Sharpe</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {strategies.map((strategy, index) => (
+                    <tr
+                      key={strategy.strategy}
+                      className="border-b border-purple-500/10 hover:bg-purple-500/5 transition-colors"
+                    >
+                      <td className="px-4 py-4">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${
+                            index === 0
+                              ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-white'
+                              : index === 1
+                              ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-gray-800'
+                              : index === 2
+                              ? 'bg-gradient-to-br from-orange-400 to-orange-600 text-white'
+                              : 'bg-purple-500/20 text-purple-300'
+                          }`}
+                        >
+                          {index + 1}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="text-white font-medium">{strategy.strategy}</span>
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <span
+                          className={`font-bold ${
+                            strategy.total_return >= 0 ? 'text-green-400' : 'text-red-400'
+                          }`}
+                        >
+                          {strategy.total_return >= 0 ? '+' : ''}{strategy.total_return.toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-right text-gray-300">{strategy.total_trades}</td>
+                      <td className="px-4 py-4 text-right">
+                        <span className="text-purple-300">{strategy.win_rate.toFixed(1)}%</span>
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <span className={`font-medium ${
+                          strategy.sharpe_ratio > 1 ? 'text-green-400' : 
+                          strategy.sharpe_ratio > 0.5 ? 'text-yellow-400' : 'text-red-400'
+                        }`}>
+                          {strategy.sharpe_ratio.toFixed(2)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Regime Distribution */}
+          <div className="glass-card p-6">
+            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+              <Activity className="w-6 h-6 text-purple-400" />
+              Market Regime
+            </h2>
+            <div className="space-y-3">
+              {Object.entries(regimeDistribution).map(([regime, pct]) => (
+                <div key={regime} className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 font-medium text-sm">{regime}</span>
+                    <span className="text-white font-bold">{pct}%</span>
+                  </div>
+                  <div className="h-3 bg-slate-700/50 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        regime === 'VOLATILE'
+                          ? 'bg-gradient-to-r from-purple-500 to-pink-500'
+                          : regime === 'TRENDING_UP'
+                          ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                          : regime === 'TRENDING_DOWN'
+                          ? 'bg-gradient-to-r from-red-500 to-orange-500'
+                          : 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    ></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Comparison Cards */}
+        {comparison && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="glass-card p-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full -mr-16 -mt-16"></div>
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-6">
+                  <TrendingUp className="w-8 h-8 text-green-400" />
+                  <h3 className="text-2xl font-bold text-white">Best Single Strategy</h3>
+                </div>
+                <div className="space-y-4">
+                  <MetricRow label="Strategy" value={comparison.best_single.strategy} />
+                  <MetricRow 
+                    label="Total Return" 
+                    value={`${comparison.best_single.total_return.toFixed(2)}%`}
+                    valueClass="text-green-400 font-bold text-xl"
+                  />
+                  <MetricRow label="Total Trades" value={comparison.best_single.total_trades} />
+                  <MetricRow label="Win Rate" value={`${comparison.best_single.win_rate.toFixed(1)}%`} />
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-card p-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full -mr-16 -mt-16"></div>
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-6">
+                  <Activity className="w-8 h-8 text-purple-400" />
+                  <h3 className="text-2xl font-bold text-white">Regime-Aware Strategy</h3>
+                </div>
+                <div className="space-y-4">
+                  <MetricRow 
+                    label="Total Return" 
+                    value={`${comparison.regime_aware.total_return.toFixed(2)}%`}
+                    valueClass="text-purple-400 font-bold text-xl"
+                  />
+                  <MetricRow label="Total Trades" value={comparison.regime_aware.total_trades} />
+                  <MetricRow
+                    label="Improvement"
+                    value={`${comparison.improvement >= 0 ? '+' : ''}${comparison.improvement.toFixed(2)}%`}
+                    valueClass={comparison.improvement >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <footer className="glass-card p-6 text-center">
+          <p className="text-gray-400 text-sm">
+            Smart Trade MCP • Autonomous Trading System • {new Date().getFullYear()}
+          </p>
+          <p className="text-gray-500 text-xs mt-2">
+            Built with React • TypeScript • Tailwind CSS • FastAPI
+          </p>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+  unit,
+  gradient
+}: {
+  icon: React.ReactNode
+  label: string
+  value: number | string
+  unit?: string
+  gradient: string
+}) {
+  return (
+    <div className="glass-card p-6 relative overflow-hidden group hover:scale-105 transition-transform">
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-10 group-hover:opacity-20 transition-opacity`}></div>
+      <div className="relative z-10">
+        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center mb-4 text-white`}>
+          {icon}
+        </div>
+        <div className="text-gray-400 text-sm mb-1">{label}</div>
+        <div className="flex items-baseline gap-2">
+          <div className="text-3xl font-bold text-white">{value}</div>
+          {unit && <div className="text-gray-400">{unit}</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MetricRow({
+  label,
+  value,
+  valueClass = 'text-white'
+}: {
+  label: string
+  value: string | number
+  valueClass?: string
+}) {
+  return (
+    <div className="flex justify-between items-center py-2 border-b border-purple-500/20">
+      <span className="text-gray-400">{label}</span>
+      <span className={valueClass}>{value}</span>
+    </div>
+  )
+}
+
+export default App

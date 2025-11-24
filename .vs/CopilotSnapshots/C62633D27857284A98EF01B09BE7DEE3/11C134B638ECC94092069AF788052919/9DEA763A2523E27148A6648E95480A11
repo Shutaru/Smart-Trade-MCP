@@ -1,0 +1,326 @@
+﻿"""
+BACKTEST COMPARATIVO - AS 38 ESTRATÉGIAS
+BTC/USDT, 1h, 365 dias
+
+Testa todas as estratégias implementadas e gera ranking completo.
+"""
+
+import asyncio
+from datetime import datetime, timedelta
+import json
+import pandas as pd
+
+from src.core.data_manager import DataManager
+from src.core.indicators import calculate_all_indicators
+from src.core.backtest_engine import BacktestEngine
+from src.strategies import registry
+from src.core.logger import logger
+
+
+# Lista completa das 38 estratégias
+ALL_STRATEGIES = [
+    # Mean Reversion (5)
+    "bollinger_mean_reversion",
+    "rsi_band_reversion",
+    "cci_extreme_snapback",
+    "mfi_divergence_reversion",
+    "stoch_signal_reversal",
+    
+    # Trend Following (5)
+    "ema_cloud_trend",
+    "donchian_continuation",
+    "macd_zero_trend",
+    "adx_trend_filter_plus",
+    "trendflow_supertrend",
+    
+    # Breakout (8)
+    "bollinger_squeeze_breakout",
+    "keltner_expansion",
+    "donchian_volatility_breakout",
+    "atr_expansion_breakout",
+    "channel_squeeze_plus",
+    "volatility_weighted_breakout",
+    "london_breakout_atr",
+    "vwap_breakout",
+    
+    # Momentum (8)
+    "ema_stack_momentum",
+    "mfi_impulse_momentum",
+    "triple_momentum_confluence",
+    "rsi_supertrend_flip",
+    "multi_oscillator_confluence",
+    "obv_trend_confirmation",
+    "trend_volume_combo",
+    "ema_stack_regime_flip",
+    
+    # Hybrid (6)
+    "vwap_institutional_trend",
+    "vwap_mean_reversion",
+    "vwap_band_fade_pro",
+    "order_flow_momentum_vwap",
+    "keltner_pullback_continuation",
+    "ema200_tap_reversion",
+    
+    # Advanced (6)
+    "double_donchian_pullback",
+    "pure_price_action_donchian",
+    "obv_confirmation_breakout_plus",
+    "ny_session_fade",
+    "regime_adaptive_core",
+    "complete_system_5x",
+]
+
+
+async def run_comparative_backtest():
+    """Run backtest on all 38 strategies."""
+    
+    print("=" * 100)
+    print("BACKTEST COMPARATIVO - AS 38 ESTRATÉGIAS")
+    print("=" * 100)
+    print()
+    
+    # Configuração
+    symbol = "BTC/USDT"
+    timeframe = "1h"
+    initial_capital = 10000
+    days = 365
+    
+    print(f"Configuração:")
+    print(f"  Símbolo: {symbol}")
+    print(f"  Timeframe: {timeframe}")
+    print(f"  Período: {days} dias (~{days*24} candles)")
+    print(f"  Capital Inicial: ${initial_capital:,}")
+    print()
+    
+    # STEP 1: Fetch Data
+    print("PASSO 1/4: Buscando dados do Binance...")
+    print("-" * 100)
+    
+    dm = DataManager()
+    
+    try:
+        # Fetch aproximadamente 365 dias de dados (1h candles)
+        limit = min(days * 24, 1000)  # Binance limit = 1000
+        
+        print(f"  Buscando últimos {limit} candles...")
+        
+        df = await dm.fetch_ohlcv(
+            symbol=symbol,
+            timeframe=timeframe,
+            exchange="binance",
+            limit=limit,
+            use_cache=False,
+        )
+        
+        await dm.close()
+        
+        actual_days = (df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).days
+        
+        print(f"  ✅ Sucesso! {len(df)} candles")
+        print(f"  📅 De: {df['timestamp'].iloc[0]}")
+        print(f"  📅 Até: {df['timestamp'].iloc[-1]}")
+        print(f"  📊 Período real: {actual_days} dias")
+        print(f"  💰 Preço inicial: ${df['close'].iloc[0]:,.2f}")
+        print(f"  💰 Preço final: ${df['close'].iloc[-1]:,.2f}")
+        price_change = ((df['close'].iloc[-1] / df['close'].iloc[0] - 1) * 100)
+        print(f"  📈 Variação do BTC: {price_change:+.2f}%")
+        print()
+        
+    except Exception as e:
+        print(f"  ❌ ERRO: {e}")
+        return
+    
+    # STEP 2: Calculate Indicators
+    print("PASSO 2/4: Calculando indicadores técnicos...")
+    print("-" * 100)
+    
+    # Get all unique indicators needed
+    all_indicators = set()
+    for strategy_name in ALL_STRATEGIES:
+        try:
+            strategy = registry.get(strategy_name)
+            all_indicators.update(strategy.get_required_indicators())
+        except Exception as e:
+            print(f"  ⚠️  Estratégia '{strategy_name}' não encontrada no registry")
+    
+    print(f"  Indicadores necessários: {len(all_indicators)}")
+    print(f"  {', '.join(sorted(all_indicators))}")
+    print()
+    
+    df = calculate_all_indicators(df, list(all_indicators))
+    
+    print(f"  ✅ Calculados! DataFrame tem {len(df.columns)} colunas")
+    print()
+    
+    # STEP 3: Run Backtests
+    print("PASSO 3/4: Executando backtests...")
+    print("-" * 100)
+    print()
+    
+    results = []
+    
+    for i, strategy_name in enumerate(ALL_STRATEGIES, 1):
+        print(f"  [{i:2d}/38] Testando: {strategy_name:40s} ", end="", flush=True)
+        
+        try:
+            # Get strategy
+            strategy = registry.get(strategy_name)
+            
+            # Run backtest
+            engine = BacktestEngine(initial_capital=initial_capital)
+            result = engine.run(strategy, df)
+            
+            metrics = result['metrics']
+            
+            # Store results
+            results.append({
+                "strategy": strategy_name,
+                "return": result['total_return'],
+                "final_equity": result['final_equity'],
+                "trades": metrics['total_trades'],
+                "win_rate": metrics['win_rate'],
+                "profit_factor": metrics['profit_factor'],
+                "sharpe": metrics['sharpe_ratio'],
+                "max_dd": metrics['max_drawdown'],
+                "max_dd_pct": metrics['max_drawdown_pct'],
+                "avg_win": metrics['avg_win'],
+                "avg_loss": metrics['avg_loss'],
+            })
+            
+            print(f"✅ Return: {result['total_return']:+7.2f}% | Trades: {metrics['total_trades']:3d} | Win Rate: {metrics['win_rate']:5.1f}%")
+            
+        except Exception as e:
+            print(f"❌ ERRO: {str(e)[:50]}")
+            results.append({
+                "strategy": strategy_name,
+                "return": 0,
+                "final_equity": initial_capital,
+                "trades": 0,
+                "win_rate": 0,
+                "profit_factor": 0,
+                "sharpe": 0,
+                "max_dd": 0,
+                "max_dd_pct": 0,
+                "avg_win": 0,
+                "avg_loss": 0,
+                "error": str(e)[:100]
+            })
+    
+    print()
+    
+    # STEP 4: Generate Rankings
+    print("PASSO 4/4: Gerando rankings...")
+    print("-" * 100)
+    print()
+    
+    # Sort by return
+    results_sorted = sorted(results, key=lambda x: x["return"], reverse=True)
+    
+    # Display TOP 10
+    print("🏆 TOP 10 ESTRATÉGIAS (por Return):")
+    print("=" * 100)
+    print()
+    
+    for i, r in enumerate(results_sorted[:10], 1):
+        emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"#{i} "
+        print(f"{emoji} {r['strategy']:40s} | Return: {r['return']:+8.2f}% | Win Rate: {r['win_rate']:5.1f}% | Trades: {r['trades']:3d}")
+    
+    print()
+    print()
+    
+    # Display BOTTOM 5
+    print("❌ PIORES 5 ESTRATÉGIAS:")
+    print("=" * 100)
+    print()
+    
+    for i, r in enumerate(results_sorted[-5:], 1):
+        print(f"   {r['strategy']:40s} | Return: {r['return']:+8.2f}% | Win Rate: {r['win_rate']:5.1f}% | Trades: {r['trades']:3d}")
+    
+    print()
+    print()
+    
+    # Statistics
+    print("📊 ESTATÍSTICAS GERAIS:")
+    print("=" * 100)
+    
+    positive_returns = [r for r in results if r["return"] > 0]
+    negative_returns = [r for r in results if r["return"] < 0]
+    
+    avg_return = sum(r["return"] for r in results) / len(results)
+    median_return = sorted(r["return"] for r in results)[len(results)//2]
+    
+    print(f"  Estratégias com lucro: {len(positive_returns)}/38 ({len(positive_returns)/38*100:.1f}%)")
+    print(f"  Estratégias com prejuízo: {len(negative_returns)}/38 ({len(negative_returns)/38*100:.1f}%)")
+    print(f"  Retorno médio: {avg_return:+.2f}%")
+    print(f"  Retorno mediano: {median_return:+.2f}%")
+    print(f"  Melhor retorno: {results_sorted[0]['return']:+.2f}% ({results_sorted[0]['strategy']})")
+    print(f"  Pior retorno: {results_sorted[-1]['return']:+.2f}% ({results_sorted[-1]['strategy']})")
+    print()
+    
+    # Sort by Win Rate
+    by_winrate = sorted(results, key=lambda x: x["win_rate"], reverse=True)
+    print(f"  Melhor Win Rate: {by_winrate[0]['win_rate']:.1f}% ({by_winrate[0]['strategy']})")
+    
+    # Sort by Sharpe
+    by_sharpe = sorted(results, key=lambda x: x["sharpe"], reverse=True)
+    print(f"  Melhor Sharpe: {by_sharpe[0]['sharpe']:.2f} ({by_sharpe[0]['strategy']})")
+    
+    # Total trades
+    total_trades = sum(r["trades"] for r in results)
+    print(f"  Total de trades (todas estratégias): {total_trades:,}")
+    print()
+    
+    # Save to JSON
+    output_file = "backtest_comparative_38strategies.json"
+    
+    output = {
+        "test_date": datetime.now().isoformat(),
+        "market_data": {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "candles": len(df),
+            "days": actual_days,
+            "start_date": str(df['timestamp'].iloc[0]),
+            "end_date": str(df['timestamp'].iloc[-1]),
+            "price_start": float(df['close'].iloc[0]),
+            "price_end": float(df['close'].iloc[-1]),
+            "price_change_pct": float(price_change),
+        },
+        "config": {
+            "initial_capital": initial_capital,
+            "strategies_tested": len(ALL_STRATEGIES),
+        },
+        "results": results_sorted,
+        "statistics": {
+            "profitable_strategies": len(positive_returns),
+            "losing_strategies": len(negative_returns),
+            "avg_return": avg_return,
+            "median_return": median_return,
+            "best_return": results_sorted[0]['return'],
+            "worst_return": results_sorted[-1]['return'],
+            "best_winrate": by_winrate[0]['win_rate'],
+            "best_sharpe": by_sharpe[0]['sharpe'],
+            "total_trades": total_trades,
+        }
+    }
+    
+    with open(output_file, "w") as f:
+        json.dump(output, f, indent=2)
+    
+    print("=" * 100)
+    print(f"✅ Resultados salvos em: {output_file}")
+    print("=" * 100)
+    print()
+    
+    # Final summary
+    print("🎉 BACKTEST COMPARATIVO COMPLETO!")
+    print()
+    print(f"  ✅ Testadas: 38 estratégias")
+    print(f"  ✅ Período: {actual_days} dias de BTC/USDT")
+    print(f"  ✅ Melhor estratégia: {results_sorted[0]['strategy']} ({results_sorted[0]['return']:+.2f}%)")
+    print(f"  ✅ Estratégias lucrativas: {len(positive_returns)}/38")
+    print()
+
+
+if __name__ == "__main__":
+    asyncio.run(run_comparative_backtest())

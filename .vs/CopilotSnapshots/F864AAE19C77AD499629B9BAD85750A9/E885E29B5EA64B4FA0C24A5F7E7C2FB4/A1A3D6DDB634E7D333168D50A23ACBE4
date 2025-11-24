@@ -1,0 +1,119 @@
+﻿"""Backtesting tool for strategy validation."""
+
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
+
+from ...core.logger import logger
+from ...strategies import registry
+from ...core.data_manager import DataManager
+from ...core.indicators import calculate_all_indicators
+from ...core.backtest_engine import BacktestEngine
+
+# VERSION TRACKING - to verify server reloaded
+BACKTEST_TOOL_VERSION = "2.0.0-auto-fetch"  # Updated to auto-fetch 1 year
+
+
+async def backtest_strategy(
+    strategy_name: str,
+    symbol: str,
+    timeframe: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    initial_capital: float = 10000.0,
+) -> Dict[str, Any]:
+    """
+    Run backtest for a trading strategy.
+    
+    **AUTO-FETCHES 1 YEAR OF DATA** if start_date not specified!
+    
+    Version: 2.0.0-auto-fetch (includes automatic data fetching)
+
+    Args:
+        strategy_name: Name of strategy to backtest
+        symbol: Trading pair
+        timeframe: Timeframe (e.g., '1h', '4h', '1d')
+        start_date: Start date (YYYY-MM-DD) - defaults to 1 year ago
+        end_date: End date (YYYY-MM-DD) - defaults to now
+        initial_capital: Starting capital
+
+    Returns:
+        Backtest results with performance metrics
+    """
+    logger.info(f"Backtesting {strategy_name} on {symbol} {timeframe} (v{BACKTEST_TOOL_VERSION})")
+
+    try:
+        # Get strategy
+        strategy = registry.get(strategy_name)
+
+        # Parse dates - DEFAULT TO 1 YEAR if not specified!
+        if end_date is None:
+            end_dt = datetime.now()
+        else:
+            end_dt = datetime.fromisoformat(end_date)
+        
+        if start_date is None:
+            # DEFAULT: 1 year of data
+            start_dt = end_dt - timedelta(days=365)
+            logger.info(f"⚡ AUTO-FETCH MODE: Fetching 1 year of data (from {start_dt.date()})")
+        else:
+            start_dt = datetime.fromisoformat(start_date)
+
+        # Fetch historical data with pagination (HANDLES MULTI-YEAR DATA!)
+        dm = DataManager()
+        df = await dm.fetch_historical(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_dt,
+            end_date=end_dt,
+            max_candles=20000,  # Up to ~2.3 years of hourly data
+        )
+        await dm.close()
+
+        if df.empty:
+            return {
+                "error": "No market data available for the specified period",
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "start_date": str(start_dt),
+                "end_date": str(end_dt),
+                "tool_version": BACKTEST_TOOL_VERSION,
+            }
+        
+        actual_days = (df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).days
+        logger.info(f"✅ Fetched {len(df)} candles ({actual_days} days)")
+
+        # Calculate indicators
+        required_indicators = strategy.get_required_indicators()
+        df = calculate_all_indicators(df, required_indicators, use_gpu=False)
+
+        # Run backtest
+        engine = BacktestEngine(initial_capital=initial_capital, use_gpu=False)
+        results = engine.run(strategy, df)
+
+        logger.info(
+            f"Backtest complete: {results['total_trades']} trades, "
+            f"return: {results['total_return']:.2f}%"
+        )
+
+        return {
+            "strategy": strategy_name,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "start_date": str(df['timestamp'].iloc[0]),
+            "end_date": str(df['timestamp'].iloc[-1]),
+            "days_tested": actual_days,
+            "candles_tested": len(df),
+            "tool_version": BACKTEST_TOOL_VERSION,  # Track version!
+            **results,
+        }
+
+    except Exception as e:
+        logger.error(f"Backtest failed: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "strategy": strategy_name,
+            "tool_version": BACKTEST_TOOL_VERSION,
+        }
+
+
+__all__ = ["backtest_strategy"]

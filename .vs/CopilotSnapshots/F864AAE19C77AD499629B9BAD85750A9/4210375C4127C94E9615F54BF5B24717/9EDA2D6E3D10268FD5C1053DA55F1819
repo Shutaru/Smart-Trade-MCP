@@ -1,0 +1,179 @@
+﻿# ?? Open WebUI + Ollama + Smart-Trade MCP - SETUP COMPLETO
+
+## ? STATUS: INSTALADO!
+
+- ? Ollama running
+- ? Models downloaded (qwen2.5:7b-instruct, llama3.2, deepseek-r1:8B)
+- ? Docker running
+- ? Open WebUI running on http://localhost:3000
+
+---
+
+## ?? CONFIGURAÇÃO FINAL (2 minutos):
+
+### **1. Acede ao Open WebUI:**
+
+Abre no browser: **http://localhost:3000**
+
+### **2. Cria Conta (primeira vez):**
+
+- **Username:** (escolhe)
+- **Password:** (escolhe)
+- **Email:** (qualquer - não precisa ser real)
+
+### **3. Configura Ollama:**
+
+1. Clica no **ícone do utilizador** (canto superior direito)
+2. **Settings** ? **Connections**
+3. Verifica que `Ollama API URL` está: `http://host.docker.internal:11434`
+4. Clica **Save**
+
+### **4. Adiciona Smart-Trade MCP Function:**
+
+1. **Settings** ? **Functions**
+2. **+ Create New Function**
+3. Cola o conteúdo de `open_webui_smart_trade_function.py`
+4. **Save**
+5. **Enable** a function
+
+---
+
+## ?? **MODELOS RECOMENDADOS (8B máximo):**
+
+### **?? MELHOR: Qwen 2.5 7B Instruct**
+```bash
+ollama run qwen2.5:7b-instruct
+```
+- ? Excelente em function calling
+- ? Muito bom em português
+- ? Raciocínio forte
+- ? Rápido
+
+### **?? ALTERNATIVA: DeepSeek R1 8B**
+```bash
+ollama run deepseek-r1:8B
+```
+- ? Raciocínio avançado (chain-of-thought)
+- ? Bom para análise complexa
+- ?? Mais lento
+
+### **?? LEVE: Llama 3.2 3B**
+```bash
+ollama run llama3.2:latest
+```
+- ? Super rápido
+- ? Pouca RAM
+- ?? Menos capabilities
+
+---
+
+## ?? **EXEMPLOS DE USO:**
+
+### **Exemplo 1: List Strategies**
+```
+List all breakout strategies available in Smart-Trade
+```
+
+### **Exemplo 2: Backtest**
+```
+Backtest the atr_expansion_breakout strategy on BTC/USDT 1h.
+Show me Sharpe Ratio, Win Rate, and days tested.
+```
+
+### **Exemplo 3: Detect Regime**
+```
+Detect the current market regime for BTC/USDT and recommend strategies
+```
+
+### **Exemplo 4: Optimize**
+```
+Optimize the RSI strategy parameters using 20 population size and 5 generations
+```
+
+---
+
+## ?? **TROUBLESHOOTING:**
+
+### ? **Open WebUI não carrega:**
+
+1. Verifica Docker:
+```powershell
+docker ps
+```
+
+2. Se não aparecer `open-webui`, reinicia:
+```powershell
+docker restart open-webui
+```
+
+### ? **Ollama não aparece:**
+
+1. Verifica se Ollama está a correr:
+```powershell
+ollama list
+```
+
+2. No Open WebUI, vai em Settings ? Connections e muda para:
+```
+http://host.docker.internal:11434
+```
+
+### ? **MCP Function não funciona:**
+
+1. Verifica o path em **Settings ? Functions ? Smart Trade MCP ? Valves**
+2. Certifica-te que o path está correto: `C:\Users\shuta\source\repos\Smart-Trade-MCP`
+
+---
+
+## ?? **TIPS:**
+
+### **Usar Model Específico:**
+No chat, podes escolher qual model usar no dropdown (canto superior)
+
+### **Streaming Responses:**
+Open WebUI faz streaming - vês a resposta a aparecer em tempo real!
+
+### **Conversas Persistentes:**
+Todas as conversas são guardadas localmente
+
+### **Dark Mode:**
+Settings ? Interface ? Theme
+
+---
+
+## ?? **PERFORMANCE ESPERADA (RTX 3070 Ti):**
+
+| Model | Tokens/seg | RAM Usage | Best For |
+|-------|-----------|-----------|----------|
+| **qwen2.5:7b** | ~25-30 | ~6GB VRAM | MCP Tools ? |
+| **deepseek-r1:8B** | ~15-20 | ~7GB VRAM | Reasoning |
+| **llama3.2:3b** | ~40-50 | ~3GB VRAM | Speed |
+
+---
+
+## ?? **PRÓXIMOS PASSOS:**
+
+1. ? Abre http://localhost:3000
+2. ? Cria conta
+3. ? Adiciona Smart-Trade Function
+4. ? Testa com: "List all trading strategies"
+
+**Se funcionar, tens um sistema COMPLETO local de AI + Trading! ??**
+
+---
+
+## ?? **ALTERNATIVA SIMPLES (sem Function):**
+
+Se não quiseres usar Functions, podes sempre:
+
+1. Correr o MCP server manualmente:
+```powershell
+python -m src.mcp_server.server
+```
+
+2. Usar Open WebUI para pensar e planear
+3. Usar Claude Code (CLI) com .mcp.json para executar tools
+
+---
+
+**READY TO TEST! ??**

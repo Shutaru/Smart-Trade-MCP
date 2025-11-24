@@ -1,0 +1,275 @@
+﻿"""
+title: Smart Trade MCP
+author: Smart-Trade-MCP
+author_url: https://github.com/Shutaru/Smart-Trade-MCP
+version: 1.0.0
+"""
+
+from pydantic import BaseModel, Field
+from typing import Optional
+import subprocess
+
+
+class Function:
+    class Valves(BaseModel):
+        mcp_server_path: str = Field(
+            default=r"C:\Users\shuta\source\repos\Smart-Trade-MCP",
+            description="Path to Smart-Trade-MCP project directory"
+        )
+
+    def __init__(self):
+        self.valves = self.Valves()
+
+    async def list_strategies(
+        self,
+        category: str = "",
+        __event_emitter__=None,
+        __user__: Optional[dict] = None,
+    ) -> str:
+        """
+        List all available trading strategies (42+ strategies).
+
+        :param category: Optional filter by category (breakout, trend, mean_reversion, momentum, etc.)
+        :return: List of strategies with details
+        """
+        
+        if __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {"description": "Listing strategies...", "done": False},
+                }
+            )
+
+        try:
+            cmd = [
+                "python",
+                "-c",
+                f"""
+import asyncio
+import sys
+sys.path.insert(0, r'{self.valves.mcp_server_path}')
+
+from src.mcp_server.tools.strategies import list_strategies
+
+async def main():
+    result = await list_strategies(category={repr(category) if category else 'None'})
+    print(f"Total: {{result['total']}} strategies")
+    print()
+    for s in result['strategies'][:15]:
+        print(f"• {{s['name']}} ({{s['category']}}): {{s['description']}}")
+
+asyncio.run(main())
+"""
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {"description": "Strategies loaded", "done": True},
+                    }
+                )
+            
+            if result.returncode != 0:
+                return f"❌ Error: {result.stderr}"
+            
+            return f"✅ Available Strategies:\n\n{result.stdout}"
+            
+        except Exception as e:
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {"description": f"Error: {str(e)}", "done": True},
+                    }
+                )
+            return f"❌ Error: {str(e)}"
+
+    async def backtest_strategy(
+        self,
+        strategy_name: str,
+        symbol: str = "BTC/USDT",
+        timeframe: str = "1h",
+        __event_emitter__=None,
+        __user__: Optional[dict] = None,
+    ) -> str:
+        """
+        Run backtest for a trading strategy (auto-fetches 1 year of data).
+
+        :param strategy_name: Strategy to test (e.g., "atr_expansion_breakout")
+        :param symbol: Trading pair (default: BTC/USDT)
+        :param timeframe: Candle timeframe (default: 1h)
+        :return: Backtest results with performance metrics
+        """
+        
+        if __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {"description": f"Backtesting {strategy_name}...", "done": False},
+                }
+            )
+
+        try:
+            cmd = [
+                "python",
+                "-c",
+                f"""
+import asyncio
+import sys
+sys.path.insert(0, r'{self.valves.mcp_server_path}')
+
+from src.mcp_server.tools.backtest import backtest_strategy
+
+async def main():
+    result = await backtest_strategy(
+        strategy_name={repr(strategy_name)},
+        symbol={repr(symbol)},
+        timeframe={repr(timeframe)}
+    )
+    
+    print("🎯 Strategy:", result.get('strategy'))
+    print("📊 Symbol:", result.get('symbol'), result.get('timeframe'))
+    print("📅 Period:", result.get('start_date'), "to", result.get('end_date'))
+    print("📈 Days Tested:", result.get('days_tested'))
+    print("🕯️ Candles:", result.get('candles_tested'))
+    print()
+    print("💰 Performance:")
+    print(f"  • Total Return: {{result.get('total_return', 0):.2f}}%")
+    print(f"  • Total Trades: {{result.get('total_trades')}}")
+    metrics = result.get('metrics', {{}})
+    print(f"  • Win Rate: {{metrics.get('win_rate', 0):.1f}}%")
+    print(f"  • Sharpe Ratio: {{metrics.get('sharpe_ratio', 0):.3f}}")
+    print(f"  • Max Drawdown: {{metrics.get('max_drawdown_pct', 0):.2f}}%")
+    print(f"  • Profit Factor: {{metrics.get('profit_factor', 0):.2f}}")
+    print()
+    print("🔧 Tool Version:", result.get('tool_version', 'unknown'))
+
+asyncio.run(main())
+"""
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {"description": "Backtest complete", "done": True},
+                    }
+                )
+            
+            if result.returncode != 0:
+                return f"❌ Error: {result.stderr}"
+            
+            return result.stdout
+            
+        except Exception as e:
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {"description": f"Error: {str(e)}", "done": True},
+                    }
+                )
+            return f"❌ Error: {str(e)}"
+
+    async def detect_regime(
+        self,
+        symbol: str = "BTC/USDT",
+        timeframe: str = "1h",
+        __event_emitter__=None,
+        __user__: Optional[dict] = None,
+    ) -> str:
+        """
+        Detect current market regime and get strategy recommendations.
+
+        :param symbol: Trading pair (default: BTC/USDT)
+        :param timeframe: Candle timeframe (default: 1h)
+        :return: Market regime analysis
+        """
+        
+        if __event_emitter__:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {"description": "Detecting market regime...", "done": False},
+                }
+            )
+
+        try:
+            cmd = [
+                "python",
+                "-c",
+                f"""
+import asyncio
+import sys
+sys.path.insert(0, r'{self.valves.mcp_server_path}')
+
+from src.mcp_server.tools.regime import detect_market_regime
+
+async def main():
+    result = await detect_market_regime(
+        symbol={repr(symbol)},
+        timeframe={repr(timeframe)}
+    )
+    
+    print("📊 MARKET REGIME")
+    print("="*60)
+    print(f"Regime: {{result.get('regime')}}")
+    print(f"Confidence: {{result.get('confidence', 0)*100:.1f}}%")
+    print()
+    print("✅ Recommended Strategies:")
+    for s in result.get('recommended_strategies', []):
+        print(f"  • {{s}}")
+    print()
+    print("❌ Avoid:")
+    for s in result.get('avoid_strategies', []):
+        print(f"  • {{s}}")
+
+asyncio.run(main())
+"""
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {"description": "Regime detected", "done": True},
+                    }
+                )
+            
+            if result.returncode != 0:
+                return f"❌ Error: {result.stderr}"
+            
+            return result.stdout
+            
+        except Exception as e:
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {"description": f"Error: {str(e)}", "done": True},
+                    }
+                )
+            return f"❌ Error: {str(e)}"

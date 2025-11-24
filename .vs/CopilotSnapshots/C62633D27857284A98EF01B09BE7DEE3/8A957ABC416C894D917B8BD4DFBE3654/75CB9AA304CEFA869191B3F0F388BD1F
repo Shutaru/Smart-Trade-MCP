@@ -1,0 +1,104 @@
+﻿"""
+Donchian Continuation - Donchian breakout with ADX momentum
+
+Win Rate: 40-50%
+Best Timeframes: 5m, 15m, 1h
+"""
+
+from typing import List
+import pandas as pd
+import numpy as np
+
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
+
+
+class DonchianContinuation(BaseStrategy):
+    """
+    Donchian Continuation Strategy
+    
+    LONG: Price > EMA200 + breakout above Donchian upper + ADX >= 18 and rising
+    SHORT: Price < EMA200 + breakdown below Donchian lower + ADX >= 18 and rising
+    
+    Category: Trend Following / Breakout
+    Win Rate: 40-50%
+    """
+
+    def __init__(self, config: StrategyConfig = None):
+        """Initialize Donchian Continuation strategy."""
+        super().__init__(config)
+        
+        self.config.stop_loss_atr_mult = 2.0
+        self.config.take_profit_rr_ratio = 2.0
+        
+    def get_required_indicators(self) -> List[str]:
+        """Required indicators."""
+        return ["donchian", "ema", "adx", "atr", "supertrend"]
+    
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        """Generate trading signals."""
+        signals = []
+        position = None
+        
+        for i in range(5, len(df)):
+            row = df.iloc[i]
+            prev_5 = df.iloc[i - 5]
+            
+            close = row["close"]
+            donchian_upper = row.get("donchian_upper", close)
+            donchian_lower = row.get("donchian_lower", close)
+            ema_200 = row.get("ema_200", close)
+            adx = row.get("adx", 0)
+            adx_5ago = prev_5.get("adx", 0)
+            supertrend_trend = row.get("supertrend_trend", 0)
+            atr = row.get("atr", close * 0.02)
+            timestamp = row["timestamp"]
+            
+            # LONG entry
+            if position is None:
+                long_filters = close > ema_200 and supertrend_trend > 0 and adx >= 18
+                
+                # FIX: Use high for breakout detection (close rarely exceeds donchian_upper)
+                if long_filters and row["high"] > donchian_upper and adx > adx_5ago:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(
+                        type=SignalType.LONG,
+                        timestamp=timestamp,
+                        price=close,
+                        confidence=min(1.0, adx / 40),
+                        stop_loss=sl,
+                        take_profit=tp,
+                        metadata={"adx": adx, "reason": "Donchian breakout + ADX rising"},
+                    ))
+                    position = "LONG"
+            
+                # SHORT entry
+                short_filters = close < ema_200 and supertrend_trend < 0 and adx >= 18
+                
+                # FIX: Use low for breakdown detection
+                if short_filters and row["low"] < donchian_lower and adx > adx_5ago:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(
+                        type=SignalType.SHORT,
+                        timestamp=timestamp,
+                        price=close,
+                        confidence=min(1.0, adx / 40),
+                        stop_loss=sl,
+                        take_profit=tp,
+                        metadata={"adx": adx, "reason": "Donchian breakdown + ADX rising"},
+                    ))
+                    position = "SHORT"
+            
+            # Exit
+            elif position == "LONG" and supertrend_trend < 0:
+                signals.append(Signal(type=SignalType.CLOSE_LONG, timestamp=timestamp, price=close, metadata={"reason": "SuperTrend reversal"}))
+                position = None
+            elif position == "SHORT" and supertrend_trend > 0:
+                signals.append(Signal(type=SignalType.CLOSE_SHORT, timestamp=timestamp, price=close, metadata={"reason": "SuperTrend reversal"}))
+                position = None
+        
+        logger.info(f"DonchianContinuation generated {len(signals)} signals")
+        return signals
+
+
+__all__ = ["DonchianContinuation"]

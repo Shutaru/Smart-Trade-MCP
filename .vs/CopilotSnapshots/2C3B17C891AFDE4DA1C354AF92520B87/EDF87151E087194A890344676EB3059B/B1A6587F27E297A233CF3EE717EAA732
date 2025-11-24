@@ -1,0 +1,59 @@
+﻿// Minimal shim for lightweight-charts to allow build when dependency missing.
+// Provides a very small subset of the API used by the dashboard.
+
+export type UTCTimestamp = number
+
+export interface ISeriesApi<T = any> {
+  setData(data: any[]): void
+  setMarkers(markers: any[]): void
+}
+
+export interface IChartApi {
+  remove(): void
+  applyOptions(opts: any): void
+  addCandlestickSeries(opts?: any): ISeriesApi
+  addLineSeries(opts?: any): ISeriesApi
+}
+
+export default function createChart(container: HTMLElement, _options?: any): IChartApi {
+  // Render a placeholder element
+  container.style.position = 'relative'
+  const el = document.createElement('div')
+  el.style.position = 'absolute'
+  el.style.left = '0'
+  el.style.right = '0'
+  el.style.top = '0'
+  el.style.bottom = '0'
+  el.style.display = 'flex'
+  el.style.alignItems = 'center'
+  el.style.justifyContent = 'center'
+  el.style.color = '#666'
+  el.innerText = 'Chart (lightweight-charts not installed)'
+  container.appendChild(el)
+
+  const makeSeries = (): ISeriesApi => ({
+    setData(_data: any[]) {
+      // noop
+    },
+    setMarkers(_markers: any[]) {
+      // noop
+    }
+  })
+
+  return {
+    remove() {
+      try { container.removeChild(el) } catch (e) {}
+    },
+    applyOptions(_opts: any) {
+      // noop
+    },
+    addCandlestickSeries(_opts?: any) {
+      return makeSeries()
+    },
+    addLineSeries(_opts?: any) {
+      return makeSeries()
+    }
+  }
+}
+
+export { createChart as createChartShim }

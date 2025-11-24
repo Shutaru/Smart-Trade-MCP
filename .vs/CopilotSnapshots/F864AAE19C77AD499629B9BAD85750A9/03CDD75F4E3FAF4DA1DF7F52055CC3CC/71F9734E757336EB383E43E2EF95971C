@@ -1,0 +1,310 @@
+﻿"""
+Strategy Diagnostics Tool - MCP Interface
+
+Analyzes why strategies fail Walk-Forward Analysis and suggests fixes.
+Accessible via MCP for LLM-driven strategy improvement.
+"""
+
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+
+from ...core.logger import logger
+from ...core.backtest_engine import BacktestEngine
+from ...core.data_manager import DataManager
+from ...core.indicators import calculate_all_indicators
+from ...strategies import registry
+
+
+async def diagnose_strategy_failure(
+    strategy_name: str,
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    limit: int = 1000,
+) -> Dict[str, Any]:
+    """
+    Diagnose why a strategy failed Walk-Forward Analysis.
+    
+    This tool analyzes strategy behavior and suggests specific fixes.
+    
+    Args:
+        strategy_name: Strategy to diagnose
+        symbol: Trading pair
+        timeframe: Candle timeframe
+        limit: Number of candles to analyze
+        
+    Returns:
+        Dictionary with diagnosis:
+        {
+            "strategy": str,
+            "issues_found": List[str],
+            "metrics": Dict,
+            "suggestions": List[str],
+            "parameter_adjustments": Dict,
+        }
+        
+    Example (via MCP):
+        >>> result = await diagnose_strategy_failure(
+        ...     strategy_name="cci_extreme_snapback"
+        ... )
+        >>> print(result['suggestions'])
+    """
+    logger.info(f"Diagnosing strategy: {strategy_name}")
+    
+    try:
+        # Get strategy
+        strategy = registry.get(strategy_name)
+        
+        # Fetch data
+        dm = DataManager()
+        df = await dm.fetch_ohlcv(symbol=symbol, timeframe=timeframe, limit=limit)
+        await dm.close()
+        
+        if df.empty:
+            return {"error": "No data available"}
+        
+        # Calculate indicators
+        required = strategy.get_required_indicators()
+        df = calculate_all_indicators(df, required, use_gpu=False)
+        
+        # Run backtest
+        engine = BacktestEngine(initial_capital=10000.0, use_gpu=False)
+        results = engine.run(strategy, df)
+        
+        # Analyze results
+        diagnosis = _analyze_strategy_behavior(strategy_name, results, df)
+        
+        logger.info(f"Diagnosis complete: {len(diagnosis['issues_found'])} issues found")
+        
+        return diagnosis
+        
+    except Exception as e:
+        logger.error(f"Diagnosis failed: {e}", exc_info=True)
+        return {"error": str(e)}
+
+
+def _analyze_strategy_behavior(
+    strategy_name: str,
+    results: Dict[str, Any],
+    df: Any
+) -> Dict[str, Any]:
+    """Analyze strategy behavior and identify issues."""
+    
+    issues = []
+    suggestions = []
+    parameter_adjustments = {}
+    
+    metrics = results['metrics']
+    total_trades = results['total_trades']
+    total_return = results['total_return']
+    win_rate = metrics['win_rate']
+    
+    # Issue 1: Too few trades
+    if total_trades < 10:
+        issues.append("INSUFFICIENT_TRADES")
+        suggestions.append("Strategy generates too few trades - consider:")
+        suggestions.append("  - Relaxing entry conditions")
+        suggestions.append("  - Reducing threshold values")
+        suggestions.append("  - Removing overly restrictive filters")
+        
+        if "rsi" in strategy_name.lower():
+            parameter_adjustments['rsi_entry_threshold'] = {
+                'current': 'unknown',
+                'suggested': 'Increase from 30/70 to 35/65',
+                'reason': 'Allow more entry opportunities'
+            }
+    
+    # Issue 2: Too many trades (overtrading)
+    if total_trades > 500:
+        issues.append("OVERTRADING")
+        suggestions.append("Strategy generates too many trades - consider:")
+        suggestions.append("  - Adding stricter entry filters")
+        suggestions.append("  - Increasing threshold values")
+        suggestions.append("  - Adding cooldown periods between trades")
+        
+        parameter_adjustments['add_trend_filter'] = {
+            'suggested': 'Add ADX > 25 or EMA alignment filter',
+            'reason': 'Reduce noise trades in choppy markets'
+        }
+    
+    # Issue 3: Low win rate
+    if win_rate < 40:
+        issues.append("LOW_WIN_RATE")
+        suggestions.append(f"Win rate is only {win_rate:.1f}% - consider:")
+        suggestions.append("  - Improving entry timing (use confluence)")
+        suggestions.append("  - Better exit logic (trailing stops)")
+        suggestions.append("  - Risk/reward ratio adjustment")
+        
+        parameter_adjustments['stop_loss'] = {
+            'suggested': 'Tighten stop-loss (1.5x ATR instead of 2x)',
+            'reason': 'Cut losses faster'
+        }
+        parameter_adjustments['take_profit'] = {
+            'suggested': 'Widen take-profit (3x ATR instead of 2x)',
+            'reason': 'Let winners run'
+        }
+    
+    # Issue 4: Negative return despite trades
+    if total_return < 0 and total_trades > 10:
+        issues.append("NEGATIVE_EDGE")
+        suggestions.append("Strategy has negative edge - consider:")
+        suggestions.append("  - Reversing logic (if mean-reversion, try trend-following)")
+        suggestions.append("  - Adding regime filter (only trade in trending markets)")
+        suggestions.append("  - Checking if exits are too early/late")
+        
+        if "mean_reversion" in strategy_name.lower():
+            suggestions.append("  - Mean reversion may not work in current market regime")
+            suggestions.append("  - Try adding trend filter or regime detection")
+    
+    # Issue 5: High drawdown
+    max_dd_pct = abs(metrics.get('max_drawdown_pct', 0))
+    if max_dd_pct > 20:
+        issues.append("HIGH_DRAWDOWN")
+        suggestions.append(f"Drawdown is {max_dd_pct:.1f}% - consider:")
+        suggestions.append("  - Position sizing reduction")
+        suggestions.append("  - Stricter stop-losses")
+        suggestions.append("  - Daily loss limits")
+        
+        parameter_adjustments['position_size'] = {
+            'current': '10% of capital',
+            'suggested': '5% of capital',
+            'reason': 'Reduce risk per trade'
+        }
+    
+    # Issue 6: Strategy-specific analysis
+    if "bollinger" in strategy_name.lower():
+        issues.append("BOLLINGER_SPECIFIC")
+        suggestions.append("Bollinger strategy specific issues:")
+        suggestions.append("  - Check if BB width filter is too tight")
+        suggestions.append("  - Ensure RSI oversold/overbought thresholds are optimal")
+        suggestions.append("  - Verify exits happen on opposite band touch")
+        
+        parameter_adjustments['bb_width_min'] = {
+            'current': '2% assumed',
+            'suggested': 'Try 1.5% for more opportunities',
+            'reason': 'Allow entries in less volatile periods'
+        }
+    
+    if "cci" in strategy_name.lower():
+        issues.append("CCI_SPECIFIC")
+        suggestions.append("CCI strategy specific issues:")
+        suggestions.append("  - CCI extremes may not mean reversal anymore")
+        suggestions.append("  - Consider using CCI crossovers instead of extremes")
+        suggestions.append("  - Add trend confirmation")
+        
+        parameter_adjustments['cci_entry'] = {
+            'current': '-100/+100 assumed',
+            'suggested': 'Try -150/+150 for more extreme reversions',
+            'reason': 'Wait for stronger oversold/overbought'
+        }
+    
+    if "oscillator" in strategy_name.lower():
+        issues.append("OSCILLATOR_SPECIFIC")
+        suggestions.append("Multi-oscillator strategy issues:")
+        suggestions.append("  - Too many confirmations may miss opportunities")
+        suggestions.append("  - Oscillators can stay extreme in strong trends")
+        suggestions.append("  - Consider reducing confluence requirement")
+        
+        parameter_adjustments['confluence_required'] = {
+            'current': '2 or 3 assumed',
+            'suggested': 'Reduce to 2 confirmations',
+            'reason': 'Allow more entries while still having some confirmation'
+        }
+    
+    # Build diagnosis report
+    diagnosis = {
+        'strategy': strategy_name,
+        'timestamp': datetime.now().isoformat(),
+        'issues_found': issues,
+        'metrics': {
+            'total_trades': total_trades,
+            'total_return': round(total_return, 2),
+            'win_rate': round(win_rate, 2),
+            'max_drawdown_pct': round(max_dd_pct, 2),
+            'sharpe_ratio': round(metrics.get('sharpe_ratio', 0), 2),
+        },
+        'suggestions': suggestions,
+        'parameter_adjustments': parameter_adjustments,
+        'severity': 'CRITICAL' if len(issues) >= 4 else 'HIGH' if len(issues) >= 2 else 'MODERATE',
+        'recommended_action': _get_recommended_action(issues, total_return),
+    }
+    
+    return diagnosis
+
+
+def _get_recommended_action(issues: List[str], total_return: float) -> str:
+    """Get recommended action based on issues."""
+    
+    if 'NEGATIVE_EDGE' in issues:
+        return "REDESIGN - Strategy has fundamental issues, consider complete redesign"
+    
+    if len(issues) >= 4:
+        return "MAJOR_REFACTOR - Multiple critical issues, needs significant changes"
+    
+    if 'OVERTRADING' in issues or 'INSUFFICIENT_TRADES' in issues:
+        return "PARAMETER_TUNING - Adjust thresholds and filters"
+    
+    if total_return > 0 but len(issues) >= 2:
+        return "OPTIMIZATION - Strategy has potential, needs parameter optimization"
+    
+    return "MINOR_ADJUSTMENTS - Small tweaks may improve performance"
+
+
+async def suggest_parameter_fixes(
+    strategy_name: str,
+    diagnosis: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Suggest specific parameter values to fix strategy issues.
+    
+    Args:
+        strategy_name: Strategy to fix
+        diagnosis: Optional diagnosis result (will run if not provided)
+        
+    Returns:
+        Dictionary with specific parameter values to try
+    """
+    
+    if diagnosis is None:
+        diagnosis = await diagnose_strategy_failure(strategy_name)
+    
+    if 'error' in diagnosis:
+        return diagnosis
+    
+    # Extract current issues
+    issues = diagnosis['issues_found']
+    adjustments = diagnosis['parameter_adjustments']
+    
+    # Build concrete parameter suggestions
+    fixes = {
+        'strategy': strategy_name,
+        'current_issues': issues,
+        'suggested_parameters': {},
+        'implementation_code': [],
+    }
+    
+    # Generate implementation code snippets
+    for param_name, details in adjustments.items():
+        fixes['suggested_parameters'][param_name] = details['suggested']
+        
+        # Generate code snippet
+        if param_name == 'rsi_entry_threshold':
+            fixes['implementation_code'].append({
+                'location': 'generate_signals() method',
+                'change': "rsi_oversold = 35  # Changed from 30\nrsi_overbought = 65  # Changed from 70",
+                'reason': details['reason']
+            })
+        
+        elif param_name == 'add_trend_filter':
+            fixes['implementation_code'].append({
+                'location': 'Entry conditions',
+                'change': "# Add trend filter\nif self.use_trend_filter and df['adx'].iloc[i] < 25:\n    continue  # Skip in choppy markets",
+                'reason': details['reason']
+            })
+    
+    return fixes
+
+
+__all__ = [
+    'diagnose_strategy_failure',
+    'suggest_parameter_fixes',
+]

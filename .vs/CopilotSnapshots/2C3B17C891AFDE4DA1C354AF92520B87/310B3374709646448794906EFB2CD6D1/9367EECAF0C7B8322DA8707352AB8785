@@ -1,0 +1,233 @@
+﻿# ?? DEBUG: 6-Day Data Fetch Issue
+
+## ?? Problema
+- **Sintoma:** MCP backtest tool fetches apenas 6 dias em vez de 1 ano
+- **Versão:** Tool shows `2.0.0-auto-fetch` (correto)
+- **Status:** MCP server recarregado com sucesso
+- **Comportamento:** Direct Python call fetches 8760 candles ?
+
+---
+
+## ?? Diagnóstico
+
+### Teste 1: Verificar Fetch Direto
+```python
+# test_direct_fetch.py
+import asyncio
+from datetime import datetime, timedelta
+from src.core.data_manager import DataManager
+
+async def test():
+    dm = DataManager()
+    start = datetime.now() - timedelta(days=365)
+    end = datetime.now()
+    
+    print(f"Fetching from {start} to {end}")
+    
+    df = await dm.fetch_historical(
+        symbol='BTC/USDT',
+        timeframe='1h',
+        start_date=start,
+        end_date=end,
+        max_candles=10000
+    )
+    
+    await dm.close()
+    
+    print(f"Fetched: {len(df)} candles")
+    print(f"Period: {df['timestamp'].iloc[0]} to {df['timestamp'].iloc[-1]}")
+    print(f"Days: {(df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).days}")
+
+asyncio.run(test())
+```
+
+**Resultado Esperado:** ~8760 candles, ~365 days
+
+---
+
+### Teste 2: Verificar MCP Tool Call
+```python
+# test_mcp_tool_direct.py
+import asyncio
+from src.mcp_server.tools.backtest import backtest_strategy
+
+async def test():
+    result = await backtest_strategy(
+        strategy_name="atr_expansion_breakout",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        # NO start_date/end_date -> should auto-fetch 1 year
+    )
+    
+    print(f"Tool Version: {result.get('tool_version')}")
+    print(f"Days Tested: {result.get('days_tested')}")
+    print(f"Candles Tested: {result.get('candles_tested')}")
+    print(f"Total Trades: {result.get('total_trades')}")
+
+asyncio.run(test())
+```
+
+**Resultado Esperado:** 
+- `days_tested: ~364`
+- `candles_tested: ~8760`
+- `tool_version: 2.0.0-auto-fetch`
+
+---
+
+### Teste 3: MCP via Claude Desktop
+
+**Prompt para Claude:**
+```
+Please backtest the atr_expansion_breakout strategy on BTC/USDT 1h timeframe.
+Do not specify start_date or end_date (let it auto-fetch 1 year).
+Show me: days_tested, candles_tested, total_trades, tool_version.
+```
+
+**Resultado Atual:**
+- `days_tested: 6` ?
+- `candles_tested: ~150` ?
+- `tool_version: 2.0.0-auto-fetch` ?
+
+---
+
+## ?? Hipóteses
+
+### Hipótese 1: MCP não passa `None` para parâmetros opcionais
+**Teoria:** Claude Desktop pode estar a enviar `start_date=""` em vez de `None`
+
+**Teste:**
+```python
+# Em backtest.py, adicionar logging:
+logger.info(f"RAW start_date: {repr(start_date)}")
+logger.info(f"RAW end_date: {repr(end_date)}")
+logger.info(f"start_date type: {type(start_date)}")
+```
+
+**Fix:**
+```python
+# Em backtest.py, linha ~50:
+if start_date is None or start_date == "":  # Handle empty string!
+    start_dt = end_dt - timedelta(days=365)
+```
+
+---
+
+### Hipótese 2: DataManager cache está a retornar dados antigos
+**Teoria:** SQLite DB tem apenas 6 dias de dados, e não está a re-fetch
+
+**Teste:**
+```bash
+# Limpar cache completamente
+rm data/market/binance/BTC_USDT_1h.db
+```
+
+**Fix:**
+```python
+# Em backtest.py, forçar fresh data:
+df = await dm.fetch_historical(
+    ...,
+    use_cache=False,  # Force fresh fetch
+)
+```
+
+---
+
+### Hipótese 3: CCXT rate limiting
+**Teoria:** Binance API está a limitar requests, e DataManager não tenta retry
+
+**Teste:**
+```python
+# Em data_manager.py, adicionar logging para cada chunk:
+logger.info(f"Fetching chunk {i+1}/{total_chunks}, since={since}")
+```
+
+**Fix:**
+```python
+# Em data_manager.py, adicionar retry logic:
+for retry in range(3):  # 3 tentativas
+    try:
+        ohlcv = await exchange.fetch_ohlcv(...)
+        break
+    except Exception as e:
+        if retry == 2:
+            raise
+        await asyncio.sleep(2 ** retry)  # Exponential backoff
+```
+
+---
+
+### Hipótese 4: MCP timeout/truncation
+**Teoria:** MCP protocol trunca resposta se demorar muito
+
+**Teste:**
+```python
+# Reduzir período para confirmar se funciona:
+result = await backtest_strategy(
+    ...,
+    start_date="2025-01-01",  # Apenas 21 dias
+    end_date="2025-01-21"
+)
+```
+
+---
+
+## ??? Plano de Ação
+
+### Passo 1: Adicionar Logging Detalhado
+```python
+# Em src/mcp_server/tools/backtest.py, linha 35:
+
+logger.info(f"=" * 80)
+logger.info(f"BACKTEST TOOL DEBUG")
+logger.info(f"=" * 80)
+logger.info(f"strategy_name: {strategy_name}")
+logger.info(f"symbol: {symbol}")
+logger.info(f"timeframe: {timeframe}")
+logger.info(f"start_date (raw): {repr(start_date)} (type: {type(start_date)})")
+logger.info(f"end_date (raw): {repr(end_date)} (type: {type(end_date)})")
+logger.info(f"initial_capital: {initial_capital}")
+logger.info(f"=" * 80)
+
+# Depois de parse:
+logger.info(f"start_dt parsed: {start_dt}")
+logger.info(f"end_dt parsed: {end_dt}")
+logger.info(f"Days requested: {(end_dt - start_dt).days}")
+```
+
+### Passo 2: Testar Localmente (sem MCP)
+```bash
+python test_mcp_tool_direct.py
+```
+
+### Passo 3: Testar via MCP (Claude Desktop)
+```
+Verificar logs em:
+%APPDATA%/Claude/logs/mcp-server-smart-trade.log
+```
+
+### Passo 4: Aplicar Fix
+Dependendo da hipótese confirmada.
+
+---
+
+## ?? Próximas Ações
+
+1. **IMEDIATO:** Adicionar logging detalhado em `backtest.py`
+2. **TESTE 1:** Executar `test_mcp_tool_direct.py` 
+3. **TESTE 2:** Executar via Claude Desktop e verificar logs
+4. **ANÁLISE:** Comparar logs dos dois testes
+5. **FIX:** Aplicar correção baseada na hipótese confirmada
+
+---
+
+## ?? Referências
+- MCP Spec: https://modelcontextprotocol.io/docs/concepts/tools
+- CCXT Rate Limits: https://docs.ccxt.com/#/README?id=rate-limit
+- Claude Desktop Logs: `%APPDATA%/Claude/logs/`
+
+---
+
+**Status:** ?? Em investigação  
+**Prioridade:** ?? CRÍTICA  
+**Owner:** Next AI Instance
+

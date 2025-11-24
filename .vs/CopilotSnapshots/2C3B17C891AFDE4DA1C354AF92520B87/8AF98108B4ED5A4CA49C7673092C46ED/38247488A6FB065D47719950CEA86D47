@@ -1,0 +1,96 @@
+﻿import React, { useEffect } from 'react'
+import TradingChart from './TradingChart'
+import MoneyFlowChart from './MoneyFlowChart'
+
+export default function BotModal({ open, onClose, details }: { open: boolean; onClose: () => void; details: any }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    if (open) window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  if (!open || !details) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[90%] md:w-[80%] lg:w-[70%] bg-panel rounded-2xl shadow-2xl p-6 z-60">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h2 className="text-xl font-bold">{details.agent.symbol} — {details.agent.strategy}</h2>
+            <div className="small-muted">{details.agent.agent_id}</div>
+          </div>
+          <button className="btn-theme" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2">
+            <div className="card-panel" style={{ height: 420 }}>
+              <TradingChart symbol={details.agent.symbol} timeframe={details.agent.timeframe} trades={details.trades || []} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div className="card-panel">
+                <h4 className="font-semibold mb-2">Equity / Money Flow</h4>
+                <MoneyFlowChart series={(details.performance?.equity_series || [{ time: new Date().toISOString(), value: 0 }])} />
+              </div>
+              <div className="card-panel">
+                <h4 className="font-semibold mb-2">Trades</h4>
+                <div className="mt-2 max-h-64 overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left small-muted">
+                        <th>Time</th><th>Side</th><th>Entry</th><th>Exit</th><th>PnL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(details.trades || []).map((t: any) => (
+                        <tr key={t.id} className="border-b">
+                          <td className="py-2 small-muted">{t.entry_time}</td>
+                          <td>{t.direction}</td>
+                          <td>{t.entry_price}</td>
+                          <td>{t.exit_price || '-'}</td>
+                          <td className={`font-bold ${t.pnl > 0 ? 'text-green-500' : 'text-red-500'}`}>{t.pnl || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside>
+            <div className="card-panel">
+              <h4 className="font-semibold mb-2">Summary</h4>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="p-3 bg-gray-100 rounded text-center">
+                  <div className="small-muted">Total Trades</div>
+                  <div className="font-bold">{details.performance?.total_trades || 0}</div>
+                </div>
+                <div className="p-3 bg-gray-100 rounded text-center">
+                  <div className="small-muted">Win Rate</div>
+                  <div className="font-bold">{details.performance?.win_rate || 0}%</div>
+                </div>
+                <div className="p-3 bg-gray-100 rounded text-center">
+                  <div className="small-muted">Total PnL</div>
+                  <div className="font-bold">{details.performance?.total_pnl || 0}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 card-panel">
+              <h4 className="font-semibold mb-2">Controls</h4>
+              <div className="space-y-2">
+                <button className="btn-theme w-full">Stop Agent</button>
+                <button className="w-full border rounded px-3 py-2">Edit Params</button>
+                <button className="w-full border rounded px-3 py-2">View Logs</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  )
+}

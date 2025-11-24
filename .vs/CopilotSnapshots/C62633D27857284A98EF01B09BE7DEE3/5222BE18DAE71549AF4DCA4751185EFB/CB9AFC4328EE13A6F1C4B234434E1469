@@ -1,0 +1,59 @@
+﻿"""
+Multiple oscillators align for high-probability setup
+"""
+
+from typing import List
+import pandas as pd
+
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
+
+
+class MultiOscillatorConfluence(BaseStrategy):
+    """
+    MultiOscillatorConfluence - Multiple oscillators align for high-probability setup
+    
+    Category: hybrid
+    Indicators: rsi, cci, stochastic, atr
+    """
+
+    def __init__(self, config: StrategyConfig = None):
+        """Initialize MultiOscillatorConfluence strategy."""
+        super().__init__(config)
+        
+        # Strategy-specific parameters
+        # TODO: Add configurable parameters from config.params
+        
+    def get_required_indicators(self) -> List[str]:
+        """Required indicators for this strategy."""
+        return ['rsi', 'cci', 'stochastic', 'atr']
+    
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        """
+        Generate trading signals.
+        
+        Args:
+            df: DataFrame with OHLCV and indicator data
+            
+        Returns:
+            List of trading signals
+        """
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            rsi, cci, stoch_k = r.get("rsi", 50), r.get("cci", 0), r.get("stoch_k", 50)
+            atr = r.get("atr", r["close"]*0.02)
+            if pos is None:
+                if rsi < 30 and cci < -100 and stoch_k < 20:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, r["close"], atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], r["close"], 0.9, sl, tp, {}))
+                    pos = "LONG"
+                elif rsi > 70 and cci > 100 and stoch_k > 80:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, r["close"], atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.9, sl, tp, {}))
+                    pos = "SHORT"
+        logger.info(f"MultiOscillatorConfluence: {len(signals)} signals")
+        return signals
+
+
+__all__ = ["MultiOscillatorConfluence"]

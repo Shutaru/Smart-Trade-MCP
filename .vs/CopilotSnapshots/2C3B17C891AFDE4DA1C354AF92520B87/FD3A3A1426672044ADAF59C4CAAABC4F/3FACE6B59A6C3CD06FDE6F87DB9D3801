@@ -1,0 +1,265 @@
+﻿"""Keltner Pullback | EMA Stack Regime | Double Donchian | Pure Price Action | OBV Breakout | EMA200 Tap"""
+from typing import List
+import pandas as pd
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
+
+class KeltnerPullbackContinuation(BaseStrategy):
+    def __init__(self, config: StrategyConfig = None):
+        """Initialize KeltnerPullbackContinuation strategy."""
+        super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.keltner_period = self.config.get("keltner_period", 20)
+        self.keltner_mult = self.config.get("keltner_mult", 2.0)
+        self.ema_period = self.config.get("ema_period", 50)
+        self.rsi_threshold = self.config.get("rsi_threshold", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
+    def get_required_indicators(self) -> List[str]:
+        return ["keltner", "ema", "atr"]
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        signals, pos = [], None
+        
+        for i in range(max(self.keltner_period, self.ema_period), len(df)):
+            r = df.iloc[i]
+            close = r["close"]
+            
+            # Get Keltner Channel values
+            kc_m = r.get("keltner_middle", close)
+            kc_l = r.get("keltner_lower", close)
+            kc_u = r.get("keltner_upper", close)
+            
+            # ✅ USE ema_period parameter
+            ema_trend = r.get(f"ema_{self.ema_period}", close)
+            rsi = r.get("rsi", 50)
+            atr = r.get("atr", close*0.02)
+            
+            # ✅ USE rsi_threshold parameter for RSI filter
+            rsi_lower = self.rsi_threshold - 10
+            rsi_upper = self.rsi_threshold + 10
+            
+            if pos is None:
+                # LONG: Uptrend + pullback to lower Keltner (but not below) + RSI neutral
+                in_uptrend = close > ema_trend
+                pullback_zone = kc_l < close < kc_m  # Between lower and middle
+                rsi_neutral = rsi_lower < rsi < rsi_upper
+                
+                if in_uptrend and pullback_zone and rsi_neutral:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(
+                        SignalType.LONG, 
+                        r["timestamp"], 
+                        close, 
+                        0.75, 
+                        sl, 
+                        tp, 
+                        {
+                            "keltner_period": self.keltner_period,
+                            "ema_period": self.ema_period,
+                            "reason": "Keltner pullback in uptrend"
+                        }
+                    ))
+                    pos = "LONG"
+                
+                # SHORT: Downtrend + pullback to upper Keltner (but not above) + RSI neutral
+                in_downtrend = close < ema_trend
+                pullback_zone_short = kc_m < close < kc_u  # Between middle and upper
+                
+                if in_downtrend and pullback_zone_short and rsi_neutral:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(
+                        SignalType.SHORT, 
+                        r["timestamp"], 
+                        close, 
+                        0.75, 
+                        sl, 
+                        tp, 
+                        {
+                            "keltner_period": self.keltner_period,
+                            "ema_period": self.ema_period,
+                            "reason": "Keltner pullback in downtrend"
+                        }
+                    ))
+                    pos = "SHORT"
+            
+            # Exit when breaks out of Keltner channel (momentum lost)
+            elif pos == "LONG" and close < kc_l:
+                signals.append(Signal(
+                    SignalType.CLOSE_LONG, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Broke below Keltner lower"}
+                ))
+                pos = None
+            
+            elif pos == "SHORT" and close > kc_u:
+                signals.append(Signal(
+                    SignalType.CLOSE_SHORT, 
+                    r["timestamp"], 
+                    close,
+                    metadata={"reason": "Broke above Keltner upper"}
+                ))
+                pos = None
+                
+        logger.info(f"KeltnerPullbackContinuation: {len(signals)} signals")
+        return signals
+
+class EmaStackRegimeFlip(BaseStrategy):
+    def __init__(self, config: StrategyConfig = None):
+        super().__init__(config)
+    def get_required_indicators(self) -> List[str]:
+        return ["ema", "atr"]
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r, p = df.iloc[i], df.iloc[i-1]
+            close, ema12, ema26, ema200 = r["close"], r.get("ema_12", r["close"]), r.get("ema_26", r["close"]), r.get("ema_200", r["close"])
+            e12p, e26p = p.get("ema_12", close), p.get("ema_26", close)
+            atr = r.get("atr", close*0.02)
+            flip_bull = e12p <= e26p and ema12 > ema26 and close > ema200
+            if pos is None and flip_bull:
+                sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                pos = "LONG"
+        logger.info(f"EmaStackRegimeFlip: {len(signals)} signals")
+        return signals
+
+class DoubleDonchianPullback(BaseStrategy):
+    def __init__(self, config: StrategyConfig = None):
+        super().__init__(config)
+    def get_required_indicators(self) -> List[str]:
+        return ["donchian", "atr"]
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close, low, high = r["close"], r["low"], r["high"]
+            don_m = r.get("donchian_middle", close)
+            don_u = r.get("donchian_upper", close)
+            don_l = r.get("donchian_lower", close)
+            atr = r.get("atr", close*0.02)
+            prev_don_u = df.iloc[i-1].get("donchian_upper", close) if i > 0 else don_u
+            prev_don_l = df.iloc[i-1].get("donchian_lower", close) if i > 0 else don_l
+            
+            if pos is None and abs(close - don_m) < atr * 0.5:
+                if close > don_m:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.7, sl, tp, {}))
+                    pos = "LONG"
+                elif close < don_m:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.7, sl, tp, {}))
+                    pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit on opposite breakout
+            elif pos == "LONG" and low < prev_don_l:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "Opposite breakout"}))
+                pos = None
+            
+            elif pos == "SHORT" and high > prev_don_u:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "Opposite breakout"}))
+                pos = None
+        logger.info(f"DoubleDonchianPullback: {len(signals)} signals")
+        return signals
+
+class PurePriceActionDonchian(BaseStrategy):
+    def __init__(self, config: StrategyConfig = None):
+        super().__init__(config)
+    def get_required_indicators(self) -> List[str]:
+        return ["donchian", "atr"]
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close = r["close"]
+            don_u = r.get("donchian_upper", close)
+            atr = r.get("atr", close*0.02)
+            if pos is None and close > don_u:
+                sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.75, sl, tp, {}))
+                pos = "LONG"
+        logger.info(f"PurePriceActionDonchian: {len(signals)} signals")
+        return signals
+
+class ObvConfirmationBreakoutPlus(BaseStrategy):
+    def __init__(self, config: StrategyConfig = None):
+        super().__init__(config)
+    def get_required_indicators(self) -> List[str]:
+        return ["obv", "bollinger", "atr"]
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        signals, pos = [], None
+        for i in range(5, len(df)):
+            r = df.iloc[i]
+            close, low = r["close"], r["low"]
+            bb_u = r.get("bb_upper", close)
+            bb_l = r.get("bb_lower", close)
+            obv, atr = r.get("obv", 0), r.get("atr", close*0.02)
+            obv_rising = obv > df.iloc[i-5].get("obv", 0)
+            obv_falling = obv < df.iloc[i-5].get("obv", 0)
+            
+            if pos is None:
+                if close > bb_u and obv_rising:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "LONG"
+                elif low < bb_l and obv_falling:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit when OBV diverges
+            elif pos == "LONG" and obv < df.iloc[i-1].get("obv", 0):
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "OBV diverged"}))
+                pos = None
+            
+            elif pos == "SHORT" and obv > df.iloc[i-1].get("obv", 0):
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "OBV diverged"}))
+                pos = None
+        logger.info(f"ObvConfirmationBreakoutPlus: {len(signals)} signals")
+        return signals
+
+class Ema200TapReversion(BaseStrategy):
+    def __init__(self, config: StrategyConfig = None):
+        super().__init__(config)
+    def get_required_indicators(self) -> List[str]:
+        return ["ema", "rsi", "atr"]
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close, low, high = r["close"], r["low"], r["high"]
+            ema200, rsi = r.get("ema_200", close), r.get("rsi", 50)
+            atr = r.get("atr", close*0.02)
+            tap_ema_long = abs(low - ema200) < atr * 0.5
+            tap_ema_short = abs(high - ema200) < atr * 0.5
+            
+            if pos is None:
+                if close > ema200 and tap_ema_long and 40 < rsi < 55:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "LONG"
+                elif close < ema200 and tap_ema_short and 45 < rsi < 60:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, {}))
+                    pos = "SHORT"
+            
+            # ADD EXIT LOGIC - exit when moves away from EMA200
+            elif pos == "LONG" and abs(close - ema200) / ema200 > 0.02:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close,
+                                    metadata={"reason": "Moved away from EMA200"}))
+                pos = None
+            
+            elif pos == "SHORT" and abs(close - ema200) / ema200 > 0.02:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close,
+                                    metadata={"reason": "Moved away from EMA200"}))
+                pos = None
+        logger.info(f"Ema200TapReversion: {len(signals)} signals")
+        return signals
+
+__all__ = ["KeltnerPullbackContinuation", "EmaStackRegimeFlip", "DoubleDonchianPullback", "PurePriceActionDonchian", "ObvConfirmationBreakoutPlus", "Ema200TapReversion"]

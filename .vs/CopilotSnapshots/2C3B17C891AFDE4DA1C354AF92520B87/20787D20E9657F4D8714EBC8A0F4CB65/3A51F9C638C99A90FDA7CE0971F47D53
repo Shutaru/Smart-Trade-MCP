@@ -1,0 +1,192 @@
+﻿# -*- coding: utf-8 -*-
+"""
+Fitness Evaluator
+
+Evaluates strategy fitness with given parameters.
+Supports GPU acceleration and parallel evaluation.
+"""
+
+from typing import Dict, Any, Tuple, List, Callable
+import pandas as pd
+from dataclasses import dataclass
+
+from ..core.backtest_engine import BacktestEngine
+from ..core.logger import logger
+
+
+@dataclass
+class FitnessMetrics:
+    """Fitness evaluation metrics"""
+    sharpe_ratio: float
+    win_rate: float
+    max_drawdown_pct: float
+    total_return: float
+    total_trades: int
+    profit_factor: float
+    
+    def to_tuple(self) -> Tuple[float, float, float]:
+        """Convert to tuple for DEAP (Sharpe, WinRate, MaxDD)"""
+        return (self.sharpe_ratio, self.win_rate, self.max_drawdown_pct)
+    
+    def to_dict(self) -> Dict[str, float]:
+        """Convert to dictionary"""
+        return {
+            "sharpe_ratio": self.sharpe_ratio,
+            "win_rate": self.win_rate,
+            "max_drawdown_pct": self.max_drawdown_pct,
+            "total_return": self.total_return,
+            "total_trades": self.total_trades,
+            "profit_factor": self.profit_factor,
+        }
+
+
+class FitnessEvaluator:
+    """
+    Evaluates strategy fitness for optimization.
+    
+    Supports:
+    - Single evaluation
+    - Batch evaluation
+    - GPU acceleration (optional)
+    - Ray distributed computing (optional)
+    """
+    
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        strategy_class: Any,
+        initial_capital: float = 10000.0,
+        commission: float = 0.001,
+        slippage: float = 0.0005,
+        use_gpu: bool = False,
+    ):
+        """
+        Initialize fitness evaluator.
+        
+        Args:
+            df: OHLCV DataFrame with indicators
+            strategy_class: Strategy class to evaluate
+            initial_capital: Initial capital for backtesting
+            commission: Commission rate
+            slippage: Slippage rate
+            use_gpu: Use GPU acceleration
+        """
+        self.df = df
+        self.strategy_class = strategy_class
+        self.initial_capital = initial_capital
+        self.commission = commission
+        self.slippage = slippage
+        self.use_gpu = use_gpu
+        
+        # Statistics
+        self.eval_count = 0
+        
+        logger.info(
+            f"FitnessEvaluator initialized",
+            strategy=strategy_class.name if hasattr(strategy_class, 'name') else strategy_class.__class__.__name__,
+            data_points=len(df),
+            gpu=use_gpu
+        )
+    
+    def evaluate(self, params: Dict[str, Any]) -> FitnessMetrics:
+        """
+        Evaluate strategy with given parameters.
+        
+        Args:
+            params: Parameter dictionary
+            
+        Returns:
+            FitnessMetrics object
+        """
+        self.eval_count += 1
+        
+        try:
+            # Get strategy class (not instance)
+            if hasattr(self.strategy_class, '__class__') and hasattr(self.strategy_class.__class__, '__name__'):
+                # It's an instance, get the class
+                strategy_cls = self.strategy_class.__class__
+            else:
+                # It's already a class
+                strategy_cls = self.strategy_class
+            
+            # Import StrategyConfig
+            from ..strategies import StrategyConfig
+            
+            # Create StrategyConfig with parameters
+            config = StrategyConfig(params=params)
+            
+            # Create strategy instance with config
+            strategy = strategy_cls(config)
+            
+            # Run backtest
+            engine = BacktestEngine(
+                initial_capital=self.initial_capital,
+                commission_rate=self.commission,
+                slippage_rate=self.slippage,
+                use_gpu=False,  # GPU backtest not yet implemented
+            )
+            
+            results = engine.run(strategy, self.df)
+            
+            # Extract metrics
+            metrics = FitnessMetrics(
+                sharpe_ratio=results["metrics"]["sharpe_ratio"],
+                win_rate=results["metrics"]["win_rate"],
+                max_drawdown_pct=results["metrics"]["max_drawdown_pct"],
+                total_return=results["total_return"],
+                total_trades=results["total_trades"],
+                profit_factor=results["metrics"]["profit_factor"],
+            )
+            
+            return metrics
+        
+        except Exception as e:
+            logger.error(f"Fitness evaluation failed: {e}", params=params)
+            
+            # Return poor fitness on error
+            return FitnessMetrics(
+                sharpe_ratio=0.0,
+                win_rate=0.0,
+                max_drawdown_pct=100.0,
+                total_return=-100.0,
+                total_trades=0,
+                profit_factor=0.0,
+            )
+    
+    def evaluate_batch(self, params_list: List[Dict[str, Any]]) -> List[FitnessMetrics]:
+        """
+        Evaluate multiple parameter sets (batch evaluation).
+        
+        Args:
+            params_list: List of parameter dictionaries
+            
+        Returns:
+            List of FitnessMetrics
+        """
+        if self.use_gpu:
+            return self._evaluate_batch_gpu(params_list)
+        else:
+            return [self.evaluate(params) for params in params_list]
+    
+    def _evaluate_batch_gpu(self, params_list: List[Dict[str, Any]]) -> List[FitnessMetrics]:
+        """
+        GPU-accelerated batch evaluation.
+        
+        TODO: Implement GPU-accelerated backtesting
+        For now, falls back to CPU sequential evaluation
+        """
+        logger.warning("GPU batch evaluation not yet implemented, using CPU")
+        return [self.evaluate(params) for params in params_list]
+    
+    def create_fitness_function(self) -> Callable[[Dict[str, Any]], Tuple[float, float, float]]:
+        """
+        Create a fitness function for DEAP.
+        
+        Returns:
+            Function that takes params dict and returns (sharpe, win_rate, max_dd) tuple
+        """
+        def fitness_func(params: Dict[str, Any]) -> Tuple[float, float, float]:
+            metrics = self.evaluate(params)
+            return metrics.to_tuple()
+        
+        return fitness_func

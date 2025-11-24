@@ -1,0 +1,84 @@
+﻿#!/usr/bin/env powershell
+# Force Restart MCP Server for Claude Desktop
+
+Write-Host "=" -ForegroundColor Cyan -NoNewline; Write-Host ("="*79) -ForegroundColor Cyan
+Write-Host "FORCE RESTART MCP SERVER" -ForegroundColor Yellow
+Write-Host "=" -ForegroundColor Cyan -NoNewline; Write-Host ("="*79) -ForegroundColor Cyan
+Write-Host ""
+
+# Step 1: Kill all Python processes related to Smart-Trade-MCP
+Write-Host "[1/4] Killing old MCP server processes..." -ForegroundColor Cyan
+$pythonProcesses = Get-Process python -ErrorAction SilentlyContinue | Where-Object { 
+    $_.Path -like "*Smart-Trade-MCP*" -or 
+    $_.CommandLine -like "*src.mcp_server.server*"
+}
+
+if ($pythonProcesses) {
+    $pythonProcesses | Stop-Process -Force
+    Write-Host "  ? Killed $($pythonProcesses.Count) Python processes" -ForegroundColor Green
+} else {
+    Write-Host "  ??  No running MCP server processes found" -ForegroundColor Gray
+}
+
+Start-Sleep -Seconds 2
+
+# Step 2: Kill Claude Desktop if running
+Write-Host "`n[2/4] Checking Claude Desktop..." -ForegroundColor Cyan
+$claudeProcess = Get-Process Claude -ErrorAction SilentlyContinue
+
+if ($claudeProcess) {
+    Write-Host "  ??  Claude Desktop is running - killing it..." -ForegroundColor Yellow
+    $claudeProcess | Stop-Process -Force
+    Write-Host "  ? Claude Desktop stopped" -ForegroundColor Green
+    Start-Sleep -Seconds 3
+} else {
+    Write-Host "  ??  Claude Desktop not running" -ForegroundColor Gray
+}
+
+# Step 3: Clear any MCP cache (if exists)
+Write-Host "`n[3/4] Clearing MCP cache..." -ForegroundColor Cyan
+$cacheDir = "$env:APPDATA\Claude\mcp_cache"
+if (Test-Path $cacheDir) {
+    Remove-Item -Path $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "  ? Cache cleared" -ForegroundColor Green
+} else {
+    Write-Host "  ??  No cache found" -ForegroundColor Gray
+}
+
+# Step 4: Restart Claude Desktop
+Write-Host "`n[4/4] Restarting Claude Desktop..." -ForegroundColor Cyan
+
+$claudePath = "$env:LOCALAPPDATA\AnthropicClaude\claude.exe"
+
+if (Test-Path $claudePath) {
+    Start-Process -FilePath $claudePath
+    Write-Host "  ? Claude Desktop started" -ForegroundColor Green
+    Write-Host "`n  ? Waiting 10 seconds for MCP server to initialize..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 10
+    Write-Host "  ? Ready!" -ForegroundColor Green
+} else {
+    Write-Host "  ? Claude Desktop not found at: $claudePath" -ForegroundColor Red
+    Write-Host "     Please start Claude Desktop manually" -ForegroundColor Yellow
+}
+
+Write-Host "`n" -NoNewline
+Write-Host "=" -ForegroundColor Cyan -NoNewline; Write-Host ("="*79) -ForegroundColor Cyan
+Write-Host "RESTART COMPLETE!" -ForegroundColor Green
+Write-Host "=" -ForegroundColor Cyan -NoNewline; Write-Host ("="*79) -ForegroundColor Cyan
+Write-Host "`n?? Now test in Claude Desktop with this query:" -ForegroundColor Cyan
+Write-Host @"
+
+Claude, faz backtest da estratégia "atr_expansion_breakout" no BTC/USDT 1h.
+Não especifiques start_date!
+
+Mostra-me ESPECIFICAMENTE:
+1. tool_version (deve ser "2.0.0-auto-fetch")
+2. days_tested (deve ser ~364 dias)
+3. candles_tested (deve ser ~8760)
+4. total_trades (deve ser 20-25)
+
+"@ -ForegroundColor White
+
+Write-Host "`n? Se vires tool_version='2.0.0-auto-fetch', o server recarregou!" -ForegroundColor Green
+Write-Host "? Se tool_version não aparecer, ainda está com versão antiga!" -ForegroundColor Red
+Write-Host ""

@@ -1,0 +1,155 @@
+STRATEGIES WITH HARDCODED VALUES
+================================================================================
+
+adx_trend_filter_plus
+  Unused params: adx_period, adx_threshold, ema_fast, ema_slow, sl_atr_mult, tp_rr_mult
+  Hardcoded: 200, 12
+
+atr_expansion_breakout
+  Unused params: stop_loss_atr_mult, take_profit_rr_ratio
+  Hardcoded: 0
+
+bollinger_mean_reversion
+  Unused params: bb_period, bb_std, rsi_period, rsi_filter, sl_atr_mult, tp_rr_mult
+  Hardcoded: 0
+
+bollinger_squeeze_breakout
+  Unused params: bb_period, bb_std, keltner_period, keltner_mult, squeeze_threshold_pct, adx_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 80, 20, 0, 50, 0.015
+
+cci_extreme_snapback
+  Unused params: cci_period, cci_oversold, cci_overbought, ema_period, sl_atr_mult, tp_rr_mult
+  Hardcoded: 26, 150, 0, 12
+
+channel_squeeze_plus
+  Unused params: bb_period, keltner_period, donchian_period, squeeze_threshold_pct, sl_atr_mult, tp_rr_mult
+  Hardcoded: 0
+
+complete_system_5x
+  Unused params: ema_fast, ema_slow, rsi_period, rsi_threshold, macd_fast, macd_slow, adx_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 20, 200, 3, 50, 0
+
+donchian_continuation
+  Unused params: donchian_period, adx_threshold, ema_period, sl_atr_mult, tp_rr_mult
+  Hardcoded: 200, 0
+
+donchian_volatility_breakout
+  Unused params: donchian_period, atr_expansion_mult, adx_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 
+
+double_donchian_pullback
+  Unused params: donchian_fast, donchian_slow, ema_period, sl_atr_mult, tp_rr_mult
+  Hardcoded: 
+
+ema200_tap_reversion
+  Unused params: ema_period, tap_threshold_pct, rsi_filter, sl_atr_mult, tp_rr_mult
+  Hardcoded: 200, 55
+
+ema_cloud_trend
+  Unused params: ema_fast, ema_slow, rsi_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 26, 200, 12
+
+ema_stack_momentum
+  Unused params: ema_fast, ema_mid, ema_slow, rsi_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 26, 200, 12, 65, 75, 0
+
+ema_stack_regime_flip
+  Unused params: ema_fast, ema_mid, ema_slow, rsi_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 26, 200, 12
+
+keltner_expansion
+  Unused params: keltner_period, keltner_mult, expansion_threshold_pct, sl_atr_mult, tp_rr_mult
+  Hardcoded: 200
+
+keltner_pullback_continuation
+  Unused params: keltner_period, keltner_mult, ema_period, rsi_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 200
+
+london_breakout_atr
+  Unused params: atr_period, atr_mult, ema_period, london_start_hour, london_end_hour, sl_atr_mult, tp_rr_mult
+  Hardcoded: 
+
+macd_zero_trend
+  Unused params: fast_period, slow_period, signal_period, ema_trend, sl_atr_mult, tp_rr_mult
+  Hardcoded: 200, 70, 75, 0, 15
+
+mfi_divergence_reversion
+  Unused params: mfi_period, mfi_oversold, mfi_overbought, ema_period, sl_atr_mult, tp_rr_mult
+  Hardcoded: 60, 40, 12
+
+mfi_impulse_momentum
+  Unused params: mfi_period, mfi_threshold_high, mfi_threshold_low, ema_period, sl_atr_mult, tp_rr_mult
+  Hardcoded: 10, 75, 5, 15, 25
+
+multi_oscillator_confluence
+  Unused params: rsi_period, rsi_oversold, rsi_overbought, cci_period, cci_oversold, cci_overbought, stoch_k, stoch_d, sl_atr_mult, tp_rr_mult
+  Hardcoded: 80, 20, 30, 35, 70, 75, 65, 100, 25
+
+ny_session_fade
+  Unused params: vwap_deviation_std, atr_period, ema_period, ny_start_hour, ny_end_hour, sl_atr_mult, tp_rr_mult
+  Hardcoded: 70, 30
+
+obv_confirmation_breakout_plus
+  Unused params: obv_ema_period, price_ema_period, breakout_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 
+
+obv_trend_confirmation
+  Unused params: obv_ema_period, price_ema_period, adx_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 200
+
+order_flow_momentum_vwap
+  Unused params: vwap_deviation_std, obv_ema_period, momentum_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 
+
+pure_price_action_donchian
+  Unused params: donchian_period, breakout_confirm_bars, sl_atr_mult, tp_rr_mult
+  Hardcoded: 0
+
+regime_adaptive_core
+  Unused params: adx_period, adx_threshold_trending, adx_threshold_ranging, atr_period, regime_lookback, sl_atr_mult, tp_rr_mult
+  Hardcoded: 200, 30, 70, 50, 25
+
+rsi_band_reversion
+  Unused params: rsi_period, rsi_oversold, rsi_overbought, bb_period, bb_std, ema_period, sl_atr_mult, tp_rr_mult
+  Hardcoded: 50
+
+rsi_supertrend_flip
+  Unused params: rsi_period, rsi_threshold, st_period, st_multiplier, sl_atr_mult, tp_rr_mult
+  Hardcoded: 60, 0
+
+stoch_signal_reversal
+  Unused params: stoch_k, stoch_d, stoch_oversold, stoch_overbought, rsi_confirm, sl_atr_mult, tp_rr_mult
+  Hardcoded: 80, 20, 60, 70, 50
+
+trend_volume_combo
+  Unused params: ema_fast, ema_slow, obv_ema_period, sl_atr_mult, tp_rr_mult
+  Hardcoded: 
+
+trendflow_supertrend
+  Unused params: st_period, st_multiplier, adx_threshold, rsi_pullback_min, rsi_pullback_max, ema_period, sl_atr_mult, tp_rr_mult
+  Hardcoded: 26, 12, 70, 0, 15
+
+triple_momentum_confluence
+  Unused params: rsi_period, rsi_threshold, macd_fast, macd_slow, macd_signal, stoch_k, stoch_d, sl_atr_mult, tp_rr_mult
+  Hardcoded: 45, 55, 0
+
+volatility_weighted_breakout
+  Unused params: atr_period, atr_mult, bb_period, adx_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 
+
+vwap_band_fade_pro
+  Unused params: vwap_deviation_std, rsi_oversold, rsi_overbought, fade_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 35, 65
+
+vwap_breakout
+  Unused params: vwap_deviation_std, volume_mult, rsi_threshold, sl_atr_mult, tp_rr_mult
+  Hardcoded: 75, 55
+
+vwap_institutional_trend
+  Unused params: vwap_deviation_std, obv_ema_period, price_ema_period, sl_atr_mult, tp_rr_mult
+  Hardcoded: 200
+
+vwap_mean_reversion
+  Unused params: vwap_deviation_std, rsi_filter, rsi_oversold, rsi_overbought, sl_atr_mult, tp_rr_mult
+  Hardcoded: 60, 0, 0.005, 0.015, 40
+

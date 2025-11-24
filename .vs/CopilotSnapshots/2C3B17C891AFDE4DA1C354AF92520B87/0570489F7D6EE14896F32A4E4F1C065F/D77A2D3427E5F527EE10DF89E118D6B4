@@ -1,0 +1,135 @@
+﻿# -*- coding: utf-8 -*-
+"""
+Paper Trading API Router
+
+Provides endpoints to start/stop/list paper trading bots and a WebSocket
+for realtime updates. Uses AgentOrchestrator and AgentStorage already
+present in the project for process management and persistence.
+"""
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from typing import Dict, Any, Optional
+from datetime import datetime
+import asyncio
+
+from ...agent.orchestrator import AgentOrchestrator
+
+router = APIRouter()
+
+# Single global orchestrator for the API
+_orchestrator = AgentOrchestrator()
+
+# ---- Models are simple dict bodies for now
+
+@router.post("/bots")
+async def start_bot(payload: Dict[str, Any]):
+    """Start a new paper trading bot.
+
+    Expected payload keys:
+    - symbol (str)
+    - timeframe (str)
+    - strategy (str)
+    - params (dict, optional)
+    - risk_per_trade (float, optional)
+    - scan_interval_minutes (int, optional)
+    """
+    symbol = payload.get("symbol")
+    timeframe = payload.get("timeframe")
+    strategy = payload.get("strategy")
+    params = payload.get("params", {})
+    risk = float(payload.get("risk_per_trade", 0.02))
+    scan = int(payload.get("scan_interval_minutes", 15))
+
+    if not symbol or not timeframe or not strategy:
+        raise HTTPException(status_code=400, detail="symbol, timeframe and strategy are required")
+
+    try:
+        agent_id = await _orchestrator.launch_agent(
+            symbol=symbol,
+            timeframe=timeframe,
+            strategy=strategy,
+            params=params,
+            risk_per_trade=risk,
+            scan_interval_minutes=scan
+        )
+
+        info = _orchestrator.get_agent_info(agent_id)
+
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "started_at": info.get("started_at"),
+            "pid": info.get("pid"),
+            "status": info.get("status")
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{agent_id}/stop")
+async def stop_bot(agent_id: str, payload: Optional[Dict[str, Any]] = None):
+    reason = None
+    if payload:
+        reason = payload.get("reason")
+
+    try:
+        _orchestrator.stop_agent(agent_id, reason=reason)
+        return {"success": True, "agent_id": agent_id, "status": "stopped"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bots")
+async def list_bots():
+    try:
+        agents = _orchestrator.get_all_agents()
+        return {"success": True, "total": len(agents), "agents": agents}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bots/{agent_id}")
+async def get_bot(agent_id: str):
+    try:
+        info = _orchestrator.get_agent_info(agent_id)
+        perf = _orchestrator.get_agent_performance(agent_id)
+        return {"success": True, "agent": info, "performance": perf}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.websocket("/ws/paper/{agent_id}")
+async def ws_paper_updates(websocket: WebSocket, agent_id: str):
+    """WebSocket endpoint that streams agent updates.
+
+    The implementation polls the orchestrator / storage for updates every 1s
+    and sends JSON payloads to connected client(s). This avoids adding Redis
+    dependency for now.
+    """
+    await websocket.accept()
+    try:
+        while True:
+            info = _orchestrator.get_agent_info(agent_id)
+            perf = _orchestrator.get_agent_performance(agent_id)
+            # get recent trades
+            trades = _orchestrator.storage.get_agent_trades(agent_id)
+            payload = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "agent": info,
+                "performance": perf,
+                "trades": trades
+            }
+            await websocket.send_json(payload)
+            await asyncio.sleep(1.0)
+    except WebSocketDisconnect:
+        # client disconnected
+        return
+    except Exception:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+        return

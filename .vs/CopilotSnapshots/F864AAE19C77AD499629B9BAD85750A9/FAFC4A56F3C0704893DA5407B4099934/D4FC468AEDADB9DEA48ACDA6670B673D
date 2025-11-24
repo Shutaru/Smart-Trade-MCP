@@ -1,0 +1,172 @@
+﻿# ?? Claude Code (CLI) - MCP Configuration Guide
+
+## ? **STATUS: CONFIGURED!**
+
+O servidor MCP Smart-Trade já está configurado para Claude Code via ficheiro `.mcp.json`!
+
+---
+
+## ?? **Localização da Configuração:**
+
+```
+C:\Users\shuta\source\repos\Smart-Trade-MCP\.mcp.json
+```
+
+---
+
+## ?? **Configuração Atual:**
+
+```json
+{
+  "mcpServers": {
+    "smart-trade": {
+      "command": "python",
+      "args": ["-m", "src.mcp_server.server"],
+      "cwd": "C:\\Users\\shuta\\source\\repos\\Smart-Trade-MCP",
+      "env": {
+        "PYTHONPATH": "C:\\Users\\shuta\\source\\repos\\Smart-Trade-MCP",
+        "SMART_TRADE_ENV": "production"
+      }
+    }
+  }
+}
+```
+
+---
+
+## ?? **Como Usar no Claude Code:**
+
+### **1. Reiniciar Claude Code**
+
+Depois de criar o `.mcp.json`, reinicia o Claude Code para carregar a configuração.
+
+### **2. Verificar Conexão**
+
+No Claude Code, verifica se o server aparece:
+
+```
+List available MCP tools
+```
+
+Deves ver tools com prefixo `mcp__smart-trade__`:
+- `mcp__smart-trade__get_market_data`
+- `mcp__smart-trade__backtest_strategy`
+- `mcp__smart-trade__optimize_strategy_parameters`
+- etc.
+
+### **3. Testar Tool**
+
+```
+Use the Smart-Trade MCP to list all available strategies
+```
+
+---
+
+## ?? **Troubleshooting:**
+
+### ? **Server não aparece:**
+
+1. **Verifica se o ficheiro `.mcp.json` existe:**
+   ```powershell
+   Test-Path C:\Users\shuta\source\repos\Smart-Trade-MCP\.mcp.json
+   ```
+
+2. **Verifica se o Python está no PATH:**
+   ```powershell
+   python --version
+   ```
+
+3. **Testa o server manualmente:**
+   ```powershell
+   cd C:\Users\shuta\source\repos\Smart-Trade-MCP
+   python -m src.mcp_server.server
+   ```
+
+### ? **Tools não funcionam:**
+
+1. **Verifica logs do Claude Code** (Settings ? Developer)
+
+2. **Verifica que todas as deps estão instaladas:**
+   ```powershell
+   pip install mcp ccxt pandas numpy ta-lib
+   ```
+
+---
+
+## ?? **Tools Disponíveis:**
+
+### **Market Data:**
+- `get_market_data` - Fetch OHLCV data
+- `calculate_indicators` - Calculate technical indicators
+
+### **Backtesting:**
+- `backtest_strategy` - Run strategy backtest
+- `run_walk_forward_analysis` - WFA validation
+- `run_k_fold_validation` - K-Fold cross-validation
+- `run_monte_carlo_simulation` - Monte Carlo risk analysis
+
+### **Optimization:**
+- `optimize_strategy_parameters` - Genetic Algorithm optimization
+- `optimize_portfolio` - Multi-strategy portfolio optimization
+- `run_nfold_walk_forward` - N-Fold WFA
+
+### **Analysis:**
+- `detect_market_regime` - Current market regime detection
+- `detect_historical_regimes` - Historical regime analysis
+- `diagnose_strategy_failure` - Strategy diagnostics
+- `suggest_parameter_fixes` - Auto-fix recommendations
+
+### **Management:**
+- `list_strategies` - List all 42+ strategies
+- `get_portfolio_status` - Portfolio status
+
+---
+
+## ?? **Diferenças Claude Desktop vs Claude Code:**
+
+| Feature | Claude Desktop | Claude Code |
+|---------|----------------|-------------|
+| Config File | `%APPDATA%\Claude\claude_desktop_config.json` | `.mcp.json` (project root) |
+| Scope | Global (all conversations) | Project-specific |
+| UI | Graphical | Command-line |
+| Tools Prefix | Direct names | `mcp__<server>__<tool>` |
+
+---
+
+## ?? **Exemplos de Uso:**
+
+### **1. List Strategies:**
+```
+Use Smart-Trade MCP to list all breakout strategies
+```
+
+### **2. Backtest:**
+```
+Use Smart-Trade to backtest the "atr_expansion_breakout" strategy on BTC/USDT 1h.
+Show me Sharpe Ratio, Win Rate, and Max Drawdown.
+```
+
+### **3. Optimize:**
+```
+Use Smart-Trade to optimize the RSI strategy parameters using genetic algorithm.
+Use 30 population size and 10 generations.
+```
+
+### **4. Detect Regime:**
+```
+Use Smart-Trade to detect the current market regime for BTC/USDT 1h
+and recommend suitable strategies.
+```
+
+---
+
+## ? **Next Steps:**
+
+1. ? Restart Claude Code
+2. ? Verify MCP server appears in tools list
+3. ? Test with a simple query (e.g., list strategies)
+4. ? Use for optimization workflows!
+
+---
+
+**?? Ready to use Smart-Trade MCP in Claude Code!**

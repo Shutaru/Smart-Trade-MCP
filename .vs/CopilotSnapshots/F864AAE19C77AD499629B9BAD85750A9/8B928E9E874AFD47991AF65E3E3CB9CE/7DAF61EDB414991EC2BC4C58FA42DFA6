@@ -1,0 +1,233 @@
+﻿"""
+GPU vs CPU Performance Benchmark
+
+Compares Monte Carlo Simulation performance between CPU and GPU.
+"""
+
+import asyncio
+import time
+import json
+import sys
+from pathlib import Path
+from datetime import datetime
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.core.backtest_engine import BacktestEngine
+from src.core.data_manager import DataManager
+from src.core.indicators import calculate_all_indicators
+from src.strategies import registry
+from src.core.gpu_utils import get_gpu_info, GPU_AVAILABLE
+from src.core.logger import logger
+
+
+async def benchmark_monte_carlo():
+    """Benchmark Monte Carlo on CPU vs GPU."""
+    
+    print("=" * 80)
+    print("GPU vs CPU PERFORMANCE BENCHMARK - MONTE CARLO SIMULATION")
+    print("=" * 80)
+    print()
+    
+    # Check GPU availability
+    gpu_info = get_gpu_info()
+    if gpu_info['available']:
+        print(f"? GPU Detected: {gpu_info['device_name']}")
+        print(f"   Memory: {gpu_info['memory_free_gb']:.1f}GB free / {gpu_info['memory_total_gb']:.1f}GB total")
+        print(f"   Compute Capability: {gpu_info['compute_capability']}")
+    else:
+        print("? GPU Not Available - CPU only benchmark")
+    print()
+    
+    # Get strategy and data
+    strategy_name = "cci_extreme_snapback"  # Known good strategy
+    symbol = "BTC/USDT"
+    timeframe = "1h"
+    
+    print(f"?? Fetching data for {strategy_name}...")
+    
+    strategy = registry.get(strategy_name)
+    
+    dm = DataManager()
+    df = await dm.fetch_ohlcv(
+        symbol=symbol,
+        timeframe=timeframe,
+        limit=1000,
+    )
+    await dm.close()
+    
+    print(f"? Fetched {len(df)} candles")
+    
+    # Calculate indicators
+    df = calculate_all_indicators(df, strategy.get_required_indicators())
+    
+    # Run backtest to get trades
+    print(f"\n?? Running backtest to get trade sequence...")
+    engine = BacktestEngine(use_gpu=False)  # CPU for backtest
+    results = engine.run(strategy, df)
+    
+    n_trades = results['total_trades']
+    print(f"? Got {n_trades} trades")
+    
+    if n_trades == 0:
+        print("? No trades - cannot benchmark Monte Carlo")
+        return
+    
+    # Convert trades
+    from src.core.backtest_engine import Trade, PositionSide
+    trades = []
+    for t_dict in results['trades']:
+        trades.append(Trade(
+            side=PositionSide(t_dict['side']),
+            entry_price=t_dict['entry_price'],
+            exit_price=t_dict['exit_price'],
+            quantity=t_dict['quantity'],
+            entry_time=datetime.fromisoformat(t_dict['entry_time']),
+            exit_time=datetime.fromisoformat(t_dict['exit_time']),
+            pnl=t_dict['pnl'],
+            pnl_percent=t_dict['pnl_percent'],
+            fees=t_dict['fees'],
+        ))
+    
+    # Benchmark configurations
+    test_configs = [
+        {"n_sims": 1000, "name": "1K simulations"},
+        {"n_sims": 5000, "name": "5K simulations"},
+        {"n_sims": 10000, "name": "10K simulations"},
+    ]
+    
+    if GPU_AVAILABLE:
+        test_configs.append({"n_sims": 50000, "name": "50K simulations (GPU stress test)"})
+    
+    results_summary = []
+    
+    for config in test_configs:
+        n_sims = config['n_sims']
+        print(f"\n{'='*80}")
+        print(f"BENCHMARK: {config['name']}")
+        print(f"{'='*80}\n")
+        
+        # CPU Benchmark (serial)
+        print(f"?? CPU (Serial)...")
+        engine_cpu_serial = BacktestEngine(use_gpu=False)
+        
+        start_time = time.time()
+        mc_cpu_serial = engine_cpu_serial.monte_carlo_simulation(
+            trades=trades,
+            n_simulations=n_sims,
+            parallel=False,
+            use_gpu=False,
+        )
+        cpu_serial_time = time.time() - start_time
+        
+        print(f"   Time: {cpu_serial_time:.2f}s")
+        print(f"   Result: {mc_cpu_serial['median_return']:.2f}%")
+        
+        # CPU Benchmark (parallel)
+        print(f"\n?? CPU (Parallel)...")
+        engine_cpu_parallel = BacktestEngine(use_gpu=False)
+        
+        start_time = time.time()
+        mc_cpu_parallel = engine_cpu_parallel.monte_carlo_simulation(
+            trades=trades,
+            n_simulations=n_sims,
+            parallel=True,
+            n_jobs=-1,
+            use_gpu=False,
+        )
+        cpu_parallel_time = time.time() - start_time
+        
+        print(f"   Time: {cpu_parallel_time:.2f}s")
+        print(f"   Result: {mc_cpu_parallel['median_return']:.2f}%")
+        print(f"   Speedup vs Serial: {cpu_serial_time / cpu_parallel_time:.2f}x")
+        
+        # GPU Benchmark
+        if GPU_AVAILABLE:
+            print(f"\n?? GPU (CuPy)...")
+            engine_gpu = BacktestEngine(use_gpu=True)
+            
+            start_time = time.time()
+            mc_gpu = engine_gpu.monte_carlo_simulation(
+                trades=trades,
+                n_simulations=n_sims,
+                use_gpu=True,
+            )
+            gpu_time = time.time() - start_time
+            
+            print(f"   Time: {gpu_time:.2f}s")
+            print(f"   Result: {mc_gpu['median_return']:.2f}%")
+            print(f"   Speedup vs CPU Serial: {cpu_serial_time / gpu_time:.2f}x ??")
+            print(f"   Speedup vs CPU Parallel: {cpu_parallel_time / gpu_time:.2f}x ??")
+            
+            results_summary.append({
+                'n_simulations': n_sims,
+                'cpu_serial_time': round(cpu_serial_time, 2),
+                'cpu_parallel_time': round(cpu_parallel_time, 2),
+                'gpu_time': round(gpu_time, 2),
+                'speedup_vs_serial': round(cpu_serial_time / gpu_time, 2),
+                'speedup_vs_parallel': round(cpu_parallel_time / gpu_time, 2),
+            })
+        else:
+            results_summary.append({
+                'n_simulations': n_sims,
+                'cpu_serial_time': round(cpu_serial_time, 2),
+                'cpu_parallel_time': round(cpu_parallel_time, 2),
+                'speedup_parallel': round(cpu_serial_time / cpu_parallel_time, 2),
+            })
+    
+    # Final Summary
+    print(f"\n{'='*80}")
+    print("BENCHMARK SUMMARY")
+    print(f"{'='*80}\n")
+    
+    if GPU_AVAILABLE:
+        print("| Simulations | CPU Serial | CPU Parallel | GPU    | Speedup (vs Serial) | Speedup (vs Parallel) |")
+        print("|------------|-----------|--------------|--------|--------------------|-----------------------|")
+        for r in results_summary:
+            print(
+                f"| {r['n_simulations']:10,} | "
+                f"{r['cpu_serial_time']:8.2f}s | "
+                f"{r['cpu_parallel_time']:11.2f}s | "
+                f"{r['gpu_time']:5.2f}s | "
+                f"{r['speedup_vs_serial']:17.1f}x | "
+                f"{r['speedup_vs_parallel']:20.1f}x|"
+            )
+    else:
+        print("| Simulations | CPU Serial | CPU Parallel | Speedup |")
+        print("|------------|-----------|--------------|---------|")
+        for r in results_summary:
+            print(
+                f"| {r['n_simulations']:10,} | "
+                f"{r['cpu_serial_time']:8.2f}s | "
+                f"{r['cpu_parallel_time']:11.2f}s | "
+                f"{r['speedup_parallel']:6.1f}x |"
+            )
+    
+    print()
+    
+    # Save results
+    filename = f"benchmark_monte_carlo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(filename, 'w') as f:
+        json.dump({
+            'timestamp': datetime.now().isoformat(),
+            'gpu_info': gpu_info,
+            'strategy': strategy_name,
+            'n_trades': n_trades,
+            'results': results_summary,
+        }, f, indent=2)
+    
+    print(f"?? Results saved to: {filename}\n")
+    
+    if GPU_AVAILABLE:
+        print("?? GPU ACCELERATION IS WORKING!")
+        avg_speedup = sum(r['speedup_vs_parallel'] for r in results_summary) / len(results_summary)
+        print(f"   Average speedup vs CPU parallel: {avg_speedup:.1f}x")
+    else:
+        print("??  Install CuPy for GPU acceleration:")
+        print("   pip install cupy-cuda12x  # For CUDA 12.x")
+        print("   pip install cupy-cuda11x  # For CUDA 11.x")
+
+
+if __name__ == "__main__":
+    asyncio.run(benchmark_monte_carlo())

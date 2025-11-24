@@ -1,0 +1,92 @@
+﻿"""
+Multiple oscillators align for high-probability setup
+"""
+
+from typing import List
+import pandas as pd
+
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
+
+
+class MultiOscillatorConfluence(BaseStrategy):
+    """
+    MultiOscillatorConfluence - Multiple oscillators align for high-probability setup
+    
+    Category: hybrid
+    Indicators: rsi, cci, stochastic, atr
+    """
+
+    def __init__(self, config: StrategyConfig = None):
+        """Initialize MultiOscillatorConfluence strategy."""
+        super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.rsi_period = self.config.get("rsi_period", 14)
+        self.rsi_oversold = self.config.get("rsi_oversold", 30)
+        self.rsi_overbought = self.config.get("rsi_overbought", 70)
+        self.cci_period = self.config.get("cci_period", 20)
+        self.cci_oversold = self.config.get("cci_oversold", -100)
+        self.cci_overbought = self.config.get("cci_overbought", 100)
+        self.stoch_k = self.config.get("stoch_k", 14)
+        self.stoch_d = self.config.get("stoch_d", 3)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
+    def get_required_indicators(self) -> List[str]:
+        """Required indicators for this strategy."""
+        return ['rsi', 'cci', 'stochastic', 'atr']
+    
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        """
+        Generate trading signals.
+        
+        Args:
+            df: DataFrame with OHLCV and indicator data
+            
+        Returns:
+            List of trading signals
+        """
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            rsi, cci, stoch_k = r.get("rsi", 50), r.get("cci", 0), r.get("stoch_k", 50)
+            atr = r.get("atr", r["close"] * 0.02)
+            
+            if pos is None:
+                # FIX: Relaxed - need 2 out of 3 oscillators (not all 3)
+                oversold_count = sum([rsi < 35, cci < -80, stoch_k < 25])
+                overbought_count = sum([rsi > 65, cci > 80, stoch_k > 75])
+                
+                if oversold_count >= 2:  # At least 2 oscillators oversold
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, r["close"], atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], r["close"], 0.9, sl, tp, 
+                                        {"rsi": rsi, "cci": cci, "stoch_k": stoch_k}))
+                    pos = "LONG"
+                elif overbought_count >= 2:  # At least 2 oscillators overbought
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, r["close"], atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], r["close"], 0.9, sl, tp, 
+                                        {"rsi": rsi, "cci": cci, "stoch_k": stoch_k}))
+                    pos = "SHORT"
+            
+            # FIX: ADD EXIT LOGIC - exit when oscillators reach opposite extreme
+            elif pos == "LONG":
+                # Exit LONG when at least 2 oscillators overbought
+                overbought_count = sum([rsi > 70, cci > 100, stoch_k > 80])
+                if overbought_count >= 2:
+                    signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], r["close"], 
+                                        metadata={"reason": "Oscillators overbought"}))
+                    pos = None
+            
+            elif pos == "SHORT":
+                # Exit SHORT when at least 2 oscillators oversold  
+                oversold_count = sum([rsi < 30, cci < -100, stoch_k < 20])
+                if oversold_count >= 2:
+                    signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], r["close"], 
+                                        metadata={"reason": "Oscillators oversold"}))
+                    pos = None
+        logger.info(f"MultiOscillatorConfluence: {len(signals)} signals")
+        return signals
+
+
+__all__ = ["MultiOscillatorConfluence"]

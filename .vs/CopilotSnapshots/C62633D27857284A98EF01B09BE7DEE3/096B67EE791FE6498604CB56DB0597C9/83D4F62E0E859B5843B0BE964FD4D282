@@ -1,0 +1,208 @@
+﻿# -*- coding: utf-8 -*-
+"""
+ANALISE COMPLETA DOS RESULTADOS - 38 ESTRATEGIAS
+Gera relatorio detalhado com estatisticas e problemas a corrigir
+"""
+
+import json
+import pandas as pd
+
+# Load results
+with open("backtest_1year_results.json", "r") as f:
+    data = json.load(f)
+
+results = data["results"]
+
+# Create DataFrame
+df = pd.DataFrame(results)
+
+print("=" * 100)
+print("ANALISE COMPLETA - BACKTEST 1 ANO - 38 ESTRATEGIAS")
+print("=" * 100)
+print()
+
+# Market info
+print("MERCADO:")
+print(f"  Simbolo: {data['market_data']['symbol']}")
+print(f"  Periodo: {data['market_data']['days']} dias ({data['market_data']['candles']} candles)")
+print(f"  Variacao BTC: {data['market_data']['price_change_pct']:+.2f}%")
+print()
+
+# ============================================================================
+# CATEGORIAS
+# ============================================================================
+
+categories = {
+    "Mean Reversion": ["bollinger_mean_reversion", "rsi_band_reversion", "cci_extreme_snapback", 
+                       "mfi_divergence_reversion", "stoch_signal_reversal"],
+    "Trend Following": ["ema_cloud_trend", "donchian_continuation", "macd_zero_trend", 
+                        "adx_trend_filter_plus", "trendflow_supertrend"],
+    "Breakout": ["bollinger_squeeze_breakout", "keltner_expansion", "donchian_volatility_breakout",
+                 "atr_expansion_breakout", "channel_squeeze_plus", "volatility_weighted_breakout",
+                 "london_breakout_atr", "vwap_breakout"],
+    "Momentum": ["ema_stack_momentum", "mfi_impulse_momentum", "triple_momentum_confluence",
+                 "rsi_supertrend_flip", "multi_oscillator_confluence", "obv_trend_confirmation",
+                 "trend_volume_combo", "ema_stack_regime_flip"],
+    "Hybrid": ["vwap_institutional_trend", "vwap_mean_reversion", "vwap_band_fade_pro",
+               "order_flow_momentum_vwap", "keltner_pullback_continuation", "ema200_tap_reversion"],
+    "Advanced": ["double_donchian_pullback", "pure_price_action_donchian", 
+                 "obv_confirmation_breakout_plus", "ny_session_fade", 
+                 "regime_adaptive_core", "complete_system_5x"],
+}
+
+# Add category to DataFrame
+def get_category(strategy):
+    for cat, strats in categories.items():
+        if strategy in strats:
+            return cat
+    return "Unknown"
+
+df['category'] = df['strategy'].apply(get_category)
+
+# ============================================================================
+# ESTATISTICAS POR CATEGORIA
+# ============================================================================
+
+print("ESTATISTICAS POR CATEGORIA:")
+print("-" * 100)
+
+for cat in categories.keys():
+    cat_df = df[df['category'] == cat]
+    profitable = (cat_df['return'] > 0).sum()
+    avg_return = cat_df['return'].mean()
+    avg_trades = cat_df['trades'].mean()
+    avg_winrate = cat_df['win_rate'].mean()
+    
+    print(f"{cat:20s}: {len(cat_df)} estrategias | Lucrativas: {profitable}/{len(cat_df)} | "
+          f"Avg Return: {avg_return:+6.2f}% | Avg Trades: {avg_trades:5.1f} | Avg WR: {avg_winrate:5.1f}%")
+
+print()
+
+# ============================================================================
+# TOP 10 & BOTTOM 10
+# ============================================================================
+
+print("TOP 10 ESTRATEGIAS:")
+print("=" * 100)
+for i, row in df.head(10).iterrows():
+    emoji = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"#{i+1:2d}"
+    print(f"{emoji} {row['strategy']:40s} | {row['return']:+8.2f}% | {row['trades']:3.0f} trades | "
+          f"WR: {row['win_rate']:5.1f}% | Cat: {row['category']}")
+
+print()
+print()
+
+print("BOTTOM 10 ESTRATEGIAS:")
+print("=" * 100)
+for i, row in df.tail(10).iterrows():
+    print(f"   {row['strategy']:40s} | {row['return']:+8.2f}% | {row['trades']:3.0f} trades | "
+          f"WR: {row['win_rate']:5.1f}% | Cat: {row['category']}")
+
+print()
+print()
+
+# ============================================================================
+# PROBLEMAS A CORRIGIR
+# ============================================================================
+
+print("PROBLEMAS CRITICOS A CORRIGIR:")
+print("=" * 100)
+print()
+
+# 1. Estrategias com perda > 10%
+critical_losses = df[df['return'] < -10]
+if len(critical_losses) > 0:
+    print(f"1. PERDAS CRITICAS (> -10%): {len(critical_losses)} estrategias")
+    for i, row in critical_losses.iterrows():
+        print(f"   - {row['strategy']:40s}: {row['return']:+7.2f}% ({row['trades']:.0f} trades, WR: {row['win_rate']:.1f}%)")
+    print()
+
+# 2. Overtrading (> 1000 trades em 1 ano)
+overtrading = df[df['trades'] > 1000]
+if len(overtrading) > 0:
+    print(f"2. OVERTRADING (> 1000 trades): {len(overtrading)} estrategias")
+    for i, row in overtrading.iterrows():
+        avg_per_day = row['trades'] / 365
+        print(f"   - {row['strategy']:40s}: {row['trades']:.0f} trades ({avg_per_day:.1f}/dia) | Return: {row['return']:+.2f}%")
+    print()
+
+# 3. Win rate muito baixo (< 20%)
+low_winrate = df[(df['win_rate'] < 20) & (df['trades'] > 10)]
+if len(low_winrate) > 0:
+    print(f"3. WIN RATE BAIXO (< 20% com > 10 trades): {len(low_winrate)} estrategias")
+    for i, row in low_winrate.iterrows():
+        print(f"   - {row['strategy']:40s}: WR {row['win_rate']:.1f}% ({row['trades']:.0f} trades) | Return: {row['return']:+.2f}%")
+    print()
+
+# 4. Estrategias com apenas 1 trade (pouco significativo)
+one_trade = df[df['trades'] == 1]
+if len(one_trade) > 0:
+    print(f"4. APENAS 1 TRADE (estatisticamente insignificante): {len(one_trade)} estrategias")
+    print(f"   Estrategias: {', '.join(one_trade['strategy'].tolist())}")
+    print()
+
+# ============================================================================
+# RECOMENDACOES
+# ============================================================================
+
+print("RECOMENDACOES:")
+print("=" * 100)
+print()
+
+print("PRIORIDADE ALTA:")
+print("  1. FIX BOLLINGER MEAN REVERSION - Overtrading severo (3,861 trades, -132%)")
+print("     Causa provavel: Condicoes de entrada muito permissivas")
+print("     Solucao: Adicionar filtros (ADX, volume, distancia de BB)")
+print()
+
+print("  2. FIX ESTRATEGIAS COM < 20% WIN RATE:")
+for i, row in low_winrate.iterrows():
+    print(f"     - {row['strategy']}")
+print("     Solucao: Revisar logica, adicionar confirmacoes")
+print()
+
+print("PRIORIDADE MEDIA:")
+print("  3. OTIMIZAR CCI EXTREME SNAPBACK (+8.75%, 57.6% WR)")
+print("     Ja funciona bem, mas pode melhorar com parameter tuning")
+print()
+
+print("  4. INVESTIGAR 19 ESTRATEGIAS COM 1 TRADE")
+print("     Condicoes muito restritivas OU indicadores em falta")
+print("     Considerar relaxar filtros em algumas estrategias")
+print()
+
+print("PRIORIDADE BAIXA:")
+print("  5. Walk-forward analysis nas TOP 5")
+print("  6. Out-of-sample testing")
+print("  7. Ensemble das melhores estrategias")
+print()
+
+# ============================================================================
+# ESTATISTICAS GERAIS
+# ============================================================================
+
+print("ESTATISTICAS GERAIS:")
+print("=" * 100)
+print(f"  Total de estrategias: {len(df)}")
+print(f"  Lucrativas: {(df['return'] > 0).sum()} ({(df['return'] > 0).sum()/len(df)*100:.1f}%)")
+print(f"  Prejuizo: {(df['return'] < 0).sum()} ({(df['return'] < 0).sum()/len(df)*100:.1f}%)")
+print(f"  Break-even: {(df['return'] == 0).sum()}")
+print()
+print(f"  Retorno medio: {df['return'].mean():+.2f}%")
+print(f"  Retorno mediano: {df['return'].median():+.2f}%")
+print(f"  Melhor: {df['return'].max():+.2f}% ({df.loc[df['return'].idxmax(), 'strategy']})")
+print(f"  Pior: {df['return'].min():+.2f}% ({df.loc[df['return'].idxmin(), 'strategy']})")
+print()
+print(f"  Win rate medio: {df['win_rate'].mean():.1f}%")
+print(f"  Win rate mediano: {df['win_rate'].median():.1f}%")
+print(f"  Melhor WR: {df['win_rate'].max():.1f}% ({df.loc[df['win_rate'].idxmax(), 'strategy']})")
+print()
+print(f"  Total de trades (todas): {df['trades'].sum():.0f}")
+print(f"  Media de trades: {df['trades'].mean():.1f}")
+print(f"  Mediana de trades: {df['trades'].median():.1f}")
+print()
+
+# Save detailed analysis
+df.to_csv("detailed_strategy_analysis.csv", index=False)
+print("Analise detalhada salva em: detailed_strategy_analysis.csv")
+print()

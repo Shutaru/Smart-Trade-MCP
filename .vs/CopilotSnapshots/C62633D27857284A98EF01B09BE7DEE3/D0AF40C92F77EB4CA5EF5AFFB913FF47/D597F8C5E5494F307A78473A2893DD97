@@ -1,0 +1,43 @@
+﻿"""NY Session Fade"""
+
+from typing import List
+import pandas as pd
+
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
+
+
+class NySessionFade(BaseStrategy):
+    def __init__(self, config: StrategyConfig = None):
+        super().__init__(config)
+
+    def get_required_indicators(self) -> List[str]:
+        return ["rsi", "bollinger", "atr"]
+
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r = df.iloc[i]
+            close = r["close"]
+            bb_u, bb_l = r.get("bb_upper", close), r.get("bb_lower", close)
+            rsi, atr = r.get("rsi", 50), r.get("atr", close * 0.02)
+            if pos is None:
+                if close >= bb_u and rsi > 70:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(
+                        Signal(
+                            SignalType.SHORT,
+                            r["timestamp"],
+                            close,
+                            0.7,
+                            sl,
+                            tp,
+                            {},
+                        )
+                    )
+                    pos = "SHORT"
+        logger.info(f"NySessionFade: {len(signals)} signals")
+        return signals
+
+
+__all__ = ["NySessionFade"]

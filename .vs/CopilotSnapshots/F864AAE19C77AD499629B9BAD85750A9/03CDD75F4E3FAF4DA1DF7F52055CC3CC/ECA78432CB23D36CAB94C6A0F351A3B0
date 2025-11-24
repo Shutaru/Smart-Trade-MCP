@@ -1,0 +1,174 @@
+﻿"""
+Walk-Forward Analysis - TOP 3 Strategies
+
+Validates the top performing strategies using out-of-sample testing.
+"""
+
+import asyncio
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from src.core.backtest_engine import BacktestEngine
+from src.core.data_manager import DataManager
+from src.core.indicators import calculate_all_indicators
+from src.strategies import registry
+
+print("=" * 80)
+print("WALK-FORWARD ANALYSIS - TOP 3 STRATEGIES")
+print("=" * 80)
+print()
+
+# TOP 3 strategies from backtest results
+TOP_STRATEGIES = [
+    "multi_oscillator_confluence",  # #1: +15.27%, 240 trades, 66.2% WR
+    "cci_extreme_snapback",          # #2: +8.75%, 495 trades, 57.6% WR
+    "bollinger_mean_reversion",      # #3: +2.91%, 87 trades, 57.5% WR
+]
+
+
+async def validate_strategy(strategy_name: str):
+    """Run Walk-Forward Analysis on a strategy."""
+    
+    print("-" * 80)
+    print(f"VALIDATING: {strategy_name}")
+    print("-" * 80)
+    print()
+    
+    try:
+        # Get strategy
+        strategy = registry.get(strategy_name)
+        print(f"[OK] Strategy loaded: {strategy.name}")
+        
+        # Fetch data
+        print("Fetching market data...")
+        dm = DataManager()
+        
+        df = await dm.fetch_ohlcv(
+            symbol="BTC/USDT",
+            timeframe="1h",
+            limit=1000,  # ~42 days
+        )
+        
+        await dm.close()
+        
+        print(f"[OK] Fetched {len(df)} candles")
+        print(f"    Period: {df['timestamp'].iloc[0]} to {df['timestamp'].iloc[-1]}")
+        
+        # Calculate indicators
+        print("Calculating indicators...")
+        required = strategy.get_required_indicators()
+        df = calculate_all_indicators(df, required, use_gpu=False)  # CPU for now
+        print(f"[OK] Calculated {len(required)} indicators")
+        
+        # Run Walk-Forward Analysis
+        print()
+        print("Running Walk-Forward Analysis...")
+        print("  Train: 25 days")
+        print("  Test: 8 days")
+        print("  Step: 5 days")
+        print()
+        
+        engine = BacktestEngine(initial_capital=10000.0, use_gpu=False)
+        
+        results = engine.walk_forward_analysis(
+            strategy=strategy,
+            df=df,
+            train_days=25,   # 25 days training
+            test_days=8,     # 8 days testing
+            step_days=5,     # 5 days step
+            parallel=True,   # CPU parallelism
+            n_jobs=-1,
+        )
+        
+        # Print results
+        print()
+        print("=" * 80)
+        print(f"RESULTS: {strategy_name.upper()}")
+        print("=" * 80)
+        print()
+        print(f"Windows analyzed:     {results['n_windows']}")
+        print(f"Stability Ratio:      {results['stability_ratio']:.2f} (target: >0.7)")
+        print(f"Consistency:          {results['consistency']:.1f}% (target: >70%)")
+        print(f"Avg In-Sample:        {results['avg_in_sample_return']:.2f}%")
+        print(f"Avg Out-Sample:       {results['avg_out_sample_return']:.2f}%")
+        print()
+        print(f"Recommendation:       {results['recommendation']}")
+        print()
+        
+        # Interpret results
+        if results['recommendation'].startswith("PASS"):
+            print("[SUCCESS] Strategy VALIDATED! Ready for production.")
+        elif results['recommendation'].startswith("MARGINAL"):
+            print("[WARNING] Strategy needs parameter tuning.")
+        else:
+            print("[FAILED] Strategy likely overfitted - DO NOT USE.")
+        
+        print()
+        
+        return results
+        
+    except Exception as e:
+        print(f"[ERROR] Validation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+async def main():
+    """Main validation loop."""
+    
+    results_summary = []
+    
+    for i, strategy_name in enumerate(TOP_STRATEGIES, 1):
+        print()
+        print(f"[{i}/{len(TOP_STRATEGIES)}] Testing {strategy_name}...")
+        print()
+        
+        results = await validate_strategy(strategy_name)
+        
+        if results:
+            results_summary.append({
+                'strategy': strategy_name,
+                'stability_ratio': results['stability_ratio'],
+                'consistency': results['consistency'],
+                'recommendation': results['recommendation'],
+            })
+        
+        print()
+    
+    # Final summary
+    print("=" * 80)
+    print("VALIDATION SUMMARY")
+    print("=" * 80)
+    print()
+    
+    for result in results_summary:
+        status = "PASS" if result['recommendation'].startswith("PASS") else \
+                 "WARN" if result['recommendation'].startswith("MARGINAL") else "FAIL"
+        
+        print(f"[{status}] {result['strategy']}")
+        print(f"      Stability: {result['stability_ratio']:.2f}")
+        print(f"      Consistency: {result['consistency']:.1f}%")
+        print()
+    
+    # Count validated
+    validated = sum(1 for r in results_summary if r['recommendation'].startswith("PASS"))
+    
+    print(f"Validated: {validated}/{len(results_summary)} strategies")
+    print()
+    
+    if validated > 0:
+        print(f"[SUCCESS] {validated} strategies ready for parameter optimization!")
+    else:
+        print("[WARNING] No strategies validated - need to adjust parameters or create new ones")
+    
+    print()
+    print("=" * 80)
+    print("VALIDATION COMPLETE")
+    print("=" * 80)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

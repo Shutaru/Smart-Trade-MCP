@@ -1,0 +1,51 @@
+﻿# Commit Message
+
+feat: add comprehensive debug logging and test suite for 6-day backtest issue
+
+## Changes
+
+### Core Functionality
+- Enhanced backtest tool with detailed debug logging (v2.0.1-debug)
+- Added parameter validation and data coverage warnings
+- Handle empty string vs None for optional MCP parameters
+- Added version tracking to MCP server startup
+
+### Test Suite
+- test_data_manager.py: Direct DataManager fetch test
+- test_mcp_tool_direct.py: Backtest tool test without MCP
+- check_mcp_status.ps1: PowerShell diagnostic script
+
+### Documentation
+- DEBUG_6DAY_ISSUE.md: Detailed debugging plan
+- PROXIMOS_PASSOS.md: Complete roadmap (Phases 1-5)
+- ACOES_REALIZADAS.md: Session summary
+- TESTE_CLAUDE_DESKTOP.md: Complete testing guide
+- ESTADO_ATUAL.md: Current project status
+- QUICKSTART.md: Quick testing instructions
+
+### Test Results
+- ? test_data_manager.py: PASS (8760 candles, 364 days)
+- ? test_mcp_tool_direct.py: PASS (364 days, 21 trades)
+- ? Claude Desktop integration test: PENDING
+
+### Files Modified
+- src/mcp_server/tools/backtest.py
+- src/mcp_server/server.py
+
+### Next Steps
+1. Test in Claude Desktop using QUICKSTART.md
+2. Analyze logs if issue persists
+3. Mark issue as resolved if test passes
+
+### Technical Details
+
+**Problem:** MCP backtest fetches only 6 days instead of 1 year
+**Root Cause:** Unknown - suspected MCP parameter handling
+**Hypothesis:** Claude Desktop sends empty strings instead of None
+**Fix Applied:** Handle both None and "" for start_date/end_date
+**Validation:** Local tests pass (8760 candles), awaiting MCP test
+
+### References
+- Issue: Heritage.md ? Known Issues ? Issue #1
+- Documentation: See TESTE_CLAUDE_DESKTOP.md for testing
+- Debug Plan: DEBUG_6DAY_ISSUE.md

@@ -1,0 +1,767 @@
+﻿"""
+Backtest Engine
+
+Professional backtesting system with position tracking, risk management, and performance metrics.
+Includes advanced validation methods: Walk-Forward Analysis, K-Fold Cross-Validation, Monte Carlo Simulation.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import List, Optional, Dict, Any, Callable
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
+
+import pandas as pd
+import numpy as np
+
+from ..strategies import BaseStrategy, SignalType
+from ..core.logger import logger
+
+
+class PositionSide(Enum):
+    """Position side enum."""
+    
+    LONG = "LONG"
+    SHORT = "SHORT"
+
+
+@dataclass
+class Position:
+    """Active trading position."""
+    
+    side: PositionSide
+    entry_price: float
+    quantity: float
+    entry_time: datetime
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    unrealized_pnl: float = 0.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Trade:
+    """Closed trade record."""
+    
+    side: PositionSide
+    entry_price: float
+    exit_price: float
+    quantity: float
+    entry_time: datetime
+    exit_time: datetime
+    pnl: float
+    pnl_percent: float
+    fees: float
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    exit_reason: str = "unknown"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert trade to dictionary."""
+        return {
+            "side": self.side.value,
+            "entry_price": self.entry_price,
+            "exit_price": self.exit_price,
+            "quantity": self.quantity,
+            "entry_time": str(self.entry_time),
+            "exit_time": str(self.exit_time),
+            "pnl": self.pnl,
+            "pnl_percent": self.pnl_percent,
+            "fees": self.fees,
+            "stop_loss": self.stop_loss,
+            "take_profit": self.take_profit,
+            "exit_reason": self.exit_reason,
+            "metadata": self.metadata,
+        }
+
+
+class BacktestEngine:
+    """
+    Backtest engine for strategy validation.
+    
+    Simulates live trading with proper position tracking, risk management,
+    and performance metrics calculation.
+    
+    Advanced Features:
+    - Walk-Forward Analysis (rolling out-of-sample validation)
+    - K-Fold Cross-Validation
+    - Monte Carlo Simulation
+    - Parallel execution support
+    """
+
+    def __init__(
+        self,
+        initial_capital: float = 10000.0,
+        commission_rate: float = 0.001,  # 0.1% per trade
+        slippage_rate: float = 0.0005,  # 0.05% slippage
+    ):
+        """
+        Initialize backtest engine.
+
+        Args:
+            initial_capital: Starting capital
+            commission_rate: Commission as fraction (e.g., 0.001 = 0.1%)
+            slippage_rate: Slippage as fraction
+        """
+        self.initial_capital = initial_capital
+        self.commission_rate = commission_rate
+        self.slippage_rate = slippage_rate
+
+        # State
+        self.cash = initial_capital
+        self.equity = initial_capital
+        self.position: Optional[Position] = None
+        self.trades: List[Trade] = []
+        self.equity_curve: List[tuple[datetime, float]] = []
+
+        logger.info(
+            f"Backtest engine initialized: capital=${initial_capital}, "
+            f"commission={commission_rate*100}%, slippage={slippage_rate*100}%"
+        )
+
+    def run(
+        self,
+        strategy: BaseStrategy,
+        df: pd.DataFrame,
+    ) -> Dict[str, Any]:
+        """
+        Run backtest on historical data.
+
+        Args:
+            strategy: Trading strategy instance
+            df: DataFrame with OHLCV and indicators
+
+        Returns:
+            Dictionary with backtest results
+        """
+        logger.info(f"Running backtest for {strategy.name}")
+
+        # Reset state
+        self._reset()
+
+        # Generate signals
+        df_with_signals = strategy.backtest_signals(df)
+
+        # Simulate trading
+        for idx in range(len(df_with_signals)):
+            row = df_with_signals.iloc[idx]
+            self._process_bar(row)
+
+        # Close any open position at end
+        if self.position:
+            last_row = df_with_signals.iloc[-1]
+            self._close_position(
+                last_row["timestamp"],
+                last_row["close"],
+                "end_of_data",
+            )
+
+        # Calculate metrics
+        metrics = self._calculate_metrics()
+
+        logger.info(
+            f"Backtest complete: {len(self.trades)} trades, "
+            f"Final equity: ${self.equity:.2f}"
+        )
+
+        return {
+            "strategy": strategy.name,
+            "initial_capital": self.initial_capital,
+            "final_equity": self.equity,
+            "total_return": (self.equity / self.initial_capital - 1) * 100,
+            "total_trades": len(self.trades),
+            "metrics": metrics,
+            "trades": [t.to_dict() for t in self.trades],
+            "equity_curve": [
+                {"timestamp": str(ts), "equity": eq}
+                for ts, eq in self.equity_curve
+            ],
+        }
+
+    def walk_forward_analysis(
+        self,
+        strategy: BaseStrategy,
+        df: pd.DataFrame,
+        train_days: int = 180,
+        test_days: int = 60,
+        step_days: int = 30,
+        optimize_func: Optional[Callable] = None,
+        parallel: bool = True,
+        n_jobs: int = -1,
+    ) -> Dict[str, Any]:
+        """
+        Perform Walk-Forward Analysis (rolling window validation).
+        
+        WFA divides data into multiple train/test windows and validates
+        strategy performance out-of-sample. Critical for detecting overfitting.
+        
+        Args:
+            strategy: Trading strategy to validate
+            df: Full historical data
+            train_days: Training window size in days
+            test_days: Testing window size in days
+            step_days: Step size for rolling window (< test_days for overlap)
+            optimize_func: Optional function to optimize params on train data
+            parallel: Execute windows in parallel
+            n_jobs: Number of parallel workers (-1 = all CPUs)
+            
+        Returns:
+            Dictionary with WFA results including:
+            - windows: List of train/test results per window
+            - stability_ratio: out_of_sample / in_sample return
+            - consistency: % of profitable out-sample windows
+            - avg_in_sample_return: Average training return
+            - avg_out_sample_return: Average testing return
+            - recommendation: PASS/FAIL based on thresholds
+            
+        Example:
+            >>> engine = BacktestEngine()
+            >>> results = engine.walk_forward_analysis(
+            ...     strategy=my_strategy,
+            ...     df=data,
+            ...     train_days=180,
+            ...     test_days=60,
+            ...     step_days=30
+            ... )
+            >>> print(f"Stability Ratio: {results['stability_ratio']:.2f}")
+        """
+        logger.info(
+            f"Starting Walk-Forward Analysis: {strategy.name}, "
+            f"train={train_days}d, test={test_days}d, step={step_days}d"
+        )
+        
+        # Validate data size
+        min_required_days = train_days + test_days
+        actual_days = (df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).days
+        
+        if actual_days < min_required_days:
+            raise ValueError(
+                f"Insufficient data: need {min_required_days} days, "
+                f"got {actual_days} days"
+            )
+        
+        # Create rolling windows
+        windows = self._create_wfa_windows(df, train_days, test_days, step_days)
+        
+        logger.info(f"Created {len(windows)} WFA windows")
+        
+        # Execute windows (parallel or serial)
+        if parallel and len(windows) > 1:
+            window_results = self._execute_wfa_parallel(
+                strategy, windows, optimize_func, n_jobs
+            )
+        else:
+            window_results = self._execute_wfa_serial(
+                strategy, windows, optimize_func
+            )
+        
+        # Calculate aggregate metrics
+        analysis = self._analyze_wfa_results(window_results)
+        
+        logger.info(
+            f"WFA complete: Stability={analysis['stability_ratio']:.2f}, "
+            f"Consistency={analysis['consistency']:.1f}%, "
+            f"Recommendation={analysis['recommendation']}"
+        )
+        
+        return analysis
+
+    def _create_wfa_windows(
+        self,
+        df: pd.DataFrame,
+        train_days: int,
+        test_days: int,
+        step_days: int,
+    ) -> List[Dict[str, Any]]:
+        """Create rolling train/test windows for WFA."""
+        windows = []
+        window_id = 1
+        
+        start_date = df['timestamp'].iloc[0]
+        end_date = df['timestamp'].iloc[-1]
+        
+        current_start = start_date
+        
+        while True:
+            train_start = current_start
+            train_end = train_start + timedelta(days=train_days)
+            test_start = train_end
+            test_end = test_start + timedelta(days=test_days)
+            
+            # Check if we have enough data for this window
+            if test_end > end_date:
+                break
+            
+            # Extract data for this window
+            train_mask = (df['timestamp'] >= train_start) & (df['timestamp'] < train_end)
+            test_mask = (df['timestamp'] >= test_start) & (df['timestamp'] < test_end)
+            
+            train_df = df[train_mask].copy()
+            test_df = df[test_mask].copy()
+            
+            # Skip if insufficient data
+            if len(train_df) < 100 or len(test_df) < 20:
+                logger.warning(f"Window {window_id}: insufficient data, skipping")
+                current_start += timedelta(days=step_days)
+                window_id += 1
+                continue
+            
+            windows.append({
+                'window_id': window_id,
+                'train_start': train_start,
+                'train_end': train_end,
+                'test_start': test_start,
+                'test_end': test_end,
+                'train_df': train_df,
+                'test_df': test_df,
+            })
+            
+            # Move to next window
+            current_start += timedelta(days=step_days)
+            window_id += 1
+        
+        return windows
+
+    def _execute_wfa_serial(
+        self,
+        strategy: BaseStrategy,
+        windows: List[Dict[str, Any]],
+        optimize_func: Optional[Callable],
+    ) -> List[Dict[str, Any]]:
+        """Execute WFA windows serially (single-threaded)."""
+        results = []
+        
+        for window in windows:
+            result = self._execute_single_window(strategy, window, optimize_func)
+            results.append(result)
+            
+            logger.info(
+                f"Window {window['window_id']}/{len(windows)}: "
+                f"In-sample={result['in_sample_return']:.2f}%, "
+                f"Out-sample={result['out_sample_return']:.2f}%"
+            )
+        
+        return results
+
+    def _execute_wfa_parallel(
+        self,
+        strategy: BaseStrategy,
+        windows: List[Dict[str, Any]],
+        optimize_func: Optional[Callable],
+        n_jobs: int,
+    ) -> List[Dict[str, Any]]:
+        """Execute WFA windows in parallel (multi-process)."""
+        if n_jobs == -1:
+            n_jobs = mp.cpu_count()
+        
+        n_jobs = min(n_jobs, len(windows))  # Don't use more workers than windows
+        
+        logger.info(f"Executing {len(windows)} windows in parallel using {n_jobs} workers")
+        
+        results = []
+        
+        with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+            # Submit all windows
+            future_to_window = {
+                executor.submit(
+                    self._execute_single_window_static,
+                    strategy,
+                    window,
+                    optimize_func,
+                    self.initial_capital,
+                    self.commission_rate,
+                    self.slippage_rate,
+                ): window
+                for window in windows
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_window):
+                window = future_to_window[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    
+                    logger.info(
+                        f"Window {window['window_id']}/{len(windows)} complete: "
+                        f"In={result['in_sample_return']:.2f}%, "
+                        f"Out={result['out_sample_return']:.2f}%"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Window {window['window_id']} failed: {e}",
+                        exc_info=True
+                    )
+        
+        # Sort by window_id
+        results.sort(key=lambda x: x['window_id'])
+        
+        return results
+
+    @staticmethod
+    def _execute_single_window_static(
+        strategy: BaseStrategy,
+        window: Dict[str, Any],
+        optimize_func: Optional[Callable],
+        initial_capital: float,
+        commission_rate: float,
+        slippage_rate: float,
+    ) -> Dict[str, Any]:
+        """
+        Static method for parallel execution (must be picklable).
+        
+        Note: Instance methods can't be pickled for multiprocessing,
+        so we use a static method instead.
+        """
+        # Create fresh engine for this window
+        engine = BacktestEngine(
+            initial_capital=initial_capital,
+            commission_rate=commission_rate,
+            slippage_rate=slippage_rate,
+        )
+        
+        return engine._execute_single_window(strategy, window, optimize_func)
+
+    def _execute_single_window(
+        self,
+        strategy: BaseStrategy,
+        window: Dict[str, Any],
+        optimize_func: Optional[Callable],
+    ) -> Dict[str, Any]:
+        """Execute a single WFA window (train + test)."""
+        # Train phase
+        if optimize_func:
+            # Optimize parameters on training data
+            optimized_strategy = optimize_func(strategy, window['train_df'])
+        else:
+            optimized_strategy = strategy
+        
+        # Backtest on training data (in-sample)
+        train_results = self.run(optimized_strategy, window['train_df'])
+        
+        # Backtest on testing data (out-of-sample)
+        test_results = self.run(optimized_strategy, window['test_df'])
+        
+        return {
+            'window_id': window['window_id'],
+            'train_start': str(window['train_start']),
+            'train_end': str(window['train_end']),
+            'test_start': str(window['test_start']),
+            'test_end': str(window['test_end']),
+            'in_sample_return': train_results['total_return'],
+            'out_sample_return': test_results['total_return'],
+            'in_sample_trades': train_results['total_trades'],
+            'out_sample_trades': test_results['total_trades'],
+            'in_sample_sharpe': train_results['metrics']['sharpe_ratio'],
+            'out_sample_sharpe': test_results['metrics']['sharpe_ratio'],
+            'in_sample_win_rate': train_results['metrics']['win_rate'],
+            'out_sample_win_rate': test_results['metrics']['win_rate'],
+        }
+
+    def _analyze_wfa_results(
+        self,
+        window_results: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Analyze WFA results and generate metrics."""
+        if not window_results:
+            return {
+                'error': 'No valid windows',
+                'recommendation': 'FAIL'
+            }
+        
+        # Extract metrics
+        in_sample_returns = [w['in_sample_return'] for w in window_results]
+        out_sample_returns = [w['out_sample_return'] for w in window_results]
+        
+        avg_in_sample = np.mean(in_sample_returns)
+        avg_out_sample = np.mean(out_sample_returns)
+        
+        # Stability ratio (out-of-sample / in-sample)
+        # Values close to 1.0 are ideal (no overfitting)
+        # Values > 0.7 are acceptable
+        if avg_in_sample > 0:
+            stability_ratio = avg_out_sample / avg_in_sample
+        else:
+            stability_ratio = 0.0
+        
+        # Consistency: % of profitable out-of-sample windows
+        profitable_windows = sum(1 for r in out_sample_returns if r > 0)
+        consistency = (profitable_windows / len(out_sample_returns)) * 100
+        
+        # Recommendation logic
+        if stability_ratio >= 0.7 and consistency >= 70 and avg_out_sample > 0:
+            recommendation = "PASS - Strategy validated, ready for optimization"
+        elif stability_ratio >= 0.5 and consistency >= 50:
+            recommendation = "MARGINAL - Consider parameter tuning"
+        else:
+            recommendation = "FAIL - Likely overfitting, do not use in production"
+        
+        return {
+            'windows': window_results,
+            'n_windows': len(window_results),
+            'stability_ratio': round(stability_ratio, 3),
+            'consistency': round(consistency, 1),
+            'avg_in_sample_return': round(avg_in_sample, 2),
+            'avg_out_sample_return': round(avg_out_sample, 2),
+            'std_in_sample_return': round(np.std(in_sample_returns), 2),
+            'std_out_sample_return': round(np.std(out_sample_returns), 2),
+            'best_window': max(window_results, key=lambda x: x['out_sample_return']),
+            'worst_window': min(window_results, key=lambda x: x['out_sample_return']),
+            'recommendation': recommendation,
+        }
+
+    def _reset(self) -> None:
+        """Reset backtest state."""
+        self.cash = self.initial_capital
+        self.equity = self.initial_capital
+        self.position = None
+        self.trades = []
+        self.equity_curve = []
+
+    def _process_bar(self, row: pd.Series) -> None:
+        """
+        Process a single bar (candle).
+
+        Args:
+            row: DataFrame row with OHLCV and signal data
+        """
+        timestamp = row["timestamp"]
+        high = row["high"]
+        low = row["low"]
+        close = row["close"]
+
+        # Check for stop loss / take profit hits
+        if self.position:
+            self._check_exits(timestamp, high, low, close)
+
+        # Check for new signals
+        signal = row.get("signal", SignalType.HOLD.value)
+
+        if signal == SignalType.LONG.value and not self.position:
+            self._open_position(
+                PositionSide.LONG,
+                timestamp,
+                row["signal_price"],
+                row.get("stop_loss"),
+                row.get("take_profit"),
+            )
+        elif signal == SignalType.SHORT.value and not self.position:
+            self._open_position(
+                PositionSide.SHORT,
+                timestamp,
+                row["signal_price"],
+                row.get("stop_loss"),
+                row.get("take_profit"),
+            )
+        elif signal == SignalType.CLOSE_LONG.value and self.position:
+            if self.position.side == PositionSide.LONG:
+                self._close_position(timestamp, close, "signal_exit")
+        elif signal == SignalType.CLOSE_SHORT.value and self.position:
+            if self.position.side == PositionSide.SHORT:
+                self._close_position(timestamp, close, "signal_exit")
+
+        # Update equity
+        self._update_equity(timestamp, close)
+
+    def _open_position(
+        self,
+        side: PositionSide,
+        timestamp: datetime,
+        price: float,
+        stop_loss: Optional[float],
+        take_profit: Optional[float],
+    ) -> None:
+        """Open a new position."""
+        # Apply slippage
+        entry_price = price * (1 + self.slippage_rate) if side == PositionSide.LONG else price * (1 - self.slippage_rate)
+
+        # Calculate position size - Use fixed percentage of initial capital
+        position_value = self.initial_capital * 0.10  # 10% of capital per trade (realistic)
+        quantity = position_value / entry_price
+
+        # Calculate entry fees
+        entry_fees = quantity * entry_price * self.commission_rate
+
+        self.position = Position(
+            side=side,
+            entry_price=entry_price,
+            quantity=quantity,
+            entry_time=timestamp,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+        )
+
+        # Deduct position value from cash (fees will be deducted on close from P&L)
+        self.cash -= position_value
+
+        logger.debug(
+            f"Opened {side.value} position: qty={quantity:.4f}, "
+            f"price=${entry_price:.2f}, value=${position_value:.2f}"
+        )
+
+    def _close_position(
+        self,
+        timestamp: datetime,
+        price: float,
+        reason: str,
+    ) -> None:
+        """Close the current position."""
+        if not self.position:
+            return
+
+        # Apply slippage
+        exit_price = price * (1 - self.slippage_rate) if self.position.side == PositionSide.LONG else price * (1 + self.slippage_rate)
+
+        # Calculate raw P&L (before fees)
+        if self.position.side == PositionSide.LONG:
+            raw_pnl = (exit_price - self.position.entry_price) * self.position.quantity
+        else:  # SHORT
+            raw_pnl = (self.position.entry_price - exit_price) * self.position.quantity
+
+        # Calculate total fees (entry + exit)
+        entry_fees = self.position.quantity * self.position.entry_price * self.commission_rate
+        exit_fees = self.position.quantity * exit_price * self.commission_rate
+        total_fees = entry_fees + exit_fees
+
+        # Net P&L after fees
+        net_pnl = raw_pnl - total_fees
+
+        # Return to cash: original position value + net P&L
+        position_initial_value = self.position.entry_price * self.position.quantity
+        self.cash += position_initial_value + net_pnl
+
+        # Calculate P&L percentage
+        pnl_percent = (raw_pnl / position_initial_value) * 100
+
+        # Record trade
+        trade = Trade(
+            side=self.position.side,
+            entry_price=self.position.entry_price,
+            exit_price=exit_price,
+            quantity=self.position.quantity,
+            entry_time=self.position.entry_time,
+            exit_time=timestamp,
+            pnl=net_pnl,  # Net P&L after all fees
+            pnl_percent=pnl_percent,
+            fees=total_fees,
+            stop_loss=self.position.stop_loss,
+            take_profit=self.position.take_profit,
+            exit_reason=reason,
+        )
+
+        self.trades.append(trade)
+        self.position = None
+
+        logger.debug(
+            f"Closed position: pnl=${net_pnl:.2f} ({pnl_percent:.2f}%), "
+            f"reason={reason}"
+        )
+
+    def _check_exits(
+        self,
+        timestamp: datetime,
+        high: float,
+        low: float,
+        close: float,
+    ) -> None:
+        """Check if stop loss or take profit was hit."""
+        if not self.position:
+            return
+
+        if self.position.side == PositionSide.LONG:
+            # Check stop loss
+            if self.position.stop_loss and low <= self.position.stop_loss:
+                self._close_position(timestamp, self.position.stop_loss, "stop_loss")
+                return
+
+            # Check take profit
+            if self.position.take_profit and high >= self.position.take_profit:
+                self._close_position(timestamp, self.position.take_profit, "take_profit")
+                return
+
+        else:  # SHORT
+            # Check stop loss
+            if self.position.stop_loss and high >= self.position.stop_loss:
+                self._close_position(timestamp, self.position.stop_loss, "stop_loss")
+                return
+
+            # Check take profit
+            if self.position.take_profit and low <= self.position.take_profit:
+                self._close_position(timestamp, self.position.take_profit, "take_profit")
+                return
+
+    def _update_equity(self, timestamp: datetime, price: float) -> None:
+        """Update equity curve."""
+        equity = self.cash
+
+        if self.position:
+            if self.position.side == PositionSide.LONG:
+                unrealized = (price - self.position.entry_price) * self.position.quantity
+            else:  # SHORT
+                unrealized = (self.position.entry_price - price) * self.position.quantity
+
+            equity += unrealized
+
+        self.equity = equity
+        self.equity_curve.append((timestamp, equity))
+
+    def _calculate_metrics(self) -> Dict[str, Any]:
+        """Calculate performance metrics."""
+        if not self.trades:
+            return {
+                "total_trades": 0,
+                "win_rate": 0.0,
+                "avg_win": 0.0,
+                "avg_loss": 0.0,
+                "profit_factor": 0.0,
+                "sharpe_ratio": 0.0,
+                "max_drawdown": 0.0,
+                "max_drawdown_pct": 0.0,
+            }
+
+        # Basic stats
+        total_trades = len(self.trades)
+        winning_trades = [t for t in self.trades if t.pnl > 0]
+        losing_trades = [t for t in self.trades if t.pnl < 0]
+
+        win_rate = len(winning_trades) / total_trades if total_trades > 0 else 0
+        avg_win = np.mean([t.pnl for t in winning_trades]) if winning_trades else 0
+        avg_loss = np.mean([t.pnl for t in losing_trades]) if losing_trades else 0
+
+        # Profit factor
+        total_wins = sum(t.pnl for t in winning_trades)
+        total_losses = abs(sum(t.pnl for t in losing_trades))
+        profit_factor = total_wins / total_losses if total_losses > 0 else 0
+
+        # Sharpe ratio (simplified - assumes daily returns)
+        if len(self.equity_curve) > 1:
+            equity_values = np.array([eq for _, eq in self.equity_curve])
+            returns = np.diff(equity_values) / equity_values[:-1]
+            sharpe = np.sqrt(365) * np.mean(returns) / (np.std(returns) + 1e-9)
+        else:
+            sharpe = 0.0
+
+        # Max drawdown
+        equity_values = np.array([eq for _, eq in self.equity_curve])
+        running_max = np.maximum.accumulate(equity_values)
+        drawdown = equity_values - running_max
+        max_dd = np.min(drawdown)
+        max_dd_pct = (max_dd / running_max[np.argmin(drawdown)] * 100) if len(running_max) > 0 else 0
+
+        return {
+            "total_trades": total_trades,
+            "winning_trades": len(winning_trades),
+            "losing_trades": len(losing_trades),
+            "win_rate": win_rate * 100,
+            "avg_win": avg_win,
+            "avg_loss": avg_loss,
+            "profit_factor": profit_factor,
+            "sharpe_ratio": sharpe,
+            "max_drawdown": max_dd,
+            "max_drawdown_pct": max_dd_pct,
+        }
+
+
+__all__ = ["BacktestEngine", "Position", "Trade", "PositionSide"]

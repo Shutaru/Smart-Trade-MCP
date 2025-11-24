@@ -1,0 +1,163 @@
+﻿"""
+Quick Test - Run Smart Trade without MCP Server
+Tests the complete workflow directly via Python
+"""
+
+import asyncio
+from datetime import datetime, timedelta
+
+from src.core.data_manager import DataManager
+from src.core.indicators import calculate_all_indicators
+from src.core.backtest_engine import BacktestEngine
+from src.strategies import registry
+from src.mcp_server.tools.regime import detect_market_regime
+from src.mcp_server.tools.batch_compare import compare_strategies  # FIX: Changed from backtest
+from src.mcp_server.tools.optimization import optimize_strategy_parameters
+
+
+async def test_btc_pipeline():
+    """Test complete BTC pipeline"""
+    
+    print("=" * 80)
+    print("SMART TRADE - DIRECT TEST (NO MCP)")
+    print("=" * 80)
+    print()
+    
+    symbol = "BTC/USDT"
+    timeframe = "1h"
+    
+    # Step 1: Detect Regime
+    print("Step 1: Detecting Market Regime...")
+    regime_result = await detect_market_regime(symbol=symbol, timeframe=timeframe, lookback=100)
+    
+    if "error" not in regime_result:
+        regime = regime_result["regime"]
+        print(f"✅ Regime: {regime}")
+        print(f"   Confidence: {regime_result.get('confidence', 0):.1%}")
+        print()
+    else:
+        print(f"❌ Error: {regime_result.get('error')}")
+        return
+    
+    # Step 2: Choose strategies based on regime
+    print("Step 2: Selecting strategies for regime...")
+    
+    if regime == "TRENDING_UP":
+        strategies = ["ema_cloud_trend", "macd_zero_trend", "adx_trend_filter_plus"]
+    elif regime == "TRENDING_DOWN":
+        strategies = ["macd_zero_trend", "ema_cloud_trend", "adx_trend_filter_plus"]
+    elif regime == "RANGING":
+        strategies = ["bollinger_mean_reversion", "cci_extreme_snapback", "rsi_band_reversion"]
+    else:  # VOLATILE
+        strategies = ["atr_expansion_breakout", "keltner_expansion", "volatility_breakout"]
+    
+    print(f"✅ Selected strategies: {', '.join(strategies)}")
+    print()
+    
+    # Step 3: Compare strategies
+    print("Step 3: Comparing strategies (backtest)...")
+    comparison = await compare_strategies(
+        strategies=strategies,
+        symbol=symbol,
+        timeframe=timeframe
+    )
+    
+    if "error" in comparison:
+        print(f"❌ Error: {comparison['error']}")
+        return
+    
+    results = comparison.get("results", [])
+    valid = [r for r in results if "error" not in r]
+    
+    if not valid:
+        print("❌ No valid results!")
+        return
+    
+    # Sort by Sharpe
+    valid.sort(key=lambda x: x.get("sharpe_ratio", 0), reverse=True)
+    
+    print(f"✅ Tested {len(valid)} strategies")
+    print()
+    print("Top 3:")
+    for i, r in enumerate(valid[:3], 1):
+        print(f"{i}. {r['strategy']}")
+        print(f"   Sharpe: {r['sharpe_ratio']:.2f}")
+        print(f"   Return: {r['total_return']:.2f}%")
+        print(f"   Win Rate: {r['win_rate']:.1f}%")
+        print()
+    
+    # Step 4: Optimize best strategy
+    best = valid[0]
+    best_strategy = best["strategy"]
+    best_sharpe = best["sharpe_ratio"]
+    
+    print(f"Step 4: Optimizing {best_strategy}...")
+    print(f"   Current Sharpe: {best_sharpe:.2f}")
+    print()
+    
+    print("⚠️  SKIPPING OPTIMIZATION (would take 5-10 min)")
+    print("   To enable, uncomment optimization code in quick_test.py")
+    print()
+    
+    # UNCOMMENT TO RUN OPTIMIZATION (takes 5-10 min):
+    # optimization = await optimize_strategy_parameters(
+    #     strategy_name=best_strategy,
+    #     symbol=symbol,
+    #     timeframe=timeframe,
+    #     population_size=20,  # Quick test
+    #     n_generations=5,
+    #     use_ray=False
+    # )
+    # 
+    # if "error" not in optimization:
+    #     print("✅ Optimization complete!")
+    #     print()
+    #     print("Best parameters:")
+    #     for key, value in optimization["best_params"].items():
+    #         print(f"   {key}: {value}")
+    #     print()
+    #     
+    #     best_fitness = optimization["best_fitness"]
+    #     print("Performance after optimization:")
+    #     print(f"   Sharpe: {best_fitness.get('sharpe_ratio', 0):.2f}")
+    #     print(f"   Return: {best_fitness.get('total_return', 0):.2f}%")
+    #     print(f"   Win Rate: {best_fitness.get('win_rate', 0):.1f}%")
+    #     print()
+    #     
+    #     final_sharpe = best_fitness.get("sharpe_ratio", 0)
+    # else:
+    #     print(f"❌ Optimization error: {optimization['error']}")
+    #     final_sharpe = best_sharpe
+    
+    # Use current Sharpe for decision (since we skipped optimization)
+    final_sharpe = best_sharpe
+    
+    # Step 5: Decision
+    print("=" * 80)
+    print("FINAL DECISION")
+    print("=" * 80)
+    
+    if final_sharpe > 1.5:
+        print(f"✅ LAUNCH BOT!")
+        print(f"   Strategy: {best_strategy}")
+        print(f"   Sharpe: {final_sharpe:.2f}")
+        print(f"   Expected to outperform!")
+        print()
+        print("Would launch with:")
+        print(f"   Symbol: {symbol}")
+        print(f"   Timeframe: {timeframe}")
+        print(f"   Strategy: {best_strategy}")
+        print(f"   Scan Interval: 5 minutes")
+    else:
+        print(f"❌ DO NOT LAUNCH")
+        print(f"   Sharpe {final_sharpe:.2f} < 1.5 (minimum)")
+        print(f"   Strategy not profitable enough")
+    
+    print()
+    print("=" * 80)
+    print("TEST COMPLETE!")
+    print("=" * 80)
+
+
+if __name__ == "__main__":
+    asyncio.run(test_btc_pipeline())

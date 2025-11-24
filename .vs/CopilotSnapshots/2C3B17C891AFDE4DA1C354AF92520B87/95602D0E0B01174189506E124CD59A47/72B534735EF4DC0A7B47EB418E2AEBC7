@@ -1,0 +1,445 @@
+﻿# -*- coding: utf-8 -*-
+"""
+Optimization Tools for MCP
+
+Provides optimization capabilities via MCP protocol:
+- Genetic Algorithm parameter optimization
+- Portfolio optimization
+- N-Fold Walk-Forward Analysis
+"""
+
+from typing import Dict, Any, List
+from datetime import datetime, timedelta
+
+from ...core.logger import logger
+from ...core.data_manager import DataManager
+from ...core.indicators import calculate_all_indicators
+from ...strategies import registry
+from ...optimization import (
+    GeneticOptimizer,
+    OptimizationConfig,
+    WalkForwardAnalyzer,
+    WalkForwardConfig,
+    WalkForwardPresets,
+)
+from ...portfolio import PortfolioOptimizer, PortfolioConfig
+
+
+async def optimize_strategy_parameters(
+    strategy_name: str,
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    population_size: int = 20,  # ✨ CHANGED: 50 → 20 (default faster)
+    n_generations: int = 8,      # ✨ CHANGED: 20 → 8 (default faster)
+    use_ray: bool = False,
+    mode: str = "balanced",  # ✨ NEW: "fast", "balanced", "thorough"
+) -> Dict[str, Any]:
+    """
+    Optimize strategy parameters using Genetic Algorithm.
+    
+    ✨ WITH STREAMING PROGRESS: Updates sent every generation!
+    ✨ Uses META-LEARNER for intelligent parameter ranges (SMART vs NAIVE)
+    
+    ⚠️ **TIMEOUT WARNING:** Claude Desktop has 4-minute timeout!
+    - "fast" mode: pop=10, gen=5 (~1 min) ⚡
+    - "balanced" mode: pop=20, gen=8 (~2-3 min) ✅ RECOMMENDED
+    - "thorough" mode: pop=50, gen=20 (~5-8 min) ⚠️ MAY TIMEOUT!
+    
+    Args:
+        strategy_name: Name of strategy to optimize
+        symbol: Trading pair
+        timeframe: Candle timeframe
+        population_size: GA population size (overridden by mode if specified)
+        n_generations: Number of generations (overridden by mode if specified)
+        use_ray: Use Ray for parallel processing
+        mode: Optimization speed preset ("fast", "balanced", "thorough")
+        
+    Returns:
+        Dictionary with optimization results
+    """
+    logger.info(f"Optimizing {strategy_name} on {symbol} {timeframe}")
+    
+    # ✨ Apply mode presets (override manual params if mode is not default)
+    if mode != "balanced":
+        if mode == "fast":
+            population_size = 10
+            n_generations = 5
+            logger.info("⚡ FAST MODE: pop=10, gen=5 (~1 min)")
+        elif mode == "thorough":
+            population_size = 50
+            n_generations = 20
+            logger.warning("⚠️ THOROUGH MODE: pop=50, gen=20 (~5-8 min) - MAY TIMEOUT!")
+        else:
+            logger.warning(f"Unknown mode '{mode}', using manual params")
+    else:
+        logger.info(f"✅ BALANCED MODE: pop={population_size}, gen={n_generations} (~2-3 min)")
+    
+    # ✨ Progress tracking
+    progress_data = {
+        "current_generation": 0,
+        "total_generations": n_generations,
+        "best_sharpe": 0.0,
+        "status": "initializing"
+    }
+    
+    def progress_callback(generation: int, stats: Dict):
+        """Called by GA optimizer on each generation"""
+        progress_data["current_generation"] = generation
+        progress_data["best_sharpe"] = stats["best_fitness"]["sharpe_ratio"]
+        progress_data["avg_sharpe"] = stats["avg_fitness"]["sharpe_ratio"]
+        progress_data["status"] = "optimizing"
+        progress_data["elapsed_time"] = stats["elapsed_time"]
+        
+        # Log progress (will appear in Claude's console)
+        logger.info(
+            f"⏳ Gen {generation}/{n_generations}: "
+            f"Best Sharpe={stats['best_fitness']['sharpe_ratio']:.2f}, "
+            f"Avg={stats['avg_fitness']['sharpe_ratio']:.2f}"
+        )
+    
+    try:
+        # Get strategy
+        strategy = registry.get(strategy_name)
+        
+        # Fetch data
+        dm = DataManager()
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=180)  # 6 months
+        
+        logger.info(f"📊 Fetching data: {start_date.date()} to {end_date.date()}")
+        progress_data["status"] = "fetching_data"
+        
+        df = await dm.fetch_historical(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            max_candles=5000,
+        )
+        
+        await dm.close()
+        
+        if df.empty:
+            return {"error": "No data available"}
+        
+        logger.info(f"✅ Fetched {len(df)} candles")
+        
+        # Calculate indicators
+        logger.info(f"📈 Calculating indicators...")
+        progress_data["status"] = "calculating_indicators"
+        
+        required = strategy.get_required_indicators()
+        df = calculate_all_indicators(df, required, use_gpu=False)
+        
+        # ✨ Use META-LEARNER to get parameter ranges
+        from ...optimization.meta_learner import ParameterMetaLearner
+        from ...optimization.parameter_space import ParameterSpace, ParameterDefinition, ParameterType
+        
+        logger.info(f"🧠 Using Meta-Learner for smart ranges...")
+        progress_data["status"] = "meta_learning"
+        
+        meta_learner = ParameterMetaLearner()
+        
+        # Get SMART ranges (market-adaptive)
+        try:
+            smart_ranges = meta_learner.get_smart_ranges(
+                strategy_name=strategy_name,
+                df=df,
+                lookback=100
+            )
+            
+            logger.info(
+                f"✨ META-LEARNER SMART ranges: {len(smart_ranges)} parameters"
+            )
+            
+        except KeyError:
+            logger.warning(f"⚠️ No meta-learner ranges for {strategy_name}, using NAIVE defaults")
+            smart_ranges = meta_learner.get_naive_ranges(strategy_name)
+        
+        # Convert ranges to ParameterSpace
+        param_definitions = {}
+        for param_name, (min_val, max_val) in smart_ranges.items():
+            if isinstance(min_val, int) and isinstance(max_val, int):
+                param_type = ParameterType.INT
+            else:
+                param_type = ParameterType.FLOAT
+            
+            param_definitions[param_name] = ParameterDefinition(
+                name=param_name,
+                type=param_type,
+                low=min_val,
+                high=max_val,
+                description=f"Meta-learner range for {param_name}"
+            )
+        
+        param_space = ParameterSpace(
+            parameters=param_definitions,
+            strategy_name=strategy_name
+        )
+        
+        logger.info(f"✅ Parameter space: {len(param_space)} parameters")
+        
+        # Create optimization config
+        config = OptimizationConfig(
+            population_size=population_size,
+            n_generations=n_generations,
+            use_ray=use_ray,
+        )
+        
+        # Run optimization WITH PROGRESS CALLBACK
+        logger.info(f"🚀 Starting GA: pop={population_size}, gen={n_generations}")
+        progress_data["status"] = "optimizing"
+        
+        optimizer = GeneticOptimizer(
+            df=df,
+            strategy_class=strategy,
+            param_space=param_space,
+            config=config,
+            use_smart_ranges=False,  # Already using smart ranges
+            progress_callback=progress_callback,  # ✨ STREAMING!
+        )
+        
+        results = optimizer.optimize()
+        
+        progress_data["status"] = "completed"
+        
+        logger.info(
+            f"✅ Optimization complete: Sharpe={results['best_fitness']['sharpe_ratio']:.2f}, "
+            f"Time={results['total_time']:.1f}s"
+        )
+        
+        return {
+            "strategy": strategy_name,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "best_params": results["best_params"],
+            "best_fitness": results["best_fitness"],
+            "total_time": results["total_time"],
+            "total_evaluations": results["total_evaluations"],
+            "config": {
+                "population_size": population_size,
+                "n_generations": n_generations,
+            },
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Optimization error: {e}", exc_info=True)
+        progress_data["status"] = "failed"
+        progress_data["error"] = str(e)
+        return {"error": str(e)}
+
+
+async def optimize_portfolio(
+    strategies: List[str],
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    method: str = "max_sharpe",
+) -> Dict[str, Any]:
+    """
+    Optimize multi-strategy portfolio allocation.
+    
+    Finds optimal weights for combining multiple strategies.
+    
+    Args:
+        strategies: List of strategy names to combine
+        symbol: Trading pair
+        timeframe: Candle timeframe
+        method: Optimization method (equal_weight, risk_parity, max_sharpe, min_variance)
+        
+    Returns:
+        Dictionary with portfolio optimization results
+    """
+    logger.info(f"Optimizing portfolio: {len(strategies)} strategies, method={method}")
+    
+    try:
+        # Fetch data
+        dm = DataManager()
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)  # 1 year
+        
+        df = await dm.fetch_historical(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            max_candles=10000,
+        )
+        
+        await dm.close()
+        
+        if df.empty:
+            return {"error": "No data available"}
+        
+        # Calculate all required indicators
+        all_indicators = set()
+        for strategy_name in strategies:
+            strategy = registry.get(strategy_name)
+            all_indicators.update(strategy.get_required_indicators())
+        
+        df = calculate_all_indicators(df, list(all_indicators), use_gpu=False)
+        
+        # Create portfolio config
+        config = PortfolioConfig(
+            strategies=strategies,
+            optimization_method=method,
+            min_weight=0.1,
+            max_weight=0.5,
+        )
+        
+        # Run portfolio optimization
+        logger.info(f"Starting portfolio optimization...")
+        
+        optimizer = PortfolioOptimizer(df=df, config=config)
+        weights = optimizer.optimize()
+        metrics = optimizer.get_portfolio_metrics()
+        
+        logger.info(
+            f"Portfolio optimization complete: Sharpe={metrics['portfolio_sharpe']:.2f}"
+        )
+        
+        return {
+            "strategies": strategies,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "method": method,
+            "weights": weights,
+            "portfolio_metrics": {
+                "sharpe": metrics["portfolio_sharpe"],
+                "volatility": metrics["portfolio_volatility"],
+                "max_drawdown": metrics["portfolio_max_drawdown"],
+                "total_return": metrics["portfolio_total_return"],
+            },
+            "individual_performances": metrics["strategy_performances"],
+        }
+        
+    except Exception as e:
+        logger.error(f"Portfolio optimization error: {e}", exc_info=True)
+        return {"error": str(e)}
+
+
+async def run_nfold_walk_forward(
+    strategy_name: str,
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    n_folds: int = 3,
+    train_days: int = 180,
+    test_days: int = 60,
+    use_parallel: bool = True,
+) -> Dict[str, Any]:
+    """
+    Run N-Fold Walk-Forward Analysis.
+    
+    Advanced WFA with K-fold cross-validation per window.
+    Critical for robust strategy validation.
+    
+    Args:
+        strategy_name: Strategy to validate
+        symbol: Trading pair
+        timeframe: Candle timeframe
+        n_folds: Number of test folds per window
+        train_days: Training window size
+        test_days: Test window size per fold
+        use_parallel: Use Ray parallel processing
+        
+    Returns:
+        Dictionary with N-Fold WFA results
+    """
+    logger.info(
+        f"Running {n_folds}-Fold WFA: {strategy_name}, "
+        f"train={train_days}d, test={test_days}d"
+    )
+    
+    try:
+        # Get strategy
+        strategy = registry.get(strategy_name)
+        
+        # Fetch data (need enough for multiple windows + folds)
+        dm = DataManager()
+        
+        # Calculate required days
+        min_days = train_days + (test_days * n_folds * 2) + 30  # Buffer
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=min_days)
+        
+        df = await dm.fetch_historical(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            max_candles=10000,
+        )
+        
+        await dm.close()
+        
+        if df.empty:
+            return {"error": "No data available"}
+        
+        # Calculate indicators
+        required = strategy.get_required_indicators()
+        df = calculate_all_indicators(df, required, use_gpu=False)
+        
+        # Get parameter space
+        param_space_method = getattr(AllParameterSpaces, f"{strategy_name}_strategy", None)
+        
+        if param_space_method is None:
+            return {"error": f"No parameter space for {strategy_name}"}
+        
+        param_space = param_space_method()
+        
+        # Create WFA config
+        config = WalkForwardConfig(
+            train_days=train_days,
+            test_days=test_days,
+            step_days=30,
+            n_folds=n_folds,
+            use_parallel=use_parallel,
+            population_size=20,  # Quick optimization per window
+            n_generations=5,
+        )
+        
+        # Run N-Fold WFA
+        logger.info(f"Starting N-Fold WFA...")
+        
+        analyzer = WalkForwardAnalyzer(
+            df=df,
+            strategy_class=strategy,
+            param_space=param_space,
+            config=config,
+        )
+        
+        results = analyzer.analyze()
+        
+        logger.info(
+            f"N-Fold WFA complete: "
+            f"Robustness={results.robustness_score:.1f}/100, "
+            f"Valid={results.valid_windows}/{results.total_windows}"
+        )
+        
+        return {
+            "strategy": strategy_name,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "n_folds": n_folds,
+            "total_windows": results.total_windows,
+            "valid_windows": results.valid_windows,
+            "consistency_score": results.consistency_score,
+            "avg_test_sharpe": results.avg_test_sharpe,
+            "avg_sharpe_degradation": results.avg_sharpe_degradation,
+            "robustness_score": results.robustness_score,
+            "is_robust": results.is_robust,
+            "total_time": results.total_time,
+        }
+        
+    except Exception as e:
+        logger.error(f"N-Fold WFA error: {e}", exc_info=True)
+        return {"error": str(e)}
+
+
+__all__ = [
+    "optimize_strategy_parameters",
+    "optimize_portfolio",
+    "run_nfold_walk_forward",
+]

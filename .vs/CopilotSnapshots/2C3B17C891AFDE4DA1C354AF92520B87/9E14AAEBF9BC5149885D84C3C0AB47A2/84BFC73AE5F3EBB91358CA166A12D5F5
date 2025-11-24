@@ -1,0 +1,87 @@
+﻿"""
+EMA stack alignment with strong momentum
+"""
+
+from typing import List
+import pandas as pd
+
+from ..base import BaseStrategy, Signal, SignalType, StrategyConfig
+from ...core.logger import logger
+
+
+class EmaStackMomentum(BaseStrategy):
+    """
+    EmaStackMomentum - EMA stack alignment with strong momentum
+    
+    Category: momentum
+    Indicators: ema, rsi, macd, atr
+    """
+
+    def __init__(self, config: StrategyConfig = None):
+        """Initialize EmaStackMomentum strategy."""
+        super().__init__(config)
+        
+        # OPTIMIZABLE PARAMETERS
+        self.ema_fast = self.config.get("ema_fast", 8)
+        self.ema_mid = self.config.get("ema_mid", 21)
+        self.ema_slow = self.config.get("ema_slow", 55)
+        self.rsi_threshold = self.config.get("rsi_threshold", 50)
+        self.sl_atr_mult = self.config.get("sl_atr_mult", 2.0)
+        self.tp_rr_mult = self.config.get("tp_rr_mult", 2.5)
+
+    def get_required_indicators(self) -> List[str]:
+        """Required indicators for this strategy."""
+        return ['ema', 'rsi', 'macd', 'atr']
+    
+    def generate_signals(self, df: pd.DataFrame) -> List[Signal]:
+        """
+        Generate trading signals.
+        
+        Args:
+            df: DataFrame with OHLCV and indicator data
+            
+        Returns:
+            List of trading signals
+        """
+        signals, pos = [], None
+        for i in range(1, len(df)):
+            r, p = df.iloc[i], df.iloc[i-1]
+            close = r["close"]
+            ema12, ema26, ema200 = r.get("ema_12", close), r.get("ema_26", close), r.get("ema_200", close)
+            rsi, macd_hist = r.get("rsi", 50), r.get("macd_hist", 0)
+            atr = r.get("atr", close*0.02)
+            
+            # FIX: Relaxed - partial stack instead of perfect alignment
+            # LONG: Just need 12 > 26 (don't need 26 > 200)
+            partial_stack_bull = ema12 > ema26
+            partial_stack_bear = ema12 < ema26
+            
+            # FIX: Detect momentum surge
+            macd_prev = p.get("macd_hist", 0)
+            macd_surging = abs(macd_hist) > abs(macd_prev) * 1.1
+            
+            if pos is None:
+                # FIX: Relaxed conditions - partial stack + MACD surge
+                if partial_stack_bull and macd_hist > 0 and macd_surging and 35 < rsi < 75:
+                    sl, tp = self.calculate_exit_levels(SignalType.LONG, close, atr)
+                    signals.append(Signal(SignalType.LONG, r["timestamp"], close, 0.8, sl, tp, 
+                                        {"ema12": ema12, "ema26": ema26, "macd_hist": macd_hist}))
+                    pos = "LONG"
+                elif partial_stack_bear and macd_hist < 0 and macd_surging and 25 < rsi < 65:
+                    sl, tp = self.calculate_exit_levels(SignalType.SHORT, close, atr)
+                    signals.append(Signal(SignalType.SHORT, r["timestamp"], close, 0.8, sl, tp, 
+                                        {"ema12": ema12, "ema26": ema26, "macd_hist": macd_hist}))
+                    pos = "SHORT"
+            
+            # Exit when MACD reverses
+            elif pos == "LONG" and macd_hist < 0:
+                signals.append(Signal(SignalType.CLOSE_LONG, r["timestamp"], close, metadata={"reason": "MACD reversed"}))
+                pos = None
+            elif pos == "SHORT" and macd_hist > 0:
+                signals.append(Signal(SignalType.CLOSE_SHORT, r["timestamp"], close, metadata={"reason": "MACD reversed"}))
+                pos = None
+        logger.info(f"EmaStackMomentum: {len(signals)} signals")
+        return signals
+
+
+__all__ = ["EmaStackMomentum"]

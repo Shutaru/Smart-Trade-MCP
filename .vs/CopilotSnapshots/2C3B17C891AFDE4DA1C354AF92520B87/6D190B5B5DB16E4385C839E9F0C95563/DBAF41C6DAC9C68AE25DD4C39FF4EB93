@@ -1,0 +1,327 @@
+﻿# -*- coding: utf-8 -*-
+"""
+ULTIMATE STRATEGY FIXER - PERFEITO PARA 41 ESTRATEGIAS
+
+Este script:
+1. Corrige __init__ com TODOS os parametros
+2. Atualiza Meta-Learner com NAIVE ranges
+3. Atualiza AllParameterSpaces com parameter spaces
+4. Gera relatorio do que foi corrigido
+
+Usage:
+    python scripts/ultimate_fix_all.py
+"""
+
+import sys
+from pathlib import Path
+import re
+from typing import Dict, List, Tuple
+
+# Add parent to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from scripts.complete_strategy_metadata import COMPLETE_STRATEGY_METADATA
+
+
+class UltimateStrategyFixer:
+    """Fixes ALL 41 strategies to perfection"""
+    
+    def __init__(self):
+        self.metadata = COMPLETE_STRATEGY_METADATA
+        self.fixed_count = 0
+        self.failed_count = 0
+        self.results = []
+    
+    def generate_init_method(self, strategy_name: str, metadata: Dict) -> str:
+        """Generate perfect __init__ method"""
+        class_name = "".join(word.capitalize() for word in strategy_name.split("_"))
+        
+        default_params = metadata.get("default_params", {})
+        
+        if not default_params:
+            return None
+        
+        # Generate parameter initialization lines
+        param_lines = []
+        for param_name, default_value in default_params.items():
+            param_lines.append(
+                f'        self.{param_name} = self.config.get("{param_name}", {repr(default_value)})'
+            )
+        
+        init_code = f'''    def __init__(self, config: StrategyConfig = None):
+        """Initialize {class_name} strategy."""
+        super().__init__(config)
+        
+        # ✅ OPTIMIZABLE PARAMETERS (auto-generated from metadata)
+{chr(10).join(param_lines)}
+'''
+        
+        return init_code
+    
+    def extract_current_init(self, content: str) -> Tuple[str, int, int]:
+        """Extract current __init__ method"""
+        pattern = r'(    def __init__\(self.*?\):.*?)(?=\n    def |\nclass |\Z)'
+        match = re.search(pattern, content, re.DOTALL)
+        
+        if match:
+            return match.group(1), match.start(), match.end()
+        
+        return None, None, None
+    
+    def fix_strategy_file(self, file_path: Path, strategy_name: str, metadata: Dict) -> bool:
+        """Fix a single strategy file"""
+        try:
+            # Read file
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Generate new __init__
+            new_init = self.generate_init_method(strategy_name, metadata)
+            
+            if not new_init:
+                self.results.append({
+                    "strategy": strategy_name,
+                    "status": "⚠️ SKIP",
+                    "reason": "No parameters to connect"
+                })
+                return False
+            
+            # Extract current __init__
+            old_init, start_pos, end_pos = self.extract_current_init(content)
+            
+            if not old_init:
+                self.results.append({
+                    "strategy": strategy_name,
+                    "status": "❌ FAIL",
+                    "reason": "Could not find __init__ method"
+                })
+                self.failed_count += 1
+                return False
+            
+            # Replace __init__
+            new_content = content[:start_pos] + new_init + content[end_pos:]
+            
+            # Write back
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            
+            self.results.append({
+                "strategy": strategy_name,
+                "status": "✅ FIXED",
+                "params_count": len(metadata.get("default_params", {})),
+                "file": str(file_path.relative_to(Path.cwd()))
+            })
+            self.fixed_count += 1
+            return True
+            
+        except Exception as e:
+            self.results.append({
+                "strategy": strategy_name,
+                "status": "❌ ERROR",
+                "reason": str(e)
+            })
+            self.failed_count += 1
+            return False
+    
+    def update_meta_learner(self) -> bool:
+        """Update meta_learner.py with ALL NAIVE ranges"""
+        print("\n📝 Updating Meta-Learner NAIVE ranges...")
+        
+        meta_learner_file = Path("src/optimization/meta_learner.py")
+        
+        if not meta_learner_file.exists():
+            print("❌ meta_learner.py not found!")
+            return False
+        
+        # Generate NAIVE_RANGES content
+        naive_ranges_code = "    NAIVE_RANGES = {\n"
+        
+        for strategy_name, metadata in self.metadata.items():
+            default_params = metadata.get("default_params", {})
+            
+            if not default_params:
+                continue
+            
+            # Convert default_params to NAIVE ranges (wider)
+            naive_ranges_code += f'        "{strategy_name}": {{\n'
+            
+            for param_name, default_value in default_params.items():
+                if isinstance(default_value, (int, float)):
+                    # Create range: [value * 0.7, value * 1.3] for numbers
+                    min_val = default_value * 0.7
+                    max_val = default_value * 1.3
+                    
+                    if isinstance(default_value, int):
+                        min_val = int(min_val)
+                        max_val = int(max_val)
+                    else:
+                        min_val = round(min_val, 2)
+                        max_val = round(max_val, 2)
+                    
+                    naive_ranges_code += f'            "{param_name}": ({min_val}, {max_val}),\n'
+            
+            naive_ranges_code += '        },\n'
+        
+        naive_ranges_code += "    }\n"
+        
+        # Read current file
+        with open(meta_learner_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Replace NAIVE_RANGES
+        pattern = r'    NAIVE_RANGES = \{.*?\n    \}'
+        new_content = re.sub(pattern, naive_ranges_code.rstrip(), content, flags=re.DOTALL)
+        
+        # Write back
+        with open(meta_learner_file, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        
+        print(f"✅ Updated NAIVE_RANGES for {len(self.metadata)} strategies")
+        return True
+    
+    def update_all_parameter_spaces(self) -> bool:
+        """Update all_parameter_spaces.py with ALL parameter spaces"""
+        print("\n📝 Updating AllParameterSpaces...")
+        
+        spaces_file = Path("src/optimization/all_parameter_spaces.py")
+        
+        if not spaces_file.exists():
+            print("❌ all_parameter_spaces.py not found!")
+            return False
+        
+        # Generate parameter space methods
+        methods_code = ""
+        
+        for strategy_name, metadata in self.metadata.items():
+            default_params = metadata.get("default_params", {})
+            
+            if not default_params:
+                continue
+            
+            method_name = f"{strategy_name}_strategy"
+            
+            # Generate method
+            methods_code += f'''    @staticmethod
+    def {method_name}() -> ParameterSpace:
+        """{metadata.get("description", strategy_name)}"""
+        return ParameterSpace.from_dict({{
+'''
+            
+            for param_name, default_value in default_params.items():
+                if isinstance(default_value, (int, float)):
+                    param_type = "INT" if isinstance(default_value, int) else "FLOAT"
+                    
+                    # Create range
+                    min_val = default_value * 0.7
+                    max_val = default_value * 1.3
+                    
+                    if isinstance(default_value, int):
+                        min_val = int(min_val)
+                        max_val = int(max_val)
+                    else:
+                        min_val = round(min_val, 2)
+                        max_val = round(max_val, 2)
+                    
+                    methods_code += f'''            "{param_name}": {{
+                "type": ParameterType.{param_type},
+                "low": {min_val},
+                "high": {max_val},
+                "description": "{param_name.replace('_', ' ').title()}"
+            }},
+'''
+            
+            methods_code += f'        }}, strategy_name="{strategy_name}")\n    \n'
+        
+        print(f"✅ Generated {len(self.metadata)} parameter space methods")
+        
+        # Note: Manual integration needed - too complex to auto-merge
+        # Save to separate file
+        output_file = Path("src/optimization/generated_parameter_spaces.py")
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write("# -*- coding: utf-8 -*-\n")
+            f.write('"""\nAuto-generated Parameter Spaces\n\nAdd these methods to AllParameterSpaces class.\n"""\n\n')
+            f.write("from .parameter_space import ParameterSpace, ParameterType\n\n\n")
+            f.write("class GeneratedParameterSpaces:\n")
+            f.write(methods_code)
+        
+        print(f"📄 Saved to {output_file}")
+        print("⚠️  Manual step: Copy methods to AllParameterSpaces class")
+        
+        return True
+    
+    def fix_all_strategies(self):
+        """Fix ALL 41 strategies"""
+        print("=" * 70)
+        print("ULTIMATE STRATEGY FIXER - FIXING ALL 41 STRATEGIES")
+        print("=" * 70)
+        print()
+        
+        strategies_dir = Path("src/strategies/generated")
+        
+        if not strategies_dir.exists():
+            print("❌ Generated strategies directory not found!")
+            return
+        
+        total = len(self.metadata)
+        print(f"📊 Processing {total} strategies...\n")
+        
+        # Fix each strategy
+        for strategy_name, metadata in self.metadata.items():
+            file_path = strategies_dir / f"{strategy_name}.py"
+            
+            if not file_path.exists():
+                print(f"⚠️  File not found: {strategy_name}.py - SKIP")
+                continue
+            
+            print(f"🔧 Fixing {strategy_name}...", end=" ")
+            success = self.fix_strategy_file(file_path, strategy_name, metadata)
+            print("✅" if success else "❌")
+        
+        # Update supporting files
+        print()
+        self.update_meta_learner()
+        self.update_all_parameter_spaces()
+        
+        # Summary
+        print("\n" + "=" * 70)
+        print("SUMMARY")
+        print("=" * 70)
+        
+        print(f"\n📊 Total strategies: {total}")
+        print(f"✅ Fixed: {self.fixed_count}")
+        print(f"❌ Failed: {self.failed_count}")
+        print(f"⚠️  Skipped: {total - self.fixed_count - self.failed_count}")
+        
+        # Detailed results
+        print("\n📋 Detailed Results:")
+        print("-" * 70)
+        
+        for result in self.results:
+            status = result["status"]
+            strategy = result["strategy"]
+            
+            if status == "✅ FIXED":
+                params_count = result["params_count"]
+                print(f"{status} {strategy:<35} ({params_count} params)")
+            else:
+                reason = result.get("reason", "")
+                print(f"{status} {strategy:<35} {reason}")
+        
+        print("\n" + "=" * 70)
+        
+        if self.fixed_count == total:
+            print("🎉 ALL 41 STRATEGIES FIXED PERFECTLY!")
+        else:
+            print(f"⚠️  {total - self.fixed_count} strategies need manual review")
+        
+        print("=" * 70)
+
+
+def main():
+    """Main execution"""
+    fixer = UltimateStrategyFixer()
+    fixer.fix_all_strategies()
+
+
+if __name__ == "__main__":
+    main()

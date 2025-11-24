@@ -1,0 +1,88 @@
+﻿"""
+Open WebUI Tool Wrapper for Smart-Trade MCP
+
+Expõe as MCP tools como HTTP endpoints simples
+que o Qwen pode chamar via instruções no system prompt.
+"""
+
+import requests
+from typing import Dict, Any, Optional
+
+
+class SmartTradeMCPClient:
+    """Client para chamar Smart-Trade MCP tools via HTTP"""
+    
+    def __init__(self, base_url: str = "http://localhost:8765"):
+        self.base_url = base_url
+    
+    def list_strategies(self, category: Optional[str] = None) -> Dict[str, Any]:
+        """List all trading strategies"""
+        url = f"{self.base_url}/tools/list_strategies"
+        response = requests.post(url, json={"category": category})
+        return response.json()
+    
+    def backtest_strategy(
+        self,
+        strategy_name: str,
+        symbol: str = "BTC/USDT",
+        timeframe: str = "1h"
+    ) -> Dict[str, Any]:
+        """Run backtest for a strategy"""
+        url = f"{self.base_url}/tools/backtest_strategy"
+        response = requests.post(url, json={
+            "strategy_name": strategy_name,
+            "symbol": symbol,
+            "timeframe": timeframe
+        })
+        return response.json()
+    
+    def detect_regime(
+        self,
+        symbol: str = "BTC/USDT",
+        timeframe: str = "1h"
+    ) -> Dict[str, Any]:
+        """Detect market regime"""
+        url = f"{self.base_url}/tools/detect_regime"
+        response = requests.post(url, json={
+            "symbol": symbol,
+            "timeframe": timeframe
+        })
+        return response.json()
+
+
+# Exemplo de uso
+if __name__ == "__main__":
+    client = SmartTradeMCPClient()
+    
+    print("="*80)
+    print("TESTING SMART-TRADE MCP CLIENT")
+    print("="*80)
+    
+    # Test 1: List strategies
+    print("\n1. Listing strategies...")
+    result = client.list_strategies()
+    print(f"Total strategies: {result['result']['total']}")
+    print(f"First 5:")
+    for s in result['result']['strategies'][:5]:
+        print(f"  - {s['name']}: {s['description']}")
+    
+    # Test 2: Backtest
+    print("\n2. Running backtest...")
+    result = client.backtest_strategy("atr_expansion_breakout")
+    if result['success']:
+        backtest = result['result']
+        print(f"Strategy: {backtest['strategy']}")
+        print(f"Days tested: {backtest['days_tested']}")
+        print(f"Total trades: {backtest['total_trades']}")
+        print(f"Sharpe Ratio: {backtest['metrics']['sharpe_ratio']:.3f}")
+    
+    # Test 3: Detect regime
+    print("\n3. Detecting market regime...")
+    result = client.detect_regime()
+    if result['success']:
+        regime = result['result']
+        print(f"Regime: {regime['regime']}")
+        print(f"Confidence: {regime['confidence']*100:.1f}%")
+        print(f"Recommended: {', '.join(regime['recommended_strategies'][:3])}")
+    
+    print("\n" + "="*80)

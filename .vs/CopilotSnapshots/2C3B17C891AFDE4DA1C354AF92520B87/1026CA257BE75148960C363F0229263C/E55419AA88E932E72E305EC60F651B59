@@ -1,0 +1,9 @@
+﻿{
+  "mcpServers": {
+    "smart-trade": {
+      "command": "C:/Python312/python.exe",
+      "args": [ "run_mcp_server.py" ],
+      "cwd": "C:/Users/shuta/source/repos/Smart-Trade-MCP"
+    }
+  }
+}

@@ -1,0 +1,56 @@
+﻿# -*- coding: utf-8 -*-
+"""
+Logging utilities for optimization.
+
+Provides context managers to temporarily silence logging during optimization
+to prevent interference with Rich CLI dashboards.
+"""
+
+import logging
+from contextlib import contextmanager
+from typing import Generator
+
+
+@contextmanager
+def silence_all_logging() -> Generator[None, None, None]:
+    """
+    Context manager to completely silence ALL logging.
+    
+    Useful during Rich Live dashboard updates to prevent log spam
+    from interfering with the display.
+    
+    Usage:
+        with silence_all_logging():
+            # All logging is suppressed here
+            run_noisy_operation()
+        # Logging is restored here
+    """
+    # Save original levels for ALL loggers
+    root_logger = logging.getLogger()
+    original_root_level = root_logger.level
+    
+    # Get all existing loggers
+    loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
+    original_levels = {logger.name: logger.level for logger in loggers}
+    
+    try:
+        # Silence root logger
+        root_logger.setLevel(logging.CRITICAL + 10)
+        
+        # Silence all child loggers
+        for logger in loggers:
+            logger.setLevel(logging.CRITICAL + 10)
+        
+        yield
+    
+    finally:
+        # Restore root logger
+        root_logger.setLevel(original_root_level)
+        
+        # Restore all child loggers
+        for logger in loggers:
+            if logger.name in original_levels:
+                logger.setLevel(original_levels[logger.name])
+
+
+__all__ = ["silence_all_logging"]

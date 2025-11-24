@@ -1,0 +1,354 @@
+﻿# ?? AÇÕES REALIZADAS - Debug Session
+
+**Data:** 2025-11-21  
+**Objetivo:** Resolver problema dos 6 dias no MCP backtest  
+**Status:** ? Fase de Diagnóstico Implementada
+
+---
+
+## ? **COMPLETADO NESTA SESSÃO**
+
+### 1. Enhanced Logging em Backtest Tool
+
+**Ficheiro:** `src/mcp_server/tools/backtest.py`
+
+**Alterações:**
+- ? Versão atualizada para `2.0.1-debug`
+- ? Logging detalhado de parâmetros recebidos
+- ? Verificação de tipos de dados (None vs empty string)
+- ? Logging de data parsing step-by-step
+- ? Validação de cobertura de dados (requested vs actual)
+- ? Warnings para dados insuficientes
+
+**Novo Output Esperado:**
+```
+==========================================
+BACKTEST TOOL - DETAILED DEBUG LOG
+==========================================
+Tool Version: 2.0.1-debug
+Strategy: atr_expansion_breakout
+Symbol: BTC/USDT
+Timeframe: 1h
+Initial Capital: 10000.0
+------------------------------------------
+RAW PARAMETERS RECEIVED:
+  start_date: None (type: NoneType)
+  end_date: None (type: NoneType)
+==========================================
+```
+
+---
+
+### 2. Scripts de Teste Criados
+
+#### **A) test_data_manager.py**
+- ? Testa `DataManager.fetch_historical()` diretamente
+- ? Valida fetch de 1 ano de dados
+- ? Verifica se problema é na camada de dados
+
+**Como executar:**
+```bash
+python test_data_manager.py
+```
+
+**Resultado esperado:** ~8760 candles, ~365 days
+
+---
+
+#### **B) test_mcp_tool_direct.py**
+- ? Testa `backtest_strategy()` diretamente (sem MCP)
+- ? Valida se problema é no MCP protocol
+- ? Fornece validação clara de PASS/FAIL
+
+**Como executar:**
+```bash
+python test_mcp_tool_direct.py
+```
+
+**Resultado esperado:** 
+- Days tested: ~364 ?
+- Candles tested: ~8760 ?
+- Total trades: 20+ ?
+
+---
+
+### 3. Documentação Criada
+
+#### **A) DEBUG_6DAY_ISSUE.md**
+- ? Plano detalhado de debugging
+- ? Hipóteses identificadas
+- ? Passos de resolução
+- ? Referências técnicas
+
+#### **B) PROXIMOS_PASSOS.md**
+- ? Roadmap completo do projeto
+- ? Fases de desenvolvimento (1-5)
+- ? Timeline sugerida
+- ? Checklist de ações
+
+#### **C) Este ficheiro (AÇÕES_REALIZADAS.md)**
+- ? Resumo executivo da sessão
+- ? Próximos passos imediatos
+
+---
+
+## ?? **PRÓXIMOS PASSOS IMEDIATOS**
+
+### **Passo 1: Executar Testes Locais** ??
+
+Execute os scripts de teste para isolar onde está o problema:
+
+```bash
+# Terminal 1: Teste do DataManager
+python test_data_manager.py
+
+# Terminal 2: Teste do Backtest Tool (direto)
+python test_mcp_tool_direct.py
+```
+
+**Se AMBOS passarem:**
+? Problema está na integração MCP (como Claude envia parâmetros)
+
+**Se ALGUM falhar:**
+? Problema está no código Python (DataManager ou cache)
+
+---
+
+### **Passo 2: Reiniciar MCP Server**
+
+O MCP server do Claude Desktop precisa ser reiniciado para carregar a nova versão:
+
+**Opção A: Restart Claude Desktop**
+1. Fechar Claude Desktop completamente
+2. Abrir novamente
+3. Verificar que o MCP server carregou
+
+**Opção B: Via Task Manager**
+1. Abrir Task Manager
+2. Procurar processos "python" relacionados com MCP
+3. Terminar processos
+4. Reiniciar Claude Desktop
+
+---
+
+### **Passo 3: Testar via Claude Desktop**
+
+Após reiniciar, fazer pedido ao Claude:
+
+```
+Claude, backtest the atr_expansion_breakout strategy on BTC/USDT 1h.
+Do NOT specify start_date or end_date.
+Show me the tool_version, days_tested, and candles_tested.
+```
+
+**Verificar nos logs:**
+```
+%APPDATA%/Claude/logs/mcp-server-smart-trade.log
+```
+
+Procurar por:
+```
+BACKTEST TOOL - DETAILED DEBUG LOG
+```
+
+---
+
+### **Passo 4: Análise dos Resultados**
+
+#### **CENÁRIO A: Testes locais PASSAM, MCP FALHA**
+
+**Diagnóstico:** Problema na integração MCP
+
+**Hipóteses:**
+1. Claude envia `""` em vez de `None` para parâmetros opcionais
+2. MCP protocol trunca resposta se demorar muito
+3. Rate limiting no exchange quando chamado via MCP
+
+**Fix:**
+```python
+# Em backtest.py, adicionar:
+if start_date is None or start_date == "" or start_date == "null":
+    start_dt = end_dt - timedelta(days=365)
+```
+
+---
+
+#### **CENÁRIO B: Testes locais FALHAM**
+
+**Diagnóstico:** Problema no DataManager ou cache
+
+**Ações:**
+1. Limpar cache completamente:
+   ```bash
+   rm data/market/binance/BTC_USDT_1h.db
+   ```
+
+2. Verificar `data_manager.py` para logging de chunks:
+   ```python
+   logger.info(f"Fetching chunk {i+1}, since={since}")
+   ```
+
+3. Verificar se CCXT está a fazer rate limiting
+
+---
+
+#### **CENÁRIO C: Tudo PASSA**
+
+**Diagnóstico:** Cache estava desatualizado
+
+**Solução:** Problema resolvido! ??
+
+**Próximos passos:**
+1. Atualizar `Heritage.md` ? Issue resolvida
+2. Avançar para Fase 2: Backend API
+3. Conectar frontend
+
+---
+
+## ?? **DIAGNÓSTICO ESPERADO**
+
+Com base na análise do código, a hipótese mais provável é:
+
+### **HIPÓTESE #1: Empty String vs None** (70% probabilidade)
+
+**Teoria:** 
+Claude Desktop / MCP protocol envia `start_date=""` em vez de `start_date=None` para parâmetros opcionais não fornecidos.
+
+**Evidência:**
+- Python trata `""` como truthy em alguns contextos
+- `datetime.fromisoformat("")` pode falhar ou retornar data inválida
+
+**Fix aplicado:**
+```python
+# Linha 49-50 em backtest.py (NOVO)
+if start_date is None or start_date == "":
+    start_dt = end_dt - timedelta(days=365)
+```
+
+---
+
+### **HIPÓTESE #2: Cache desatualizado** (20% probabilidade)
+
+**Teoria:**
+SQLite database tem apenas 6 dias de dados guardados, e `DataManager` não está a re-fetch.
+
+**Fix:**
+```bash
+rm data/market/binance/BTC_USDT_1h.db
+```
+
+---
+
+### **HIPÓTESE #3: CCXT Rate Limiting** (10% probabilidade)
+
+**Teoria:**
+Binance API limita requests, e paginação para no 6º dia.
+
+**Fix:**
+Adicionar retry logic e delays entre requests.
+
+---
+
+## ??? **FERRAMENTAS DISPONÍVEIS**
+
+### **Para Debugging:**
+
+1. **Logs do MCP Server:**
+   ```
+   %APPDATA%/Claude/logs/mcp-server-smart-trade.log
+   ```
+
+2. **Python Logs:**
+   ```
+   logs/smart_trade.log
+   ```
+
+3. **Scripts de Teste:**
+   - `test_data_manager.py`
+   - `test_mcp_tool_direct.py`
+
+4. **Ferramentas de Análise:**
+   ```bash
+   # Ver últimos 50 linhas do log
+   Get-Content "%APPDATA%/Claude/logs/mcp-server-smart-trade.log" -Tail 50
+   
+   # Pesquisar por "DEBUG" no log
+   Select-String -Path "%APPDATA%/Claude/logs/mcp-server-smart-trade.log" -Pattern "DEBUG"
+   ```
+
+---
+
+## ?? **CHECKLIST DE VALIDAÇÃO**
+
+Antes de considerar o problema resolvido:
+
+- [ ] `test_data_manager.py` ? PASS (8760 candles)
+- [ ] `test_mcp_tool_direct.py` ? PASS (364 days)
+- [ ] Claude Desktop reiniciado
+- [ ] Tool version = `2.0.1-debug` nos logs
+- [ ] Backtest via Claude ? 364 days
+- [ ] Logs mostram "AUTO-FETCH MODE"
+- [ ] Data coverage ? 90%
+
+---
+
+## ?? **LIÇÕES APRENDIDAS**
+
+1. **Sempre adicionar logging detalhado primeiro**
+   - Facilita debugging remoto
+   - Permite diagnóstico via logs
+
+2. **Testar em camadas:**
+   - DataManager isolado
+   - Tool sem MCP
+   - Tool via MCP
+   - Identificar onde falha
+
+3. **Versionar ferramentas:**
+   - `BACKTEST_TOOL_VERSION` permite verificar reload
+   - Incluir versão nos resultados
+
+4. **Handle empty strings como None:**
+   - MCP pode enviar `""` em vez de `null`
+   - Python precisa tratar ambos
+
+---
+
+## ?? **SE PRECISAR DE AJUDA**
+
+**Documentação de Referência:**
+- `Heritage.md` - Overview completo do sistema
+- `DEBUG_6DAY_ISSUE.md` - Plano de debugging
+- `PROXIMOS_PASSOS.md` - Roadmap
+
+**Logs:**
+- MCP Server: `%APPDATA%/Claude/logs/mcp-server-smart-trade.log`
+- Python: `logs/smart_trade.log`
+
+**Contacto:**
+- GitHub Issues: https://github.com/Shutaru/Smart-Trade-MCP/issues
+
+---
+
+## ? **RESUMO FINAL**
+
+**O que fizemos:**
+1. ? Enhanced logging no backtest tool
+2. ? Scripts de teste local criados
+3. ? Documentação completa
+4. ? Plano de resolução definido
+
+**O que falta:**
+1. ? Executar testes locais
+2. ? Reiniciar MCP server
+3. ? Testar via Claude Desktop
+4. ? Aplicar fix baseado no diagnóstico
+
+**Próxima sessão:** Executar testes e resolver o problema! ??
+
+---
+
+**Última Atualização:** 2025-11-21  
+**Próxima Revisão:** Após execução dos testes
+
+**Let's ship it! ??**

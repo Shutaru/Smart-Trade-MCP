@@ -1,0 +1,254 @@
+﻿# -*- coding: utf-8 -*-
+"""
+BACKTEST FINAL - 28 ESTRATEGIAS COMPLETAS COM EXIT LOGIC
+
+Compara ANTES (resultados originais) vs DEPOIS (com exit logic corrigido)
+para todas as 28 estrategias que agora estao completas.
+"""
+
+import asyncio
+from datetime import datetime, timedelta
+import json
+import pandas as pd
+from src.core.data_manager import DataManager
+from src.core.indicators import calculate_all_indicators
+from src.core.backtest_engine import BacktestEngine
+from src.strategies import registry
+
+# 28 estrategias COMPLETAS (com exit logic)
+COMPLETE_STRATEGIES = [
+    "adx_trend_filter_plus",
+    "atr_expansion_breakout",
+    "bollinger_mean_reversion",
+    "bollinger_squeeze_breakout",
+    "cci_extreme_snapback",
+    "channel_squeeze_plus",
+    "donchian_continuation",
+    "donchian_volatility_breakout",
+    "ema_cloud_trend",
+    "ema_stack_momentum",
+    "ema_stack_regime_flip",
+    "keltner_expansion",
+    "london_breakout_atr",
+    "macd_zero_trend",
+    "mfi_divergence_reversion",
+    "mfi_impulse_momentum",
+    "multi_oscillator_confluence",
+    "obv_trend_confirmation",
+    "pure_price_action_donchian",
+    "rsi_band_reversion",
+    "rsi_supertrend_flip",
+    "stoch_signal_reversal",
+    "trend_volume_combo",
+    "trendflow_supertrend",
+    "triple_momentum_confluence",
+    "volatility_weighted_breakout",
+    "vwap_breakout",
+    "vwap_mean_reversion",
+]
+
+# Resultados ORIGINAIS (do backtest inicial)
+ORIGINAL_RESULTS = {
+    "cci_extreme_snapback": {"return": 8.75, "trades": 495, "win_rate": 57.6},
+    "bollinger_mean_reversion": {"return": 2.91, "trades": 87, "win_rate": 57.5},
+    "rsi_band_reversion": {"return": 0.08, "trades": 9, "win_rate": 55.6},
+    "multi_oscillator_confluence": {"return": 0.21, "trades": 1, "win_rate": 100.0},
+    "rsi_supertrend_flip": {"return": 0.54, "trades": 1, "win_rate": 100.0},
+    # ... adicionar outros conforme necessario
+}
+
+async def run_final_backtest():
+    print("=" * 120)
+    print("BACKTEST FINAL - 28 ESTRATEGIAS COMPLETAS")
+    print("=" * 120)
+    print()
+    
+    # Fetch data
+    print("Carregando dados de 1 ano BTC/USDT 1h...")
+    dm = DataManager()
+    end = datetime.now()
+    start = end - timedelta(days=365)
+    df = await dm.fetch_historical('BTC/USDT', '1h', start, end, 'binance')
+    await dm.close()
+    
+    print(f"OK! {len(df)} candles carregados")
+    print()
+    
+    # Calculate all indicators
+    print("Calculando todos os indicadores...")
+    all_indicators = ['rsi', 'cci', 'stochastic', 'macd', 'ema', 'sma', 'atr', 'adx', 
+                     'bollinger', 'keltner', 'donchian', 'mfi', 'obv', 'supertrend', 'vwap']
+    df = calculate_all_indicators(df, all_indicators)
+    print(f"✅ OK! Todos os indicadores calculados")
+    print()
+    
+    # Run backtest for each strategy
+    results = []
+    profitable = []
+    improved = []
+    
+    print("=" * 120)
+    print(f"{'#':<4} {'Estrategia':<45} {'Return':>10} {'Trades':>8} {'Win Rate':>10} {'Status':<15}")
+    print("=" * 120)
+    
+    for i, strategy_name in enumerate(COMPLETE_STRATEGIES, 1):
+        try:
+            strategy = registry.get(strategy_name)
+            engine = BacktestEngine(initial_capital=10000)
+            result = engine.run(strategy, df)
+            
+            ret = result["total_return"]
+            trades = result["metrics"]["total_trades"]
+            wr = result["metrics"]["win_rate"]
+            
+            # Determine status
+            if ret > 0:
+                status = "✅ LUCRATIVA"
+                profitable.append(strategy_name)
+            elif ret > -1:
+                status = "⚪ NEUTRO"
+            elif ret > -5:
+                status = "⚠️  PREJUIZO"
+            else:
+                status = "❌ RUIM"
+            
+            # Check if improved vs original
+            if strategy_name in ORIGINAL_RESULTS:
+                orig = ORIGINAL_RESULTS[strategy_name]
+                if ret > orig["return"]:
+                    status += " 📈"
+                    improved.append(strategy_name)
+            
+            print(f"{i:<4} {strategy_name:<45} {ret:+9.2f}% {trades:>7} {wr:>9.1f}% {status:<15}")
+            
+            results.append({
+                "strategy": strategy_name,
+                "return": ret,
+                "trades": trades,
+                "win_rate": wr,
+                "sharpe": result["metrics"]["sharpe_ratio"],
+                "max_drawdown": result["metrics"]["max_drawdown"],
+                "status": status
+            })
+            
+        except Exception as e:
+            print(f"{i:<4} {strategy_name:<45} ERROR: {str(e)[:30]}")
+    
+    print("=" * 120)
+    print()
+    
+    # Summary statistics
+    total_strategies = len(results)
+    avg_return = sum(r["return"] for r in results) / total_strategies if total_strategies > 0 else 0
+    avg_trades = sum(r["trades"] for r in results) / total_strategies if total_strategies > 0 else 0
+    avg_wr = sum(r["win_rate"] for r in results) / total_strategies if total_strategies > 0 else 0
+    
+    print("📊 RESUMO GERAL:")
+    print("=" * 120)
+    print(f"  Total de estrategias testadas: {total_strategies}")
+    print(f"  Estrategias lucrativas (>0%):  {len(profitable)} ({len(profitable)/total_strategies*100:.1f}%)")
+    print()
+    print(f"  📈 RETORNO MEDIO:  {avg_return:+.2f}%")
+    print(f"  📊 TRADES MEDIO:   {avg_trades:.1f}")
+    print(f"  🎯 WIN RATE MEDIO: {avg_wr:.1f}%")
+    print()
+    
+    # TOP 10 Best
+    sorted_by_return = sorted(results, key=lambda x: x["return"], reverse=True)
+    
+    print("🏆 TOP 10 MELHORES ESTRATEGIAS:")
+    print("=" * 120)
+    for i, r in enumerate(sorted_by_return[:10], 1):
+        emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+        print(f"  {emoji} {r['strategy']:<45} {r['return']:+9.2f}% | {r['trades']:>4} trades | {r['win_rate']:>5.1f}% WR")
+    print()
+    
+    # BOTTOM 5 Worst
+    print("⚠️  5 PIORES ESTRATEGIAS:")
+    print("=" * 120)
+    for i, r in enumerate(sorted_by_return[-5:], 1):
+        print(f"  {i}. {r['strategy']:<45} {r['return']:+9.2f}% | {r['trades']:>4} trades | {r['win_rate']:>5.1f}% WR")
+    print()
+    
+    # Strategies by trade frequency
+    sorted_by_trades = sorted(results, key=lambda x: x["trades"], reverse=True)
+    
+    print("📊 DISTRIBUICAO POR FREQUENCIA DE TRADES:")
+    print("=" * 120)
+    freq_1 = len([r for r in results if r["trades"] == 1])
+    freq_2_10 = len([r for r in results if 2 <= r["trades"] <= 10])
+    freq_11_50 = len([r for r in results if 11 <= r["trades"] <= 50])
+    freq_51_200 = len([r for r in results if 51 <= r["trades"] <= 200])
+    freq_200plus = len([r for r in results if r["trades"] > 200])
+    
+    print(f"  1 trade:       {freq_1} estrategias")
+    print(f"  2-10 trades:   {freq_2_10} estrategias")
+    print(f"  11-50 trades:  {freq_11_50} estrategias")
+    print(f"  51-200 trades: {freq_51_200} estrategias")
+    print(f"  >200 trades:   {freq_200plus} estrategias")
+    print()
+    
+    # Win Rate distribution
+    print("🎯 DISTRIBUICAO POR WIN RATE:")
+    print("=" * 120)
+    wr_0 = len([r for r in results if r["win_rate"] == 0])
+    wr_low = len([r for r in results if 0 < r["win_rate"] < 30])
+    wr_mid = len([r for r in results if 30 <= r["win_rate"] < 50])
+    wr_good = len([r for r in results if 50 <= r["win_rate"] < 70])
+    wr_excellent = len([r for r in results if r["win_rate"] >= 70])
+    
+    print(f"  0% WR:      {wr_0} estrategias {'❌ PROBLEMA!' if wr_0 > 0 else '✅'}")
+    print(f"  1-29% WR:   {wr_low} estrategias")
+    print(f"  30-49% WR:  {wr_mid} estrategias")
+    print(f"  50-69% WR:  {wr_good} estrategias ✅")
+    print(f"  70%+ WR:    {wr_excellent} estrategias ⭐")
+    print()
+    
+    # Profitable strategies detail
+    if profitable:
+        print("💰 ESTRATEGIAS LUCRATIVAS (DETALHES):")
+        print("=" * 120)
+        for name in profitable:
+            r = next(x for x in results if x["strategy"] == name)
+            print(f"  ✅ {name:<45} {r['return']:+9.2f}% | {r['trades']:>4} trades | {r['win_rate']:>5.1f}% WR | Sharpe: {r['sharpe']:>5.2f}")
+        print()
+    
+    # Save results
+    output = {
+        "date": datetime.now().isoformat(),
+        "total_strategies": total_strategies,
+        "profitable_count": len(profitable),
+        "avg_return": avg_return,
+        "avg_trades": avg_trades,
+        "avg_win_rate": avg_wr,
+        "profitable_strategies": profitable,
+        "improved_strategies": improved,
+        "results": results
+    }
+    
+    with open("backtest_28_complete_strategies.json", "w") as f:
+        json.dump(output, f, indent=2, default=str)
+    
+    print("=" * 120)
+    print("💾 Resultados salvos em: backtest_28_complete_strategies.json")
+    print("=" * 120)
+    print()
+    
+    # Final summary
+    print("🎯 CONCLUSAO FINAL:")
+    print("=" * 120)
+    print(f"  ✅ {len(profitable)} estrategias lucrativas de {total_strategies} testadas ({len(profitable)/total_strategies*100:.1f}%)")
+    print(f"  📈 Retorno medio: {avg_return:+.2f}%")
+    print(f"  🎯 Win rate medio: {avg_wr:.1f}%")
+    
+    if len(profitable) >= 5:
+        print(f"  🚀 SISTEMA PRONTO! Temos {len(profitable)} estrategias lucrativas para produção!")
+    elif len(profitable) >= 3:
+        print(f"  ✅ BOM! {len(profitable)} estrategias lucrativas - suficiente para portfolio diversificado")
+    else:
+        print(f"  ⚠️  Apenas {len(profitable)} lucrativas - precisamos otimizar mais")
+    
+    print("=" * 120)
+
+if __name__ == "__main__":
+    asyncio.run(run_final_backtest())

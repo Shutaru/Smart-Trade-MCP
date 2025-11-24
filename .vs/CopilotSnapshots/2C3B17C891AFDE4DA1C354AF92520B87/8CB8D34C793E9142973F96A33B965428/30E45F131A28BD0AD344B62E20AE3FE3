@@ -1,0 +1,1095 @@
+﻿"""
+Smart Trade MCP Server
+
+Main MCP server implementation following the Model Context Protocol specification.
+Provides tools, resources, and prompts for autonomous trading operations.
+"""
+
+import asyncio
+from typing import Any, Sequence
+
+from mcp.server import Server
+from mcp.server.models import InitializationOptions
+from mcp.types import (
+    Resource,
+    Tool,
+    TextContent,
+    ImageContent,
+    EmbeddedResource,
+)
+import mcp.server.stdio
+
+from ..core.config import settings
+from ..core.logger import logger
+
+# VERSION TRACKING
+MCP_SERVER_VERSION = "2.0.1-debug"  # Updated for debug logging
+
+
+class SmartTradeMCPServer:
+    """Smart Trade MCP Server."""
+
+    def __init__(self) -> None:
+        """Initialize the MCP server."""
+        self.server = Server(settings.mcp_server_name)
+        self._setup_handlers()
+        logger.info("=" * 80)
+        logger.info("SMART TRADE MCP SERVER - STARTUP")
+        logger.info("=" * 80)
+        logger.info(f"Server Name: {settings.mcp_server_name}")
+        logger.info(f"Server Version: {MCP_SERVER_VERSION}")
+        logger.info(f"Config Version: {settings.mcp_server_version}")
+        logger.info(f"Python Path: {settings.mcp_server_name}")
+        logger.info("=" * 80)
+
+    def _setup_handlers(self) -> None:
+        """Setup MCP protocol handlers."""
+
+        @self.server.list_tools()
+        async def list_tools() -> list[Tool]:
+            """List all available MCP tools."""
+            logger.info("📋 list_tools() called - returning 25 tools (15 existing + 10 new AI-driven)")
+            return [
+                Tool(
+                    name="get_market_data",
+                    description="Fetch OHLCV market data for a symbol and timeframe",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair symbol (e.g., BTC/USDT)",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe (e.g., 1m, 5m, 1h, 1d)",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of candles to fetch",
+                                "default": 500,
+                            },
+                        },
+                        "required": ["symbol", "timeframe"],
+                    },
+                ),
+                Tool(
+                    name="calculate_indicators",
+                    description="Calculate technical indicators on market data",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair symbol",
+                            },
+                            "indicators": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of indicators to calculate (e.g., ['rsi', 'macd', 'ema'])",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe for calculation",
+                            },
+                        },
+                        "required": ["symbol", "indicators", "timeframe"],
+                    },
+                ),
+                Tool(
+                    name="backtest_strategy",
+                    description="Run backtest for a trading strategy",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to backtest",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair symbol",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe to use",
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": "Start date (YYYY-MM-DD)",
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "End date (YYYY-MM-DD)",
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Initial capital for backtest",
+                                "default": 10000,
+                            },
+                        },
+                        "required": ["strategy_name", "symbol", "timeframe"],
+                    },
+                ),
+                Tool(
+                    name="run_walk_forward_analysis",
+                    description="Validate strategy with Walk-Forward Analysis (WFA) - Critical for detecting overfitting. Divides data into train/test windows and validates out-of-sample performance.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to validate",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair (e.g., BTC/USDT)",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe (1h, 4h, 1d)",
+                                "default": "1h",
+                            },
+                            "train_days": {
+                                "type": "integer",
+                                "description": "Training window size in days",
+                                "default": 180,
+                            },
+                            "test_days": {
+                                "type": "integer",
+                                "description": "Testing window size in days",
+                                "default": 60,
+                            },
+                            "step_days": {
+                                "type": "integer",
+                                "description": "Step size for rolling window",
+                                "default": 30,
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                            "parallel": {
+                                "type": "boolean",
+                                "description": "Execute windows in parallel (faster)",
+                                "default": True,
+                            },
+                            "n_jobs": {
+                                "type": "integer",
+                                "description": "Number of CPU cores (-1 = all)",
+                                "default": -1,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="run_k_fold_validation",
+                    description="Run K-Fold Cross-Validation - Divides data into K folds and tests robustness across different periods. Complementary to Walk-Forward Analysis.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to validate",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "k": {
+                                "type": "integer",
+                                "description": "Number of folds (typically 5 or 10)",
+                                "default": 5,
+                            },
+                            "shuffle": {
+                                "type": "boolean",
+                                "description": "Shuffle data before splitting (not recommended for time series)",
+                                "default": False,
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                            "parallel": {
+                                "type": "boolean",
+                                "description": "Execute folds in parallel",
+                                "default": True,
+                            },
+                            "n_jobs": {
+                                "type": "integer",
+                                "description": "Number of CPU cores (-1 = all)",
+                                "default": -1,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="run_monte_carlo_simulation",
+                    description="Run Monte Carlo Simulation - Randomly resamples trades to generate thousands of equity curves. Helps understand risk and confidence intervals.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to analyze",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "n_simulations": {
+                                "type": "integer",
+                                "description": "Number of simulations (1000-10000)",
+                                "default": 1000,
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                            "parallel": {
+                                "type": "boolean",
+                                "description": "Execute simulations in parallel",
+                                "default": True,
+                            },
+                            "n_jobs": {
+                                "type": "integer",
+                                "description": "Number of CPU cores (-1 = all)",
+                                "default": -1,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="diagnose_strategy_failure",
+                    description="Diagnose why a strategy failed validation - Analyzes strategy behavior and suggests specific fixes. Critical for strategy improvement.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to diagnose",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of candles to analyze",
+                                "default": 1000,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="suggest_parameter_fixes",
+                    description="Get specific parameter value suggestions to fix strategy issues - Provides concrete code changes.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to fix",
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="detect_market_regime",
+                    description="Detect current market regime - Returns regime type and recommended strategies. Critical for strategy selection.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "lookback": {
+                                "type": "integer",
+                                "description": "Number of candles to analyze",
+                                "default": 100,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="detect_historical_regimes",
+                    description="Detect regime changes across historical data - Shows which regimes existed when. Useful for regime-aware backtesting.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of historical candles",
+                                "default": 5000,
+                            },
+                            "window_size": {
+                                "type": "integer",
+                                "description": "Rolling window for detection",
+                                "default": 100,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="get_portfolio_status",
+                    description="Get current portfolio holdings and performance",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                    },
+                ),
+                Tool(
+                    name="list_strategies",
+                    description="List all available trading strategies",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "category": {
+                                "type": "string",
+                                "description": "Filter by category (trend, mean_reversion, breakout, etc.)",
+                            },
+                        },
+                    },
+                ),
+                # NEW OPTIMIZATION TOOLS
+                Tool(
+                    name="optimize_strategy_parameters",
+                    description="Optimize strategy parameters using Genetic Algorithm - Finds best parameter values for maximum performance",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to optimize",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "population_size": {
+                                "type": "integer",
+                                "description": "GA population size",
+                                "default": 50,
+                            },
+                            "n_generations": {
+                                "type": "integer",
+                                "description": "Number of generations",
+                                "default": 20,
+                            },
+                            "use_ray": {
+                                "type": "boolean",
+                                "description": "Use Ray for parallel processing",
+                                "default": False,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                Tool(
+                    name="optimize_portfolio",
+                    description="Optimize multi-strategy portfolio allocation - Finds optimal weights for strategy combination",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategies": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of strategy names to include",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "method": {
+                                "type": "string",
+                                "description": "Optimization method",
+                                "enum": ["equal_weight", "risk_parity", "max_sharpe", "min_variance"],
+                                "default": "max_sharpe",
+                            },
+                        },
+                        "required": ["strategies"],
+                    },
+                ),
+                Tool(
+                    name="run_nfold_walk_forward",
+                    description="Run N-Fold Walk-Forward Analysis - Advanced WFA with K-fold cross-validation per window",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategy_name": {
+                                "type": "string",
+                                "description": "Name of strategy to validate",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "n_folds": {
+                                "type": "integer",
+                                "description": "Number of test folds per window",
+                                "default": 3,
+                            },
+                            "train_days": {
+                                "type": "integer",
+                                "description": "Training window size in days",
+                                "default": 180,
+                            },
+                            "test_days": {
+                                "type": "integer",
+                                "description": "Test window size per fold in days",
+                                "default": 60,
+                            },
+                            "use_parallel": {
+                                "type": "boolean",
+                                "description": "Use Ray parallel processing",
+                                "default": True,
+                            },
+                        },
+                        "required": ["strategy_name"],
+                    },
+                ),
+                # NEW BATCH COMPARISON TOOL
+                Tool(
+                    name="compare_strategies",
+                    description="Compare multiple strategies in ONE efficient batch operation - Fetches data once and backtests all strategies. Much faster than individual backtests!",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "strategies": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of strategy names to compare (e.g., ['atr_expansion_breakout', 'ema_stack_momentum'])",
+                            },
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair",
+                                "default": "BTC/USDT",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Candle timeframe",
+                                "default": "1h",
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": "Start date (YYYY-MM-DD)",
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "End date (YYYY-MM-DD)",
+                            },
+                            "initial_capital": {
+                                "type": "number",
+                                "description": "Starting capital",
+                                "default": 10000,
+                            },
+                        },
+                        "required": ["strategies"],
+                    },
+                ),
+                # ==== AGENT MANAGEMENT TOOLS (AI-DRIVEN) ====
+                Tool(
+                    name="launch_trading_agent",
+                    description="🤖 Launch dedicated autonomous trading agent - Spawns independent process for symbol/strategy with optimized parameters",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "Trading pair (e.g., BTC/USDT)",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe (e.g., 1h, 5m, 4h)",
+                            },
+                            "strategy": {
+                                "type": "string",
+                                "description": "Strategy name (e.g., cci_extreme_snapback)",
+                            },
+                            "params": {
+                                "type": "object",
+                                "description": "Strategy parameters (optimized from GA)",
+                            },
+                            "risk_per_trade": {
+                                "type": "number",
+                                "description": "Risk per trade as fraction (default 0.02 = 2%)",
+                                "default": 0.02,
+                            },
+                            "scan_interval_minutes": {
+                                "type": "integer",
+                                "description": "Scan frequency in minutes",
+                                "default": 5,
+                            },
+                        },
+                        "required": ["symbol", "timeframe", "strategy"],
+                    },
+                ),
+                Tool(
+                    name="stop_trading_agent",
+                    description="🛑 Stop running trading agent - Gracefully terminates agent process and saves final stats",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {
+                                "type": "string",
+                                "description": "Agent ID to stop",
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "Reason for stopping (e.g., 'poor performance')",
+                            },
+                        },
+                        "required": ["agent_id"],
+                    },
+                ),
+                Tool(
+                    name="list_active_agents",
+                    description="📋 List all active trading agents - Returns status and performance metrics for all running agents",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                    },
+                ),
+                Tool(
+                    name="get_agent_performance",
+                    description="📊 Get detailed agent performance - Returns comprehensive metrics (Sharpe, win rate, PnL, trades)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {
+                                "type": "string",
+                                "description": "Agent ID",
+                            },
+                        },
+                        "required": ["agent_id"],
+                    },
+                ),
+                Tool(
+                    name="update_agent_params",
+                    description="🔧 Update agent parameters - Hot-reload parameters without restarting agent",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {
+                                "type": "string",
+                                "description": "Agent ID",
+                            },
+                            "params": {
+                                "type": "object",
+                                "description": "New parameters to update",
+                            },
+                        },
+                        "required": ["agent_id", "params"],
+                    },
+                ),
+                Tool(
+                    name="get_agent_summary",
+                    description="📈 Get portfolio summary - High-level overview of all agents (total PnL, best/worst performers)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                    },
+                ),
+                # ==== CORRELATION & REBALANCING TOOLS (AI-DRIVEN) ====
+                Tool(
+                    name="detect_symbol_correlations",
+                    description="🔗 Detect symbol correlations - Analyzes correlations between trading pairs for diversification",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "symbols": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of trading pairs to analyze",
+                            },
+                            "timeframe": {
+                                "type": "string",
+                                "description": "Timeframe for correlation analysis",
+                                "default": "1h",
+                            },
+                            "lookback_days": {
+                                "type": "integer",
+                                "description": "Days of history to analyze",
+                                "default": 30,
+                            },
+                        },
+                        "required": ["symbols"],
+                    },
+                ),
+                Tool(
+                    name="get_diversification_recommendations",
+                    description="💡 Get diversification recommendations - Suggests which symbols add most diversification to portfolio",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "active_agents": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                                "description": "Currently active agents",
+                            },
+                            "candidate_symbols": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Candidate symbols to consider",
+                            },
+                        },
+                        "required": ["active_agents", "candidate_symbols"],
+                    },
+                ),
+                Tool(
+                    name="rebalance_agent_portfolio",
+                    description="⚖️ Auto-rebalance portfolio - Automatically stops underperformers and optimizes agent allocation",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "target_sharpe": {
+                                "type": "number",
+                                "description": "Minimum Sharpe ratio to keep agent",
+                                "default": 1.5,
+                            },
+                            "max_risk_per_symbol": {
+                                "type": "number",
+                                "description": "Max allocation per symbol",
+                                "default": 0.1,
+                            },
+                            "min_agents": {
+                                "type": "integer",
+                                "description": "Minimum agents to maintain",
+                                "default": 3,
+                            },
+                            "max_agents": {
+                                "type": "integer",
+                                "description": "Maximum agents allowed",
+                                "default": 15,
+                            },
+                            "min_win_rate": {
+                                "type": "number",
+                                "description": "Minimum win rate (0-1)",
+                                "default": 0.50,
+                            },
+                            "correlation_threshold": {
+                                "type": "number",
+                                "description": "Stop duplicates above this correlation",
+                                "default": 0.8,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="suggest_new_agents",
+                    description="💡 Suggest new agents - Smart recommendations for which agents to add based on diversification",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "current_portfolio": {
+                                "type": "object",
+                                "description": "Current portfolio state",
+                            },
+                            "candidate_symbols": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Symbols to consider",
+                            },
+                            "target_agent_count": {
+                                "type": "integer",
+                                "description": "Desired number of agents",
+                                "default": 10,
+                            },
+                        },
+                    },
+                ),
+            ]
+
+        @self.server.call_tool()
+        async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+            """Handle tool execution."""
+            logger.info(f"Tool called: {name} with arguments: {arguments}")
+
+            # Import tool implementations
+            from .tools.market_data import get_market_data, calculate_indicators
+            from .tools.backtest import backtest_strategy
+            from .tools.batch_compare import compare_strategies
+            from .tools.portfolio import get_portfolio_status
+            from .tools.strategies import list_strategies
+            from .tools.validation import (
+                run_walk_forward_analysis,
+                run_k_fold_validation,
+                run_monte_carlo_simulation,
+            )
+            from .tools.strategy_diagnostics import (
+                diagnose_strategy_failure,
+                suggest_parameter_fixes,
+            )
+            from .tools.regime import (
+                detect_market_regime,
+                detect_historical_regimes,
+            )
+            from .tools.optimization import (
+                optimize_strategy_parameters,
+                optimize_portfolio,
+                run_nfold_walk_forward,
+            )
+            # NEW: AI-DRIVEN TOOLS
+            from .tools.agent_management import (
+                launch_trading_agent,
+                stop_trading_agent,
+                list_active_agents,
+                get_agent_performance,
+                update_agent_params,
+                get_agent_summary,
+            )
+            from .tools.correlation_analysis import (
+                detect_symbol_correlations,
+                get_diversification_recommendations,
+            )
+            from .tools.auto_rebalancing import (
+                rebalance_agent_portfolio,
+                suggest_new_agents,
+            )
+
+            try:
+                if name == "get_market_data":
+                    result = await get_market_data(**arguments)
+                elif name == "calculate_indicators":
+                    result = await calculate_indicators(**arguments)
+                elif name == "backtest_strategy":
+                    result = await backtest_strategy(**arguments)
+                elif name == "compare_strategies":  # NEW
+                    result = await compare_strategies(**arguments)
+                elif name == "run_walk_forward_analysis":
+                    result = await run_walk_forward_analysis(**arguments)
+                elif name == "run_k_fold_validation":
+                    result = await run_k_fold_validation(**arguments)
+                elif name == "run_monte_carlo_simulation":
+                    result = await run_monte_carlo_simulation(**arguments)
+                elif name == "diagnose_strategy_failure":
+                    result = await diagnose_strategy_failure(**arguments)
+                elif name == "suggest_parameter_fixes":
+                    result = await suggest_parameter_fixes(**arguments)
+                elif name == "detect_market_regime":
+                    result = await detect_market_regime(**arguments)
+                elif name == "detect_historical_regimes":
+                    result = await detect_historical_regimes(**arguments)
+                elif name == "get_portfolio_status":
+                    result = await get_portfolio_status()
+                elif name == "list_strategies":
+                    result = await list_strategies(**arguments)
+                # OPTIMIZATION TOOLS
+                elif name == "optimize_strategy_parameters":
+                    result = await optimize_strategy_parameters(**arguments)
+                elif name == "optimize_portfolio":
+                    result = await optimize_portfolio(**arguments)
+                elif name == "run_nfold_walk_forward":
+                    result = await run_nfold_walk_forward(**arguments)
+                # AGENT MANAGEMENT TOOLS (AI-DRIVEN)
+                elif name == "launch_trading_agent":
+                    result = await launch_trading_agent(**arguments)
+                elif name == "stop_trading_agent":
+                    result = await stop_trading_agent(**arguments)
+                elif name == "list_active_agents":
+                    result = await list_active_agents()
+                elif name == "get_agent_performance":
+                    result = await get_agent_performance(**arguments)
+                elif name == "update_agent_params":
+                    result = await update_agent_params(**arguments)
+                elif name == "get_agent_summary":
+                    result = await get_agent_summary()
+                # CORRELATION & REBALANCING TOOLS (AI-DRIVEN)
+                elif name == "detect_symbol_correlations":
+                    result = await detect_symbol_correlations(**arguments)
+                elif name == "get_diversification_recommendations":
+                    result = await get_diversification_recommendations(**arguments)
+                elif name == "rebalance_agent_portfolio":
+                    result = await rebalance_agent_portfolio(**arguments)
+                elif name == "suggest_new_agents":
+                    result = await suggest_new_agents(**arguments)
+                else:
+                    raise ValueError(f"Unknown tool: {name}")
+
+                return [TextContent(type="text", text=str(result))]
+
+            except Exception as e:
+                logger.error(f"Tool execution error: {e}", exc_info=True)
+                return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+        @self.server.list_resources()
+        async def list_resources() -> list[Resource]:
+            """List available MCP resources."""
+            return [
+                Resource(
+                    uri="portfolio://current",
+                    name="Current Portfolio",
+                    description="Real-time portfolio holdings and performance metrics",
+                    mimeType="application/json",
+                ),
+                Resource(
+                    uri="market://status",
+                    name="Market Status",
+                    description="Current market conditions and regime",
+                    mimeType="application/json",
+                ),
+                Resource(
+                    uri="performance://latest",
+                    name="Performance Metrics",
+                    description="Latest trading performance statistics",
+                    mimeType="application/json",
+                ),
+                # SYSTEM INSTRUCTIONS PROMPT
+                Resource(
+                    uri="prompt://system_instructions",
+                    name="Smart-Trade System Instructions",
+                    description="Core principles and usage guidelines for optimal interaction",
+                    mimeType="text/markdown",
+                ),
+            ]
+
+        @self.server.read_resource()
+        async def read_resource(uri: str) -> str:
+            """Read MCP resource content."""
+            logger.info(f"Resource read: {uri}")
+
+            from .resources.portfolio import get_current_portfolio
+            from .resources.market import get_market_status
+            from .resources.performance import get_performance_metrics
+
+            try:
+                if uri == "portfolio://current":
+                    return await get_current_portfolio()
+                elif uri == "market://status":
+                    return await get_market_status()
+                elif uri == "performance://latest":
+                    return await get_performance_metrics()
+                elif uri == "prompt://system_instructions":
+                    # Return system instructions for Claude Desktop
+                    return """# Smart-Trade MCP - System Instructions
+
+**Role:** Trading Strategy Analysis Assistant
+
+## ?? CORE PRINCIPLES
+
+### 1. Be Efficient - Save Tokens
+- ? Use `compare_strategies` for 2+ strategies (20-30x faster!)
+- ? Present results in concise tables
+- ? Focus on: Sharpe, Return%, Win Rate%, Max DD%
+- ? Don't call `backtest_strategy` 40+ times individually
+- ? Don't request full equity curves
+
+### 2. Batch Processing First
+**ALWAYS prefer batch when comparing multiple strategies:**
+
+```
+? BAD: backtest_strategy("s1"), backtest_strategy("s2"), ... (41 calls)
+? GOOD: compare_strategies(["s1", "s2", ..., "s41"]) (1 call)
+```
+
+### 3. Essential Metrics Only
+Present: Sharpe Ratio, Total Return%, Win Rate%, Max Drawdown%, Total Trades
+Avoid: Full equity curves, all trades, excessive decimals
+
+### 4. Clear Communication
+**Use tables:**
+| Strategy | Sharpe | Return % | Win Rate % | Max DD % |
+|----------|--------|----------|------------|----------|
+| Strategy1| 0.22   | 7.91     | 72.15      | -9.71    |
+
+**Not verbose paragraphs.**
+
+## ??? TOOL CATEGORIES
+
+**Category 1: Comparison (MOST COMMON)**
+- `compare_strategies` ? Use for 2+ strategies
+- `backtest_strategy` - Single strategy deep-dive only
+- `list_strategies` - Get available strategies
+
+**Category 2: Optimization**
+- `optimize_strategy_parameters` - Find best parameters (GA)
+- `optimize_portfolio` - Find best strategy weights
+
+**Category 3: Validation**
+- `run_walk_forward_analysis` - Time-series validation
+- `run_k_fold_validation` - Cross-validation
+- `run_monte_carlo_simulation` - Risk analysis
+
+**Category 4: Market Analysis**
+- `detect_market_regime` - Current market conditions
+- `detect_historical_regimes` - Historical regimes
+
+**Category 5: Diagnostics**
+- `diagnose_strategy_failure` - Why strategy failed
+- `suggest_parameter_fixes` - Parameter recommendations
+
+**Category 6: Agent Management (AI-DRIVEN)**
+- `launch_trading_agent` - Launchs an autonomous trading agent
+- `stop_trading_agent` - Stops a running trading agent
+- `list_active_agents` - Lists all active trading agents
+- `get_agent_performance` - Gets performance of a specific agent
+- `update_agent_params` - Updates parameters of a running agent
+- `get_agent_summary` - Gets a summary of all agents' performance
+
+**Category 7: Correlation & Rebalancing (AI-DRIVEN)**
+- `detect_symbol_correlations` - Detects correlations between symbols
+- `get_diversification_recommendations` - Suggests symbols for diversification
+- `rebalance_agent_portfolio` - Auto-rebalances portfolio allocation
+- `suggest_new_agents` - Suggests new agents to add based on analysis
+
+## ?? TYPICAL WORKFLOWS
+
+**Workflow 1: Find Best Strategy (~15 sec)**
+1. compare_strategies(all_strategies)
+2. Show top 10 by Sharpe Ratio
+3. Recommend top 3
+
+**Workflow 2: Build Portfolio**
+1. compare_strategies(all_strategies)
+2. Select top 5-10 by Sharpe
+3. optimize_portfolio(selected, "max_sharpe")
+
+**Workflow 3: Market-Aware Selection**
+1. detect_market_regime()
+2. Filter recommended strategies
+3. compare_strategies(filtered)
+
+**Workflow 4: Agent Launch & Management**
+1. launch_trading_agent("BTC/USDT", "1h", "cci_extreme_snapback")
+2. Monitor with list_active_agents()
+3. Stop underperforming agents with stop_trading_agent()
+
+**Workflow 5: Correlation & Rebalancing**
+1. detect_symbol_correlations(["BTC/USDT", "ETH/USDT"])
+2. get_diversification_recommendations(active_agents, ["LINK/USDT", "XRP/USDT"])
+3. rebalance_agent_portfolio()
+
+## ? PERFORMANCE EXPECTATIONS
+
+- Single backtest: 1-2 sec
+- Batch (41 strategies): ~15 sec ?
+- Parameter optimization: 2-5 min
+- Walk-forward analysis: 2-3 min
+- Agent launch: < 5 sec
+- Correlation analysis: < 10 sec
+
+## ?? WHAT NOT TO DO
+
+1. DON'T call `backtest_strategy` 40+ times
+2. DON'T request full equity curves
+3. DON'T over-explain basic metrics
+4. DON'T use excessive decimal precision
+5. DON'T repeat data already shown
+
+## ?? RESPONSE TEMPLATE
+
+**Backtest Results - BTC/USDT 1h (364 days)**
+
+Top 5 Strategies by Sharpe Ratio:
+
+| Rank | Strategy | Sharpe | Return % | Win Rate % | Max DD % |
+|------|----------|--------|----------|------------|----------|
+| 1    | cci_extreme_snapback | 0.22 | 7.91 | 72.15 | -9.71 |
+| 2    | bollinger_mean_rev | 0.16 | 3.20 | 61.61 | -10.17 |
+
+**Recommendation:** cci_extreme_snapback shows best risk-adjusted returns.
+
+## ?? SUCCESS METRICS
+
+Optimal when:
+- ? Using batch tools for multi-strategy comparison
+- ? Responses under 500 tokens
+- ? Clear recommendations backed by metrics
+- ? Fast turnaround (<30 sec)
+
+**Remember: Efficiency > Verbosity. Batch > Individual. Metrics > Explanations.**
+
+---
+Version: 2.0.0 | Defaults: BTC/USDT 1h, 1 year, $10k capital
+"""
+                else:
+                    raise ValueError(f"Unknown resource: {uri}")
+            except Exception as e:
+                logger.error(f"Resource read error: {e}", exc_info=True)
+                raise
+
+    async def run(self) -> None:
+        """Run the MCP server."""
+        logger.info("Starting MCP server...")
+        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+            await self.server.run(
+                read_stream,
+                write_stream,
+                InitializationOptions(
+                    server_name=settings.mcp_server_name,
+                    server_version=settings.mcp_server_version,
+                    capabilities={},
+                ),
+            )
+
+
+def main() -> None:
+    """Main entry point for the MCP server."""
+    server = SmartTradeMCPServer()
+    asyncio.run(server.run())
+
+
+if __name__ == "__main__":
+    main()

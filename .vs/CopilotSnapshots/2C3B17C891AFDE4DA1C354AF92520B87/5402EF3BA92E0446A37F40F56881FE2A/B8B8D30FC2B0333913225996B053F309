@@ -1,0 +1,106 @@
+﻿# ? QUICK START - Teste Imediato
+
+**Tempo estimado:** 5 minutos
+
+---
+
+## ?? **PASSO A PASSO RÁPIDO**
+
+### **1. Executar Diagnóstico (30 segundos)**
+
+```powershell
+cd C:\Users\shuta\source\repos\Smart-Trade-MCP
+.\check_mcp_status.ps1
+```
+
+**Verificar:**
+- ? Todas as checks passaram
+- ? Tool version = `2.0.1-debug`
+
+---
+
+### **2. Reiniciar Claude Desktop (30 segundos)**
+
+1. Fechar Claude Desktop completamente
+2. Abrir novamente
+3. Aguardar carregamento (~5 segundos)
+
+---
+
+### **3. Testar no Claude Desktop (1 minuto)**
+
+**Copiar e colar este prompt EXATO:**
+
+```
+Please backtest the atr_expansion_breakout strategy on BTC/USDT 1h timeframe.
+
+DO NOT specify start_date or end_date parameters - let it auto-fetch 1 year of data.
+
+Return these fields:
+- tool_version
+- days_tested
+- candles_tested
+- total_trades
+- total_return
+- win_rate
+```
+
+---
+
+### **4. Verificar Resultado (30 segundos)**
+
+#### **? SUCESSO (Esperado):**
+```
+tool_version: 2.0.1-debug
+days_tested: 364
+candles_tested: 8760
+total_trades: 21
+```
+
+**Ação:** ?? PROBLEMA RESOLVIDO! Avançar para Fase 2.
+
+---
+
+#### **? FALHA (Improvável):**
+```
+tool_version: 2.0.1-debug
+days_tested: 6
+candles_tested: ~150
+```
+
+**Ação:** Ver logs:
+```powershell
+Get-Content "$env:APPDATA\Claude\logs\mcp-server-smart-trade.log" -Tail 100
+```
+
+Procurar por: `BACKTEST TOOL - DETAILED DEBUG LOG`
+
+---
+
+## ?? **REPORTAR RESULTADO**
+
+Usa este template:
+
+```
+TESTE CLAUDE DESKTOP - RESULTADO
+
+tool_version: _______
+days_tested: _______
+candles_tested: _______
+total_trades: _______
+
+Status: ? PASSOU / ? FALHOU
+```
+
+---
+
+## ?? **SE PRECISAR DE MAIS DETALHES**
+
+Ver documentação completa:
+- `TESTE_CLAUDE_DESKTOP.md` - Guia detalhado
+- `ESTADO_ATUAL.md` - Status do projeto
+- `DEBUG_6DAY_ISSUE.md` - Plano de debugging
+
+---
+
+**Boa sorte! ??**

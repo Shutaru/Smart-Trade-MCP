@@ -1,0 +1,30 @@
+﻿import sys
+from pathlib import Path
+
+paths = [
+    Path('frontend/src/pages/PaperDashboard.tsx'),
+    Path('frontend/src/components/BotModal.tsx'),
+    Path('frontend/src/components/BotsList.tsx'),
+    Path('frontend/src/libs/lightweight-charts-shim.ts')
+]
+
+for p in paths:
+    if not p.exists():
+        print(f"Missing: {p}")
+        continue
+    data = p.read_bytes()
+    try:
+        text = data.decode('utf-8')
+        print(f"{p}: already utf-8")
+    except UnicodeDecodeError:
+        try:
+            text = data.decode('latin-1')
+            print(f"{p}: decoded latin-1 -> re-encoding utf-8")
+        except Exception as e:
+            print(f"Failed to decode {p}: {e}")
+            continue
+        # write back as utf-8
+        p.write_text(text, encoding='utf-8')
+        print(f"Rewrote {p} as utf-8")
+
+print('done')

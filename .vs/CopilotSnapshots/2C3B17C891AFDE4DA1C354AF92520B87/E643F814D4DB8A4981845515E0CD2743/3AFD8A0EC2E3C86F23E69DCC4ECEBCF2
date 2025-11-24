@@ -1,0 +1,489 @@
+﻿# MCP Tools - Categorized Reference
+
+**Total Tools:** 16  
+**Categories:** 5  
+**Version:** 2.0.0
+
+---
+
+## ?? CATEGORY 1: STRATEGY COMPARISON & SELECTION
+
+**Use Case:** Finding and comparing trading strategies
+
+### ?? **compare_strategies** ? RECOMMENDED FOR MULTIPLE STRATEGIES
+
+**Purpose:** Compare 2-100+ strategies in ONE batch operation (20-30x faster)
+
+**When to use:**
+- Comparing all strategies
+- Finding top performers
+- Category comparison (e.g., all breakout strategies)
+
+**Parameters:**
+```json
+{
+  "strategies": ["strategy1", "strategy2", ...],  // REQUIRED
+  "symbol": "BTC/USDT",                           // Optional
+  "timeframe": "1h",                              // Optional
+  "initial_capital": 10000                        // Optional
+}
+```
+
+**Returns:**
+- Top 3 by Sharpe Ratio
+- Top 3 by Total Return
+- All results (minimal metrics per strategy)
+
+**Example:**
+```
+compare_strategies([
+  "atr_expansion_breakout",
+  "ema_stack_momentum",
+  "bollinger_mean_reversion"
+])
+```
+
+**Performance:** ~5 seconds for 10 strategies, ~15 seconds for 41 strategies
+
+---
+
+### ?? **backtest_strategy**
+
+**Purpose:** Detailed backtest of a SINGLE strategy
+
+**When to use:**
+- Deep-dive into specific strategy
+- Need detailed equity summary
+- After identifying top performers from batch comparison
+
+**Parameters:**
+```json
+{
+  "strategy_name": "atr_expansion_breakout",  // REQUIRED
+  "symbol": "BTC/USDT",                       // Optional
+  "timeframe": "1h",                          // Optional
+  "initial_capital": 10000                    // Optional
+}
+```
+
+**Returns:**
+- Full metrics (Sharpe, Return, Win Rate, Drawdown, etc.)
+- Equity summary (start, end, peak, trough)
+- Sample trades (first 3 + last 3)
+
+**Performance:** ~1-2 seconds
+
+**?? WARNING:** Do NOT call this 40+ times. Use `compare_strategies` instead!
+
+---
+
+### ?? **list_strategies**
+
+**Purpose:** Get list of all available strategies
+
+**When to use:**
+- Discover available strategies
+- Filter by category
+- Get strategy metadata
+
+**Parameters:**
+```json
+{
+  "category": "breakout"  // Optional: breakout, trend, mean_reversion, etc.
+}
+```
+
+**Returns:**
+```json
+{
+  "total": 42,
+  "strategies": [
+    {
+      "name": "atr_expansion_breakout",
+      "category": "breakout",
+      "description": "ATR-based volatility expansion",
+      "required_indicators": ["atr", "ema"]
+    },
+    ...
+  ]
+}
+```
+
+---
+
+## ?? CATEGORY 2: OPTIMIZATION
+
+**Use Case:** Improving strategy performance
+
+### ?? **optimize_strategy_parameters**
+
+**Purpose:** Find optimal parameters using Genetic Algorithm
+
+**When to use:**
+- Strategy underperforms
+- Want to maximize Sharpe Ratio
+- Need better parameter values
+
+**Parameters:**
+```json
+{
+  "strategy_name": "rsi",                // REQUIRED
+  "symbol": "BTC/USDT",                  // Optional
+  "timeframe": "1h",                     // Optional
+  "population_size": 50,                 // Optional (default: 50)
+  "n_generations": 20                    // Optional (default: 20)
+}
+```
+
+**Returns:**
+- Best parameters found
+- Best fitness (Sharpe Ratio)
+- Total evaluations
+- Time taken
+
+**Performance:** 2-5 minutes (depends on population_size × n_generations)
+
+**?? TIP:** For quick optimization, use smaller population (20) and fewer generations (10)
+
+---
+
+### ?? **optimize_portfolio**
+
+**Purpose:** Find optimal weights for multi-strategy portfolio
+
+**When to use:**
+- Combining multiple strategies
+- Want diversified portfolio
+- Need allocation percentages
+
+**Parameters:**
+```json
+{
+  "strategies": [                        // REQUIRED
+    "atr_expansion_breakout",
+    "ema_stack_momentum",
+    "vwap_institutional_trend"
+  ],
+  "symbol": "BTC/USDT",                  // Optional
+  "timeframe": "1h",                     // Optional
+  "method": "max_sharpe"                 // Optional: equal_weight, risk_parity, max_sharpe, min_variance
+}
+```
+
+**Returns:**
+- Optimal weights (percentages)
+- Portfolio Sharpe Ratio
+- Portfolio metrics
+- Individual strategy performances
+
+**Performance:** ~2-3 minutes for 5-10 strategies
+
+---
+
+## ? CATEGORY 3: VALIDATION & ROBUSTNESS
+
+**Use Case:** Ensuring strategy reliability
+
+### ?? **run_walk_forward_analysis**
+
+**Purpose:** Validate strategy with time-series aware testing (anti-overfitting)
+
+**When to use:**
+- Verify strategy isn't overfit
+- Test out-of-sample performance
+- Professional-grade validation
+
+**Parameters:**
+```json
+{
+  "strategy_name": "atr_expansion_breakout",  // REQUIRED
+  "symbol": "BTC/USDT",                       // Optional
+  "timeframe": "1h",                          // Optional
+  "train_days": 180,                          // Optional (default: 180)
+  "test_days": 60,                            // Optional (default: 60)
+  "step_days": 30                             // Optional (default: 30)
+}
+```
+
+**Returns:**
+- Aggregated metrics (mean return, mean Sharpe)
+- Consistency score
+- Fold results
+
+**Performance:** ~2-3 minutes
+
+**?? REFERENCE:** Critical for detecting overfitting
+
+---
+
+### ?? **run_k_fold_validation**
+
+**Purpose:** Cross-validation across different time periods
+
+**When to use:**
+- Complement Walk-Forward Analysis
+- Test robustness across different market conditions
+
+**Parameters:**
+```json
+{
+  "strategy_name": "bollinger_mean_reversion",  // REQUIRED
+  "symbol": "BTC/USDT",                         // Optional
+  "timeframe": "1h",                            // Optional
+  "k": 5                                        // Optional (default: 5)
+}
+```
+
+**Performance:** ~2-3 minutes
+
+---
+
+### ?? **run_monte_carlo_simulation**
+
+**Purpose:** Risk analysis via random trade resampling
+
+**When to use:**
+- Understand risk distribution
+- Get confidence intervals
+- Stress-test strategy
+
+**Parameters:**
+```json
+{
+  "strategy_name": "cci_extreme_snapback",  // REQUIRED
+  "symbol": "BTC/USDT",                     // Optional
+  "timeframe": "1h",                        // Optional
+  "n_simulations": 1000                     // Optional (default: 1000)
+}
+```
+
+**Performance:** ~1-2 minutes for 1000 simulations
+
+---
+
+## ?? CATEGORY 4: MARKET ANALYSIS
+
+**Use Case:** Understanding market conditions
+
+### ?? **detect_market_regime**
+
+**Purpose:** Identify current market regime (trending, ranging, high/low volatility)
+
+**When to use:**
+- Before selecting strategies
+- Understand current market conditions
+- Get regime-specific strategy recommendations
+
+**Parameters:**
+```json
+{
+  "symbol": "BTC/USDT",      // Optional
+  "timeframe": "1h",         // Optional
+  "lookback": 100            // Optional (default: 100 candles)
+}
+```
+
+**Returns:**
+```json
+{
+  "regime": "trending",
+  "confidence": 0.85,
+  "volatility": "medium",
+  "recommended_strategies": ["atr_expansion_breakout", ...],
+  "avoid_strategies": ["bollinger_mean_reversion", ...]
+}
+```
+
+**Performance:** <1 second
+
+**?? TIP:** Use this FIRST to filter strategies before batch comparison
+
+---
+
+### ?? **detect_historical_regimes**
+
+**Purpose:** See regime changes over time
+
+**When to use:**
+- Understand historical market behavior
+- Regime-aware backtesting
+
+**Parameters:**
+```json
+{
+  "symbol": "BTC/USDT",      // Optional
+  "timeframe": "1h",         // Optional
+  "limit": 5000,             // Optional (default: 5000 candles)
+  "window_size": 100         // Optional (default: 100)
+}
+```
+
+---
+
+## ?? CATEGORY 5: DIAGNOSTICS & DEBUGGING
+
+**Use Case:** Understanding why strategies fail
+
+### ?? **diagnose_strategy_failure**
+
+**Purpose:** Analyze why a strategy underperforms
+
+**When to use:**
+- Strategy has poor metrics
+- Need to understand failure modes
+- Before attempting optimization
+
+**Parameters:**
+```json
+{
+  "strategy_name": "macd",   // REQUIRED
+  "symbol": "BTC/USDT",      // Optional
+  "timeframe": "1h",         // Optional
+  "limit": 1000              // Optional (candles to analyze)
+}
+```
+
+**Returns:**
+- Failure analysis
+- Suggested fixes
+- Parameter recommendations
+
+---
+
+### ?? **suggest_parameter_fixes**
+
+**Purpose:** Get specific parameter value suggestions
+
+**When to use:**
+- After diagnosing failure
+- Need concrete code changes
+
+**Parameters:**
+```json
+{
+  "strategy_name": "rsi"  // REQUIRED
+}
+```
+
+**Returns:**
+- Suggested parameter values
+- Code snippets
+- Reasoning
+
+---
+
+## ?? QUICK DECISION TREE
+
+```
+START
+  ?
+Do you need to compare multiple strategies?
+  ?? YES ? use compare_strategies (batch) ?
+  ?? NO ? Continue
+         ?
+       Is it a single strategy deep-dive?
+         ?? YES ? use backtest_strategy
+         ?? NO ? Continue
+                ?
+              Do you need to optimize parameters?
+                ?? YES ? use optimize_strategy_parameters
+                ?? NO ? Continue
+                       ?
+                     Do you need to build a portfolio?
+                       ?? YES ? use optimize_portfolio
+                       ?? NO ? Continue
+                              ?
+                            Need market context?
+                              ?? YES ? use detect_market_regime
+                              ?? NO ? Use other specialized tools
+```
+
+---
+
+## ? PERFORMANCE SUMMARY
+
+| Tool | Typical Time | Use Case |
+|------|-------------|----------|
+| `compare_strategies` | 15 sec (41 strategies) | ? Multi-strategy comparison |
+| `backtest_strategy` | 1-2 sec | Single strategy detail |
+| `list_strategies` | <1 sec | Discovery |
+| `optimize_strategy_parameters` | 2-5 min | Parameter tuning |
+| `optimize_portfolio` | 2-3 min | Portfolio allocation |
+| `run_walk_forward_analysis` | 2-3 min | Robustness testing |
+| `run_k_fold_validation` | 2-3 min | Cross-validation |
+| `run_monte_carlo_simulation` | 1-2 min | Risk analysis |
+| `detect_market_regime` | <1 sec | Market context |
+| `diagnose_strategy_failure` | 1-2 sec | Debugging |
+
+---
+
+## ?? COMMON WORKFLOWS
+
+### **Workflow 1: Find Best Strategy (Most Common)**
+
+```
+1. detect_market_regime()                    // Get current market regime
+2. compare_strategies(recommended_strategies) // Batch comparison
+3. Show top 5 by Sharpe Ratio                // Present results
+```
+
+**Total Time:** ~20 seconds
+
+---
+
+### **Workflow 2: Build Optimal Portfolio**
+
+```
+1. compare_strategies(all_strategies)        // Find top performers
+2. Select top 5-10 by Sharpe                 // Filter best strategies
+3. optimize_portfolio(selected, "max_sharpe") // Find optimal weights
+```
+
+**Total Time:** ~20 seconds
+
+---
+
+### **Workflow 3: Deep Strategy Analysis**
+
+```
+1. backtest_strategy(strategy_name)          // Get detailed metrics
+2. run_walk_forward_analysis(strategy_name)  // Validate robustness
+3. optimize_strategy_parameters(strategy_name) // Improve if needed
+```
+
+**Total Time:** ~5-10 minutes
+
+---
+
+### **Workflow 4: Fix Underperforming Strategy**
+
+```
+1. diagnose_strategy_failure(strategy_name)  // Understand why it fails
+2. suggest_parameter_fixes(strategy_name)    // Get recommendations
+3. optimize_strategy_parameters(strategy_name) // Auto-optimize
+4. run_walk_forward_analysis(strategy_name)  // Validate improvement
+```
+
+**Total Time:** ~5-10 minutes
+
+---
+
+## ?? BEST PRACTICES
+
+### ? DO:
+- Use `compare_strategies` for 2+ strategies
+- Check market regime before selecting strategies
+- Validate with WFA after optimization
+- Present results in tables (concise)
+
+### ? DON'T:
+- Call `backtest_strategy` 40+ times (use batch!)
+- Request full equity curves (use summary)
+- Over-explain basic metrics
+- Use excessive decimal precision
+
+---
+
+**Version:** 2.0.0  
+**Last Updated:** 2025-11-21  
+**Purpose:** Clear, categorized tool reference for LLM optimization
