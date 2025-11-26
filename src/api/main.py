@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 import time
 
 from .config import settings
-from .routers import strategies, backtest, optimization, portfolio, market, pairs, scanner
+from .routers import strategies, backtest, optimization, portfolio, market, pairs, scanner, experiments
 from .routers import paper
 from ..core.logger import logger
 
@@ -216,6 +216,12 @@ app.include_router(
     scanner.router,
     prefix=f"{settings.API_V1_PREFIX}/scanner",
     tags=["Signal Scanner"],
+)
+
+app.include_router(
+    experiments.router,
+    prefix=f"{settings.API_V1_PREFIX}/experiments",
+    tags=["Experiments"],
 )
 
 
