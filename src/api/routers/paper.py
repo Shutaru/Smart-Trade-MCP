@@ -18,8 +18,15 @@ from ...paper.broadcaster import get_broadcaster
 
 router = APIRouter()
 
-# Single global orchestrator for the API
-_orchestrator = AgentOrchestrator()
+# Global orchestrator instance (lazy loaded)
+_orchestrator: Optional[AgentOrchestrator] = None
+
+def get_orchestrator() -> AgentOrchestrator:
+    """Get or create global orchestrator instance."""
+    global _orchestrator
+    if _orchestrator is None:
+        _orchestrator = AgentOrchestrator()
+    return _orchestrator
 
 # ---- Models are simple dict bodies for now
 
@@ -46,7 +53,8 @@ async def start_bot(payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail="symbol, timeframe and strategy are required")
 
     try:
-        agent_id = await _orchestrator.launch_agent(
+        orch = get_orchestrator()
+        agent_id = await orch.launch_agent(
             symbol=symbol,
             timeframe=timeframe,
             strategy=strategy,
@@ -55,7 +63,7 @@ async def start_bot(payload: Dict[str, Any]):
             scan_interval_minutes=scan
         )
 
-        info = _orchestrator.get_agent_info(agent_id)
+        info = orch.get_agent_info(agent_id)
 
         return {
             "success": True,
@@ -76,7 +84,8 @@ async def stop_bot(agent_id: str, payload: Optional[Dict[str, Any]] = None):
         reason = payload.get("reason")
 
     try:
-        _orchestrator.stop_agent(agent_id, reason=reason)
+        orch = get_orchestrator()
+        orch.stop_agent(agent_id, reason=reason)
         return {"success": True, "agent_id": agent_id, "status": "stopped"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -87,12 +96,13 @@ async def stop_bot(agent_id: str, payload: Optional[Dict[str, Any]] = None):
 @router.get("/bots")
 async def list_bots():
     try:
-        agents = _orchestrator.get_all_agents()
+        orch = get_orchestrator()
+        agents = orch.get_all_agents()
         normalized = []
         for a in agents:
             perf = {}
             try:
-                perf = _orchestrator.get_agent_performance(a.get("agent_id")) or {}
+                perf = orch.get_agent_performance(a.get("agent_id")) or {}
             except Exception:
                 perf = {}
 
@@ -119,7 +129,8 @@ async def list_bots():
 async def list_active_bots():
     """Return only active agents (including DB-active even if not in-memory)."""
     try:
-        agents = _orchestrator.get_all_agents()
+        orch = get_orchestrator()
+        agents = orch.get_all_agents()
         # Be robust to status casing or different representations
         active = [a for a in agents if str(a.get("status", "")).lower() == "active"]
         # Normalize to expected frontend shape and include performance
@@ -127,7 +138,7 @@ async def list_active_bots():
         for a in active:
             perf = {}
             try:
-                perf = _orchestrator.get_agent_performance(a.get("agent_id")) or {}
+                perf = orch.get_agent_performance(a.get("agent_id")) or {}
             except Exception:
                 perf = {}
 
@@ -154,11 +165,12 @@ async def list_active_bots():
 async def bots_diagnostics():
     """Return diagnostics to help debug agent liveness and DB vs memory mismatches."""
     try:
-        storage = _orchestrator.storage
-        in_memory = list(_orchestrator.agents.keys())
+        orch = get_orchestrator()
+        storage = orch.storage
+        in_memory = list(orch.agents.keys())
         db_active = storage.get_active_agents()
         db_stopped = storage.get_stopped_agents()
-        all_agents = _orchestrator.get_all_agents()
+        all_agents = orch.get_all_agents()
 
         # compute simple mismatches
         db_active_ids = {a.get('agent_id') for a in db_active}
@@ -182,11 +194,12 @@ async def bots_diagnostics():
 async def bots_diagnostics_info():
     """Non-conflicting diagnostics endpoint for debugging DB vs memory state."""
     try:
-        storage = _orchestrator.storage
-        in_memory = list(_orchestrator.agents.keys())
+        orch = get_orchestrator()
+        storage = orch.storage
+        in_memory = list(orch.agents.keys())
         db_active = storage.get_active_agents()
         db_stopped = storage.get_stopped_agents()
-        all_agents = _orchestrator.get_all_agents()
+        all_agents = orch.get_all_agents()
 
         db_active_ids = {a.get('agent_id') for a in db_active}
         memory_ids = set(in_memory)
@@ -210,23 +223,24 @@ async def bots_diagnostics_info():
 async def restore_active_agents():
     """Force orchestrator to restore active agents from DB. Useful for debugging without restart."""
     try:
-        before = set(_orchestrator.agents.keys())
+        orch = get_orchestrator()
+        before = set(orch.agents.keys())
         # Call the internal restore method (may start new processes)
         try:
-            _orchestrator._restore_active_agents()
+            orch._restore_active_agents()
         except Exception:
             pass
-        after = set(_orchestrator.agents.keys())
+        after = set(orch.agents.keys())
         restored = list(after - before)
 
         # Also try to reconcile DB-recorded PIDs and attach existing external processes
         attached = []
         try:
-            attached = _orchestrator.reconcile_db_agents() or []
+            attached = orch.reconcile_db_agents() or []
         except Exception:
             attached = []
 
-        return {"success": True, "restored": restored, "count_restored": len(restored), "attached": attached, "count_attached": len(attached), "in_memory_count": len(_orchestrator.agents)}
+        return {"success": True, "restored": restored, "count_restored": len(restored), "attached": attached, "count_attached": len(attached), "in_memory_count": len(orch.agents)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -252,21 +266,22 @@ async def attach_agent_pid(agent_id: str, payload: Dict[str, Any] = Body(...)):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"PID {pid} not reachable: {e}")
 
+        orch = get_orchestrator()
         # Update DB
         try:
-            _orchestrator.storage.update_pid(agent_id, pid)
+            orch.storage.update_pid(agent_id, pid)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to persist pid: {e}")
 
         # Attach a proxy in orchestrator
-        with _orchestrator._lock:
+        with orch._lock:
             # If agent already present, update its process
-            if agent_id in _orchestrator.agents:
-                _orchestrator.agents[agent_id]["process"] = AgentOrchestrator.ExternalProcessProxy(pid)
-                _orchestrator.agents[agent_id]["status"] = "active"
+            if agent_id in orch.agents:
+                orch.agents[agent_id]["process"] = AgentOrchestrator.ExternalProcessProxy(pid)
+                orch.agents[agent_id]["status"] = "active"
             else:
                 # create minimal config from storage
-                agent_row = _orchestrator.storage.get_agent(agent_id) or {}
+                agent_row = orch.storage.get_agent(agent_id) or {}
                 cfg = {
                     "agent_id": agent_id,
                     "symbol": agent_row.get("symbol"),
@@ -276,7 +291,7 @@ async def attach_agent_pid(agent_id: str, payload: Dict[str, Any] = Body(...)):
                     "risk_per_trade": agent_row.get("risk_per_trade", 0.02),
                     "scan_interval_minutes": agent_row.get("scan_interval_minutes", 15)
                 }
-                _orchestrator.agents[agent_id] = {
+                orch.agents[agent_id] = {
                     "agent": None,
                     "process": AgentOrchestrator.ExternalProcessProxy(pid),
                     "config": cfg,
@@ -299,6 +314,7 @@ async def attach_batch(payload: Dict[str, Any] = Body(...)):
         if not items or not isinstance(items, list):
             raise HTTPException(status_code=400, detail="payload must contain items: [{agent_id,pid}, ...]")
         results = []
+        orch = get_orchestrator()
         for it in items:
             aid = it.get("agent_id")
             pid = it.get("pid")
@@ -318,17 +334,17 @@ async def attach_batch(payload: Dict[str, Any] = Body(...)):
                 continue
             # persist
             try:
-                _orchestrator.storage.update_pid(aid, pid_int)
+                orch.storage.update_pid(aid, pid_int)
             except Exception as e:
                 results.append({"agent_id": aid, "pid": pid_int, "success": False, "error": f"DB error: {e}"})
                 continue
             # attach proxy
-            with _orchestrator._lock:
-                if aid in _orchestrator.agents:
-                    _orchestrator.agents[aid]["process"] = AgentOrchestrator.ExternalProcessProxy(pid_int)
-                    _orchestrator.agents[aid]["status"] = "active"
+            with orch._lock:
+                if aid in orch.agents:
+                    orch.agents[aid]["process"] = AgentOrchestrator.ExternalProcessProxy(pid_int)
+                    orch.agents[aid]["status"] = "active"
                 else:
-                    agent_row = _orchestrator.storage.get_agent(aid) or {}
+                    agent_row = orch.storage.get_agent(aid) or {}
                     cfg = {
                         "agent_id": aid,
                         "symbol": agent_row.get("symbol"),
@@ -338,7 +354,7 @@ async def attach_batch(payload: Dict[str, Any] = Body(...)):
                         "risk_per_trade": agent_row.get("risk_per_trade", 0.02),
                         "scan_interval_minutes": agent_row.get("scan_interval_minutes", 15)
                     }
-                    _orchestrator.agents[aid] = {
+                    orch.agents[aid] = {
                         "agent": None,
                         "process": AgentOrchestrator.ExternalProcessProxy(pid_int),
                         "config": cfg,
@@ -357,8 +373,9 @@ async def attach_batch(payload: Dict[str, Any] = Body(...)):
 @router.get("/bots/{agent_id}")
 async def get_bot(agent_id: str):
     try:
-        info = _orchestrator.get_agent_info(agent_id)
-        perf = _orchestrator.get_agent_performance(agent_id)
+        orch = get_orchestrator()
+        info = orch.get_agent_info(agent_id)
+        perf = orch.get_agent_performance(agent_id)
         return {"success": True, "agent": info, "performance": perf}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -372,13 +389,14 @@ async def update_bot_params(agent_id: str, payload: Dict[str, Any]):
         if not isinstance(params, dict):
             raise HTTPException(status_code=400, detail="params must be an object")
 
+        orch = get_orchestrator()
         # Try orchestrator update first
         try:
-            _orchestrator.update_agent_params(agent_id, params)
+            orch.update_agent_params(agent_id, params)
         except Exception:
             # Fallback to storage
             try:
-                _orchestrator.storage.update_params(agent_id, params)
+                orch.storage.update_params(agent_id, params)
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
@@ -393,8 +411,9 @@ async def update_bot_params(agent_id: str, payload: Dict[str, Any]):
 async def get_bot_logs(agent_id: str, limit: int = 200):
     """Return recent events and trades for an agent."""
     try:
-        events = _orchestrator.storage.get_agent_events(agent_id, limit=limit)
-        trades = _orchestrator.storage.get_agent_trades(agent_id)
+        orch = get_orchestrator()
+        events = orch.storage.get_agent_events(agent_id, limit=limit)
+        trades = orch.storage.get_agent_trades(agent_id)
         return {"success": True, "agent_id": agent_id, "events": events, "trades": trades}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -411,10 +430,11 @@ async def ws_paper_updates(websocket: WebSocket, agent_id: str):
     broadcaster = get_broadcaster()
     queue = broadcaster.subscribe(agent_id)
     try:
+        orch = get_orchestrator()
         # Send initial snapshot
-        info = _orchestrator.get_agent_info(agent_id)
-        perf = _orchestrator.get_agent_performance(agent_id)
-        trades = _orchestrator.storage.get_agent_trades(agent_id)
+        info = orch.get_agent_info(agent_id)
+        perf = orch.get_agent_performance(agent_id)
+        trades = orch.storage.get_agent_trades(agent_id)
         snapshot = {"type": "snapshot", "timestamp": datetime.utcnow().isoformat(), "agent": info, "performance": perf, "trades": trades}
         await websocket.send_json(snapshot)
 
@@ -441,13 +461,14 @@ async def ws_paper_updates(websocket: WebSocket, agent_id: str):
 async def debug_info():
     """Debug endpoint: returns storage DB path and raw agents from DB and orchestrator."""
     try:
-        storage = _orchestrator.storage
+        orch = get_orchestrator()
+        storage = orch.storage
         db_path = str(storage.db_path)
         active_db = storage.get_active_agents()
         stopped_db = storage.get_stopped_agents()
         # orchestrator in-memory agents
-        in_memory = list(_orchestrator.agents.keys())
-        all_via_orch = _orchestrator.get_all_agents()
+        in_memory = list(orch.agents.keys())
+        all_via_orch = orch.get_all_agents()
         return {
             "db_path": db_path,
             "active_db_count": len(active_db),
